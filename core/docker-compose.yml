@@ -1,0 +1,100 @@
+services:
+  postgres:
+    image: timescale/timescaledb:latest-pg16
+    container_name: tik-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${TIK_DB_NAME:-tik}
+      POSTGRES_USER: ${TIK_DB_USER:-tik}
+      POSTGRES_PASSWORD: ${TIK_DB_PASSWORD:-tik_dev}
+    ports:
+      - "5432:5432"
+    volumes:
+      - tik_postgres_data:/var/lib/postgresql/data
+      - ./migrations/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${TIK_DB_USER:-tik} -d ${TIK_DB_NAME:-tik}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: tik-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - tik_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  core:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tik-core
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      TIK_DB_HOST: postgres
+      TIK_REDIS_HOST: redis
+    ports:
+      - "8200:8200"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./src:/app/src:ro
+      - ./migrations:/app/migrations:ro
+    command: >
+      sh -c "
+        alembic upgrade head &&
+        uvicorn tik_core.main:app --host 0.0.0.0 --port 8200 --reload
+      "
+
+  ingesters:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tik-ingesters
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      TIK_DB_HOST: postgres
+      TIK_REDIS_HOST: redis
+    depends_on:
+      core:
+        condition: service_started
+    volumes:
+      - ./src:/app/src:ro
+    command: python -m tik_core.scripts.run_ingesters
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tik-scheduler
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      TIK_DB_HOST: postgres
+      TIK_REDIS_HOST: redis
+    depends_on:
+      core:
+        condition: service_started
+    volumes:
+      - ./src:/app/src:ro
+    command: python -m tik_core.scripts.run_scheduler
+
+volumes:
+  tik_postgres_data:
+  tik_redis_data:
