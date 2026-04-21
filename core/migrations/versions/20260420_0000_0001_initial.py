@@ -49,7 +49,7 @@ def upgrade() -> None:
     # ----- signals (hypertable timescale) -----
     op.create_table(
         "signals",
-        sa.Column("id", sa.String(64), primary_key=True),
+        sa.Column("id", sa.String(64), primary_key=False),
         sa.Column("timestamp", sa.DateTime(), nullable=False),
         sa.Column("entity_id", sa.String(64), nullable=False),
         sa.Column("horizon", sa.String(16), nullable=False),
@@ -64,7 +64,8 @@ def upgrade() -> None:
         sa.Column("expiry", sa.DateTime()),
         sa.Column("advisory", sa.JSON(), nullable=False, server_default="{}"),
         sa.Column("circuit_breaker_status", sa.String(32), nullable=False, server_default="ok"),
-        sa.ForeignKeyConstraint(["entity_id"], ["entities.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id", "timestamp"),
+                sa.ForeignKeyConstraint(["entity_id"], ["entities.id"], ondelete="CASCADE"),
     )
     op.create_index("ix_signals_timestamp", "signals", ["timestamp"])
     op.create_index("ix_signals_entity_id", "signals", ["entity_id"])
@@ -84,6 +85,7 @@ def upgrade() -> None:
         "feedbacks",
         sa.Column("id", sa.String(36), primary_key=True),
         sa.Column("signal_id", sa.String(64), nullable=False),
+                sa.Column("signal_timestamp", sa.DateTime(), nullable=False),
         sa.Column("client_id", sa.String(64), nullable=False),
         sa.Column("trade_id", sa.String(128)),
         sa.Column("outcome", sa.String(32), nullable=False),
@@ -92,7 +94,7 @@ def upgrade() -> None:
         sa.Column("duration_held_s", sa.Integer()),
         sa.Column("exit_reason", sa.String(64)),
         sa.Column("received_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
-        sa.ForeignKeyConstraint(["signal_id"], ["signals.id"], ondelete="CASCADE"),
+                sa.ForeignKeyConstraint(["signal_id", "signal_timestamp"], ["signals.id", "signals.timestamp"], ondelete="CASCADE"),
     )
     op.create_index("ix_feedbacks_signal_id", "feedbacks", ["signal_id"])
     op.create_index("ix_feedbacks_client_id", "feedbacks", ["client_id"])
