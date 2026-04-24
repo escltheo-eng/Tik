@@ -1,0 +1,332 @@
+# CLAUDE.md — Contexte projet Tik
+
+> **Ce fichier est lu automatiquement par toute instance Claude qui ouvre ce projet.**
+> Si tu es une instance Claude lisant ceci pour la première fois : **lis-le entièrement avant de répondre à la moindre question**. Il contient l'historique, les décisions, les règles et l'état d'avancement du projet.
+
+---
+
+## 0. Identification de l'utilisateur
+
+L'utilisateur principal du projet **n'a jamais codé de sa vie** avant de démarrer Tik. Il a appris à utiliser Git, Docker, le terminal, et VS Code en quelques jours pour les besoins du projet.
+
+**Implications pour toute instance Claude qui interagit avec lui** :
+
+- **Explique tout en français** et avec un vocabulaire accessible (pas de jargon non défini)
+- **Ne suppose jamais qu'il connaît un concept technique** (variables, types, scopes, async, hypertable, foreign key, etc.) — explique brièvement quand tu l'utilises
+- **Donne les commandes complètes** à copier-coller, jamais juste "tape la commande habituelle"
+- **Indique précisément où il est** (quel dossier, quelle app, quel onglet) avant chaque instruction
+- **Découpe les tâches en étapes courtes** (1 → 2 → 3) plutôt que de tout balancer d'un bloc
+- **Vérifie son état actuel** avant d'avancer (lui demander où il en est, s'il a bien compris, s'il voit ce que tu décris)
+- **Sois patient avec les erreurs** — il copie-colle ce que tu lui donnes, donc une faute d'indentation ou un fichier mal placé vient probablement de toi
+- **Pour les corrections de fichiers Python**, fournis-lui le **fichier complet à remplacer** plutôt qu'un diff partiel — il n'a pas le réflexe d'identifier les indentations correctes
+- **Quand il te colle un message d'erreur**, ne suppose pas qu'il l'a lu/compris — analyse-le toi-même et explique ce qui se passe en français simple
+- **Ne lui propose pas d'installer des outils complexes** (Homebrew, Xcode Command Line Tools) sauf nécessité absolue — préfère les solutions natives macOS ou les contournements
+
+---
+
+## 1. Vision du projet Tik
+
+**Tik n'est PAS un acronyme.** C'est un nom propre.
+
+**Tik est une plateforme OSINT modulaire** (Open Source INTelligence) qui :
+- Agrège des données multi-sources (marché, macro, news, on-chain, sentiment, prédictif)
+- Score la crédibilité des sources et détecte les fake news
+- Produit des signaux pondérés sur 3 horizons en parallèle (flash, swing, macro)
+- Historise tout pour analyse et recalibrage continu
+- S'expose via une API + WebSocket pour des bots clients
+
+**Périmètre actuel (MVP)** : trading BTC + Gold uniquement.
+**Périmètre futur** : domain-agnostic — sport betting, politique, météo-finance, tout système décisionnel ayant besoin d'OSINT + scoring.
+
+---
+
+## 2. Architecture en 3 couches
+
+```
+┌────────────────────────────────────────────┐
+│  COUCHE 1 — CORE ENGINE (FastAPI central)  │
+│  Source de vérité unique, un déploiement    │
+└────────────────────────────────────────────┘
+              ▲ HTTP + WebSocket
+              │
+┌────────────────────────────────────────────┐
+│  COUCHE 2 — SDK Python (tik-sdk)            │
+│  Package pip-installable, cache local,      │
+│  fallback offline, hooks événementiels      │
+└────────────────────────────────────────────┘
+       ▲              ▲              ▲
+       │              │              │
+   ZETA bot       TOTEM bot     Bot futur
+       │              │              │
+┌────────────────────────────────────────────┐
+│  COUCHE 3 — CONFIG YAML (par bot)           │
+│  Adaptation sans redéploiement, hot-reload │
+└────────────────────────────────────────────┘
+```
+
+L'**abstraction "Entity"** est ce qui permet la modularité multi-domaines : BTC, GOLD, mais aussi un match NBA, une élection, etc. — tous deviennent des "entities observables" avec leurs sources, horizons, et scoreurs.
+
+---
+
+## 3. Écosystème Zeta + Totem
+
+**Zeta** (déjà en production) :
+- Bot de trading déterministe Python FastAPI
+- Trade BTC + Gold via MT5/ActivTrades, leverage 1:1000
+- 29 routes API, 22 services, ~1192 lignes dans `api/main.py`
+- Moteur principal : `cranial_bot/turbo_v2.py` (5211 lignes)
+- Stratégies actives : H1 Adaptive (BTC + GOLD) + Weekend Scalp (BTC seul)
+- **Guard pipeline V01-V15** dans `cranial_bot/micro_live_guard.py` (15 checks bloquants)
+- `balance_service.py` = source de vérité financière (Decimal, invariant check)
+- `kill_switch_service.py` = stop quotidien à 15% de drawdown
+
+**Totem** (existant, archi séparée) :
+- IA de trading autonome (ML/autonome)
+- Stack propre, API propre
+- À détailler ultérieurement
+
+**Tik** (en construction) :
+- Cerveau analytique OSINT en amont des deux bots
+- Ne passe **JAMAIS** d'ordre lui-même
+- Envoie à Zeta : signaux décisionnels (direction + confidence + veracity + contre-scénarios)
+- Envoie à Totem : vecteurs de features ML enrichis
+
+---
+
+## 4. Décisions architecturales (ADR)
+
+### ADR-001 — Authentification pluggable
+
+L'auth est implémentée via une **interface abstraite `AuthProvider`** + un `AuthContext` neutre. Aujourd'hui : `ApiKeyProvider`. Demain (si l'utilisateur en a besoin) : `OAuth2Provider` à ajouter sans toucher au code métier des endpoints. Variable d'env : `TIK_AUTH_PROVIDER=api_key|oauth2`.
+
+### ADR-002 — Monorepo
+
+Structure unique `Tik/` avec sous-dossiers `core/`, `sdk/` (à venir), `dashboard/` (à venir), `docs/`. Solo dev, commits transverses fréquents → pas de polyrepo.
+
+### ADR-003 — Intégration Zeta SANS bypass V01-V15
+
+**Règle absolue** : tout signal Tik consommé par Zeta passe **intégralement** par le guard V01-V15 et le `risk_engine.py` existants. Tik est une **source d'edge additionnelle** pour `turbo_v2.py`, pas un canal d'exécution privilégié.
+
+- Tik ne crée jamais d'ordre MT5 directement
+- Un signal Tik **modifie** la `confidence` d'un signal Zeta interne, ne le **remplace** pas
+- `risk_engine.py` calcule la taille, pas Tik (les `suggested_entry/stop/target` sont indicatifs)
+- `kill_switch_service.py` est la **seule** voie pour Tik de freezer Zeta
+- Un nouveau check **V16 optionnel** pourra être ajouté : "véracité globale Tik > seuil"
+
+---
+
+## 5. Garde-fous opérationnels (validés par l'utilisateur)
+
+### Garde-fou 1 — Mode SHADOW obligatoire (3 mois minimum)
+
+Tik tourne en parallèle de Zeta sans jamais influencer ses trades. La connexion Zeta ne fait que **lire** (status, positions, PnL). Tik observe, produit des signaux, les loggue. Aucune influence sur les trades réels avant 3 mois minimum d'observation et d'analyse.
+
+### Garde-fou 2 — Budget de test limité
+
+Quand on passera de shadow à actif, démarrage avec un compte Zeta de test séparé contenant **au maximum 5% du capital**. Pendant 1 mois minimum.
+
+**Toute instance Claude qui propose de lever ces garde-fous doit alerter l'utilisateur explicitement et lui rappeler ces règles.**
+
+---
+
+## 6. Framework "paranoïa contrôlée"
+
+Importé de la philosophie Zeta. Chaque signal Tik livre **systématiquement** :
+
+1. Une **hypothèse** principale (le pourquoi du signal)
+2. **Au moins 2 contre-scénarios** qui invalideraient le signal, avec leur probabilité estimée et leur "mitigation" (quoi surveiller)
+3. **Des preuves** (evidence) avec source et score de crédibilité
+4. **Des triggers** techniques avec leur poids dans la décision
+
+C'est ce qui distingue Tik d'un bot naïf. À respecter dans toute évolution.
+
+---
+
+## 7. Stack technique
+
+**Core engine** :
+- Python 3.11 + FastAPI + Uvicorn
+- PostgreSQL 16 + TimescaleDB (hypertable sur `signals`)
+- Redis 7 (pub/sub + cache)
+- SQLAlchemy 2 async + Alembic
+- Pydantic 2
+- structlog (logging)
+- APScheduler (jobs périodiques)
+
+**Hébergement actuel** : Mac local de l'utilisateur via Docker Desktop.
+
+**APIs externes utilisées** (toutes freemium) :
+- Binance WebSocket (BTC, gratuit illimité)
+- Yahoo Finance (Gold, gratuit avec délai 15min OK)
+- FRED API (macro, gratuit illimité, clé requise)
+- Source futures : CoinGecko, CryptoPanic, Polymarket, Reddit, etc.
+
+**Pas de budget API payant** (Polygon, Bloomberg, Kaiko) tant que l'utilisateur n'a pas validé.
+
+---
+
+## 8. État d'avancement
+
+### Paquet 1 — Core MVP : ✅ LIVRÉ et FONCTIONNEL
+
+Implémenté et testé sur le Mac de l'utilisateur :
+- Tous les endpoints REST (`/health`, `/entities`, `/signals`, `/feedback`, `/veracity`)
+- WebSocket `/ws/signals` (auth via query param `api_key`)
+- Auth pluggable API Key (avec interface prête pour OAuth2)
+- Modèles SQLAlchemy : Entity, Source, Signal, Feedback, ApiKey
+- Migration Alembic initiale (avec hypertable TimescaleDB)
+- Ingester Binance WebSocket (BTC trades temps réel)
+- Ingester Yahoo Finance (Gold polling 60s)
+- Ingester FRED (macro polling 1h)
+- Engine swing (RSI + MACD + EMA + contre-scénarios)
+- Publisher Redis + DB pour les signaux
+- Adapter trading (mapping BTC, GOLD)
+- Scheduler APScheduler (swing BTC toutes les 15min, swing Gold toutes les 30min)
+- Scripts CLI : `create_api_key`, `run_scheduler`, `run_ingesters`
+- Tests pytest : health + auth (scope matching, hash, wildcards)
+- CI GitHub Actions
+- 3 ADR documentés
+- docker-compose.yml complet (5 services)
+
+### Paquet 2 — SDK Python : ⏳ À FAIRE
+
+À implémenter dans `Tik/sdk/` :
+- Package `tik-sdk` pip-installable
+- Client HTTP + WebSocket vers le core
+- Cache local Redis ou in-memory avec TTL
+- Fallback offline si core indisponible
+- Hooks événementiels : `on_signal`, `on_crash_warning`, `on_fake_news_detected`, `on_veracity_collapse`
+- Circuit breaker LOCAL (indépendant du core)
+- Telemetry retour automatique (`/feedback`)
+- Config YAML hot-reloadable
+- Tests
+- Documentation d'intégration Zeta (overlay sur `turbo_v2.py`)
+
+### Paquet 3 — Dashboard Expo : ⏳ À FAIRE
+
+À implémenter dans `Tik/dashboard/` :
+- App Expo SDK 54+ avec Expo Router
+- Auth (login + storage push token Expo)
+- Écrans : home (KPIs live), signals feed (WebSocket), alerts, bots Zeta/Totem, config
+- Charts via Victory Native XL ou Skia
+- Notifications push (Expo Push) avec deep links
+- Connexion API + WebSocket vers Tik core local
+- Future : connexion API Zeta existante pour afficher état trading
+
+### Couches encore non-implémentées (évolutions futures)
+
+- Engine flash (minutes-heures) — non prioritaire pour swing/macro
+- Engine macro (semaines-mois) — partiellement couvert via FRED
+- Pipeline NLP sentiment (Ollama local ou Groq free)
+- Module anti-fake-news (cross-validation, scoring source dynamique)
+- Ingester news : Google News RSS, CryptoPanic, Reddit, Nitter (Twitter)
+- Marchés prédictifs : Polymarket, Kalshi
+- Backtesting service
+- Data alternative : Fear & Greed, Google Trends
+
+---
+
+## 9. Bugs connus et résolus
+
+Pendant le déploiement initial du Paquet 1, 3 bugs ont été identifiés et corrigés :
+
+### Bug 1 — Hypertable TimescaleDB avec primary key incompatible
+
+**Symptôme** : `cannot create a unique index without the column "timestamp" (used in partitioning)`
+**Cause** : la table `signals` est une hypertable Timescale partitionnée par `timestamp`, mais la primary key initiale n'incluait pas `timestamp`.
+**Fix** : dans `core/migrations/versions/20260420_0000_0001_initial.py`, modifier la table `signals` pour avoir `primary_key=False` sur `id`, ajouter `nullable=False`, et ajouter `sa.PrimaryKeyConstraint("id", "timestamp")`.
+
+### Bug 2 — Foreign key composite manquante dans `feedbacks`
+
+**Symptôme** : `there is no unique constraint matching given keys for referenced table "signals"`
+**Cause** : conséquence du Bug 1 : la primary key de `signals` étant maintenant `(id, timestamp)`, la foreign key de `feedbacks` doit référencer les deux colonnes.
+**Fix** : dans la même migration, ajouter `sa.Column("signal_timestamp", sa.DateTime(), nullable=False)` à la table `feedbacks` et changer la `ForeignKeyConstraint` pour `(["signal_id", "signal_timestamp"], ["signals.id", "signals.timestamp"], ondelete="CASCADE")`. Côté modèle Python (`core/src/tik_core/storage/models.py`), ajouter le champ `signal_timestamp` au modèle `Feedback`.
+
+### Bug 3 — Type UUID vs VARCHAR incompatible
+
+**Symptôme** : `operator does not exist: character varying = uuid`
+**Cause** : dans les modèles `ApiKey` et `Feedback`, la colonne `id` était déclarée `UUID(as_uuid=False)` côté SQLAlchemy mais générée comme `String(36)` dans la migration.
+**Fix** : dans `core/src/tik_core/storage/models.py`, remplacer `UUID(as_uuid=False)` par `String(36)` dans les deux modèles. Retirer l'import `from sqlalchemy.dialects.postgresql import UUID` qui n'est plus utilisé.
+
+**Ces 3 fixes sont déjà appliqués dans le code actuel** (et poussés sur GitHub).
+
+---
+
+## 10. Bugs non résolus / améliorations à faire
+
+### Bouton Authorize manquant dans Swagger
+
+**Symptôme** : pas de bouton "Authorize" dans le Swagger UI à `http://localhost:8200/docs`, donc impossible de tester les endpoints authentifiés directement depuis Swagger.
+**Cause** : la sécurité OpenAPI n'est pas déclarée dans la config FastAPI.
+**Fix à faire** : dans `core/src/tik_core/main.py`, ajouter un schéma de sécurité Bearer dans la configuration OpenAPI (`HTTPBearer` depuis `fastapi.security`), et l'appliquer aux endpoints concernés via `Depends(security)`. Permettrait à l'utilisateur de cliquer "Authorize" dans Swagger et coller sa clé une fois pour toute la session.
+
+### Health check Docker absent sur certains services
+
+**Symptôme** : `tik-ingesters` et `tik-scheduler` apparaissent comme `unhealthy` dans `docker compose ps` car ils n'ont pas de healthcheck défini.
+**Fix à faire** : retirer le port 8200/tcp du Dockerfile pour ces deux services (ils ne servent pas l'API), ou ajouter un healthcheck simple genre vérifier que le process Python tourne.
+
+---
+
+## 11. Workflow de l'utilisateur
+
+L'utilisateur est sur **macOS Tahoe 26.0** (Mac M1 Apple Silicon).
+
+**Outils installés et fonctionnels** :
+- VS Code avec extension Claude Code (Anthropic) — outil principal
+- Docker Desktop — fait tourner Tik
+- GitHub Desktop — gestion Git visuelle (l'utilisateur ne maîtrise PAS les commandes Git en ligne de commande)
+- Le repo GitHub Tik est privé
+
+**Outils NON installés** (et qui ont posé problème) :
+- Homebrew — abandonné car nécessite Xcode Command Line Tools
+- Xcode Command Line Tools — bloqué (la version dispo Apple Developer 26.4.1 exige macOS 26.2)
+- jq — abandonné, on utilise `plutil -convert json -r -o - -` à la place pour formater le JSON
+- Claude Desktop — bloqué par un bug d'auth email
+
+**Workflow Git** : passe par GitHub Desktop pour `commit` + `push`, jamais par la ligne de commande.
+
+**Workflow d'installation de paquets** : préférer Docker (déjà installé) plutôt que `brew install`.
+
+**Pour tester l'API depuis le terminal** : l'utilisateur sait taper `curl -H "Authorization: Bearer ..." http://localhost:8200/...` et formater le résultat avec `| plutil -convert json -r -o - -`.
+
+---
+
+## 12. Démarrage rapide pour une nouvelle instance Claude
+
+Si tu es une instance Claude qui prend ce projet en main pour la première fois :
+
+1. **Lis ce fichier en entier**
+2. **Lis `core/README.md`** pour les détails techniques du Core
+3. **Lis les 3 ADR** dans `docs/adr/` pour comprendre les décisions
+4. **Vérifie l'état du Core** en demandant à l'utilisateur de taper :
+   ```
+   docker compose ps
+   curl http://localhost:8200/api/v1/health
+   ```
+5. **Demande à l'utilisateur ce qu'il veut faire** parmi les options en cours :
+   - Continuer le Paquet 2 (SDK)
+   - Continuer le Paquet 3 (Dashboard Expo)
+   - Corriger les bugs non résolus (section 10)
+   - Ajouter une nouvelle source de données
+   - Faire un export / analyse des signaux déjà collectés
+
+---
+
+## 13. Règles à respecter (récapitulatif final)
+
+1. **Toujours expliquer en français accessible**, pas de jargon non défini
+2. **Toujours respecter le mode shadow 3 mois** avant connexion réelle Tik ↔ Zeta
+3. **Toujours respecter le budget test 5%** lors du passage en mode actif
+4. **JAMAIS de bypass du guard V01-V15** côté Zeta
+5. **Toujours inclure contre-scénarios** dans les signaux (paranoïa contrôlée)
+6. **Toujours documenter** dans un nouvel ADR toute décision structurante
+7. **Toujours pousser sur GitHub** via GitHub Desktop après modifications
+8. **Préférer les solutions sans installation lourde** (utiliser Docker, éviter Homebrew)
+9. **Fournir des fichiers complets à remplacer** plutôt que des diffs partiels (l'utilisateur ne maîtrise pas l'indentation Python)
+10. **Vérifier l'état avant chaque action** (où en est l'utilisateur, quel terminal, quel dossier)
+
+---
+
+*Dernière mise à jour : 2026-04-21*
+*Version Tik : 0.1.0 (Core MVP livré)*
+*Mainteneur : utilisateur solo + assistant Claude via extension VS Code*
