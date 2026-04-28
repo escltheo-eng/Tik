@@ -29,6 +29,12 @@ BINANCE_KLINES = "https://api.binance.com/api/v3/klines"
 YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 UA = "Mozilla/5.0 (compatible; TikBot/0.1)"
 
+# Binance = flux marché direct, Yahoo = agrégateur avec délai 15min.
+SOURCE_SCORES: dict[str, float] = {
+    "binance_klines": 0.90,
+    "yahoo_finance": 0.80,
+}
+
 
 @dataclass
 class SwingDecision:
@@ -196,10 +202,11 @@ def _score_indicators(df: pd.DataFrame) -> SwingDecision:
         confidence = abs(bull_score - bear_score)
 
     # Evidence technique
+    source = df.attrs.get("source", "unknown")
     evidence.append(
         {
-            "source": "binance_klines",
-            "score": 0.85,
+            "source": source,
+            "score": SOURCE_SCORES.get(source, 0.5),
             "fact": f"RSI14={current_rsi:.1f}, EMA20/50={current_ema20:.2f}/{current_ema50:.2f}, MACD={current_macd:.3f}",
         }
     )
@@ -240,6 +247,7 @@ async def analyze_swing_btc() -> SwingDecision:
     """Analyse swing BTC/USDT sur 4h."""
     df = await _fetch_binance_klines("BTCUSDT", "4h", 200)
     df.attrs["entity_id"] = "BTC"
+    df.attrs["source"] = "binance_klines"
     decision = _score_indicators(df)
     decision.entity_id = "BTC"
     return decision
@@ -249,6 +257,7 @@ async def analyze_swing_gold() -> SwingDecision:
     """Analyse swing Gold (GC=F) sur 1h/60d."""
     df = await _fetch_yahoo_klines("GC=F", "1h", "60d")
     df.attrs["entity_id"] = "GOLD"
+    df.attrs["source"] = "yahoo_finance"
     decision = _score_indicators(df)
     decision.entity_id = "GOLD"
     return decision
