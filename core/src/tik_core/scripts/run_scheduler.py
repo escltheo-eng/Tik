@@ -31,9 +31,9 @@ async def _run_swing_btc(session_maker, redis) -> None:
         log.error("scheduler.swing_btc.error", error=str(exc))
 
 
-async def _run_swing_gold(session_maker, redis) -> None:
+async def _run_swing_gold(session_maker, redis, fred_api_key) -> None:
     try:
-        decision = await analyze_swing_gold()
+        decision = await analyze_swing_gold(fred_api_key=fred_api_key)
         async with session_maker() as session:
             await publish_swing_signal(session, redis, decision)
             await session.commit()
@@ -64,7 +64,7 @@ async def main() -> None:
         _run_swing_gold,
         "interval",
         minutes=30,
-        args=[session_maker, redis],
+        args=[session_maker, redis, settings.fred_api_key],
         id="swing_gold",
         max_instances=1,
         coalesce=True,
@@ -75,7 +75,7 @@ async def main() -> None:
 
     # Premier run immédiat
     await _run_swing_btc(session_maker, redis)
-    await _run_swing_gold(session_maker, redis)
+    await _run_swing_gold(session_maker, redis, settings.fred_api_key)
 
     try:
         while True:

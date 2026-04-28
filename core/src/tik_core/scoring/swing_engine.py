@@ -31,15 +31,18 @@ BINANCE_KLINES = "https://api.binance.com/api/v3/klines"
 YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 UA = "Mozilla/5.0 (compatible; TikBot/0.1)"
 
-# Binance = flux marché direct, Yahoo = agrégateur avec délai 15min,
-# alternative.me FNG = sentiment indirect (donc score modéré).
+# Binance = flux marché direct ; Yahoo = agrégateur délai 15min ;
+# alternative.me FNG = sentiment indirect ; FRED DTWEXBGS = source officielle US gov.
 SOURCE_SCORES: dict[str, float] = {
     "binance_klines": 0.90,
     "yahoo_finance": 0.80,
     "alternative_me_fng": 0.65,
+    "fred_dtwexbgs": 0.85,
 }
 
 FG_REDIS_KEY = "tik.sentiment.fear_greed"
+FRED_OBS_URL = "https://api.stlouisfed.org/fred/series/observations"
+DXY_SERIES_ID = "DTWEXBGS"
 
 
 @dataclass
@@ -346,14 +349,114 @@ async def analyze_swing_btc(redis: Redis | None = None) -> SwingDecision:
     return decision
 
 
-async def analyze_swing_gold() -> SwingDecision:
-    """Analyse swing Gold (GC=F) sur 1h/60d.
+async def _fetch_dxy_history(api_key: str, limit: int = 10) -> list[dict]:
+    """Récupère les N derniers points du DXY (DTWEXBGS) depuis FRED."""
+    if not api_key:
+        return []
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            r = await client.get(
+                FRED_OBS_URL,
+                params={
+                    "series_id": DXY_SERIES_ID,
+                    "api_key": api_key,
+                    "file_type": "json",
+                    "sort_order": "desc",
+                    "limit": limit,
+                },
+            )
+            r.raise_for_status()
+            return r.json().get("observations", [])
+    except Exception as exc:  # noqa: BLE001
+        log.warning("swing.gold.dxy_fetch_error", error=str(exc))
+        return []
 
-    Pas d'overlay FG : l'index Fear & Greed est crypto-spécifique.
+
+def _compute_dxy_bias(history: list[dict]) -> tuple[float, str, float, float] | None:
+    """Variation % du DXY sur ~5 jours ouvrés et bias contrarian sur GOLD.
+
+    Corrélation négative classique : DXY ↑ → GOLD ↓ (bias bear sur GOLD).
+    Retourne (bias, zone, valeur_recente, valeur_passee) ou None si données insuffisantes.
+    """
+    valid_values: list[float] = []
+    for obs in history:
+        v = obs.get("value")
+        if v in (".", "", None):
+            continue
+        try:
+            valid_values.append(float(v))
+        except (TypeError, ValueError):
+            continue
+
+    if len(valid_values) < 5:
+        return None
+
+    recent = valid_values[0]
+    past_idx = min(5, len(valid_values) - 1)
+    past = valid_values[past_idx]
+    if past == 0:
+        return None
+    var_pct = (recent - past) / past * 100
+
+    if var_pct >= 1.0:
+        return -1.0, "dxy_strong_up", recent, past
+    if var_pct >= 0.3:
+        return -0.5, "dxy_up", recent, past
+    if var_pct <= -1.0:
+        return 1.0, "dxy_strong_down", recent, past
+    if var_pct <= -0.3:
+        return 0.5, "dxy_down", recent, past
+    return 0.0, "dxy_stable", recent, past
+
+
+def _apply_dxy_overlay(decision: SwingDecision, history: list[dict]) -> SwingDecision:
+    """Enrichit une décision swing GOLD avec l'overlay corrélation DXY."""
+    result = _compute_dxy_bias(history)
+    if result is None:
+        return decision
+    bias, zone, recent, past = result
+    var_pct = (recent - past) / past * 100
+
+    bias_label = (
+        "contrarian bull GOLD" if bias > 0
+        else "contrarian bear GOLD" if bias < 0
+        else "neutral"
+    )
+
+    decision.evidence.append(
+        {
+            "source": "fred_dtwexbgs",
+            "score": SOURCE_SCORES.get("fred_dtwexbgs", 0.5),
+            "fact": f"DXY={recent:.2f} (var 5d {var_pct:+.2f}%)",
+        }
+    )
+    decision.triggers.append(
+        {
+            "type": "dxy_correlation",
+            "value": f"DXY {zone} ({var_pct:+.2f}%) → {bias_label}",
+            "weight": 0.10,
+        }
+    )
+    decision.veracity = _veracity_from_concordance(decision.direction, bias)
+    return decision
+
+
+async def analyze_swing_gold(fred_api_key: str | None = None) -> SwingDecision:
+    """Analyse swing Gold (GC=F) sur 1h/60d, avec overlay corrélation DXY si dispo.
+
+    Pas d'overlay Fear & Greed : l'index FG est crypto-spécifique.
     """
     df = await _fetch_yahoo_klines("GC=F", "1h", "60d")
     df.attrs["entity_id"] = "GOLD"
     df.attrs["source"] = "yahoo_finance"
     decision = _score_indicators(df)
     decision.entity_id = "GOLD"
+
+    if fred_api_key:
+        history = await _fetch_dxy_history(fred_api_key)
+        if history:
+            decision = _apply_dxy_overlay(decision, history)
+        else:
+            log.info("swing.gold.dxy_unavailable")
+
     return decision
