@@ -188,6 +188,17 @@ Implémenté et testé sur le Mac de l'utilisateur :
 - 3 ADR documentés
 - docker-compose.yml complet (5 services)
 
+### Paquet 1.x — Évolutions post-livraison (2026-04-28)
+
+Améliorations apportées au Core après le déploiement initial :
+
+- **Bouton "Authorize" dans Swagger** : security scheme `bearerAuth` ajouté à l'OpenAPI (`core/src/tik_core/main.py`), appliqué à tous les endpoints sauf `/health`. Les endpoints sécurisés sont désormais testables directement depuis `/docs`.
+- **Healthchecks Docker propres** : override des healthchecks pour `tik-ingesters` et `tik-scheduler` (qui héritaient à tort du healthcheck curl 8200 du Dockerfile commun). Test simple via `python -c "import redis; redis.Redis(host='redis').ping()"`. Plus de `(unhealthy)` dans `docker compose ps`.
+- **Ingester Fear & Greed Index** : nouveau ingester `core/src/tik_core/aggregator/fear_greed_ingester.py` (couche 7 sentiment). Polling toutes les 1h sur l'API publique alternative.me (sans clé). Stocke la valeur courante dans Redis sous la clé `tik.sentiment.fear_greed` (TTL 25h).
+- **Cross-validation FG ↔ techniques sur BTC swing** : `analyze_swing_btc(redis)` lit la valeur FG depuis Redis et applique un overlay sur la décision (evidence + trigger + bias contrarian). La **veracity devient dynamique** entre 0.70 (forte divergence techniques ↔ sentiment) et 0.95 (forte concordance), au lieu d'être figée à 0.85. GOLD reste inchangé (FG est crypto-spécifique).
+- **`SOURCE_SCORES` par source** : nouveau dictionnaire dans `swing_engine.py` qui mappe chaque source à son score de crédibilité (`binance_klines`=0.90 flux marché direct, `yahoo_finance`=0.80 délai 15min, `alternative_me_fng`=0.65 sentiment indirect).
+- **`SwingDecision` porte désormais `veracity`** : le publisher (`publish_swing_signal`) lit la veracity de la décision au lieu de la hardcoder à 0.85.
+
 ### Paquet 2 — SDK Python : ⏳ À FAIRE
 
 À implémenter dans `Tik/sdk/` :
@@ -228,7 +239,7 @@ Implémenté et testé sur le Mac de l'utilisateur :
 
 ## 9. Bugs connus et résolus
 
-Pendant le déploiement initial du Paquet 1, 3 bugs ont été identifiés et corrigés :
+6 bugs identifiés et corrigés depuis le démarrage du projet (les 3 premiers pendant le déploiement initial du Paquet 1, les 3 suivants pendant les évolutions post-livraison du 2026-04-28) :
 
 ### Bug 1 — Hypertable TimescaleDB avec primary key incompatible
 
@@ -248,22 +259,33 @@ Pendant le déploiement initial du Paquet 1, 3 bugs ont été identifiés et cor
 **Cause** : dans les modèles `ApiKey` et `Feedback`, la colonne `id` était déclarée `UUID(as_uuid=False)` côté SQLAlchemy mais générée comme `String(36)` dans la migration.
 **Fix** : dans `core/src/tik_core/storage/models.py`, remplacer `UUID(as_uuid=False)` par `String(36)` dans les deux modèles. Retirer l'import `from sqlalchemy.dialects.postgresql import UUID` qui n'est plus utilisé.
 
-**Ces 3 fixes sont déjà appliqués dans le code actuel** (et poussés sur GitHub).
+### Bug 4 — Source mal labelisée pour les signaux GOLD
+
+**Symptôme** : l'evidence des signaux GOLD indiquait `source: binance_klines` alors que GOLD vient de Yahoo Finance. Le score de crédibilité (0.85) était identique pour toutes les sources.
+**Cause** : dans `core/src/tik_core/scoring/swing_engine.py`, la fonction `_score_indicators()` hardcodait `"source": "binance_klines"` dans l'evidence — alors qu'elle est appelée pour BTC (Binance) et pour GOLD (Yahoo).
+**Fix** : la source est désormais passée via `df.attrs["source"]` (cohérent avec le pattern existant pour `entity_id`). Le score de crédibilité vient du dictionnaire `SOURCE_SCORES` qui dépend de la source réelle. Bug fonctionnel ? Non, c'était juste un label incorrect — les données utilisées étaient bien les bonnes.
+
+### Bug 5 — Bouton "Authorize" manquant dans Swagger
+
+**Symptôme** : pas de bouton "Authorize" dans le Swagger UI à `http://localhost:8200/docs`, donc impossible de tester les endpoints authentifiés directement depuis Swagger.
+**Cause** : la sécurité OpenAPI n'était pas déclarée dans la config FastAPI.
+**Fix** : dans `core/src/tik_core/main.py`, override de `app.openapi()` pour ajouter un security scheme `bearerAuth` (HTTP/Bearer), appliqué à tous les paths sauf `/api/v1/health` (déclaré public via la constante `PUBLIC_PATHS`).
+
+### Bug 6 — Healthchecks Docker `unhealthy` pour ingesters et scheduler
+
+**Symptôme** : `tik-ingesters` et `tik-scheduler` apparaissent comme `(unhealthy)` dans `docker compose ps`, alors qu'ils tournent bien.
+**Cause** : ils héritaient du `HEALTHCHECK` du Dockerfile commun (`curl http://localhost:8200/api/v1/health`), mais n'exposent pas l'API → curl échoue toujours.
+**Fix** : override du healthcheck dans `core/docker-compose.yml` pour ces deux services. Test via `python -c "import redis; redis.Redis(host='redis').ping()"` (Python est déjà installé, Redis est nécessaire au fonctionnement). Pas un heartbeat fin du process business mais suffisant pour le MVP.
+
+**Ces 6 fixes sont déjà appliqués dans le code actuel** (et poussés sur GitHub).
 
 ---
 
 ## 10. Bugs non résolus / améliorations à faire
 
-### Bouton Authorize manquant dans Swagger
+✅ **Pas de bug ouvert connu actuellement.**
 
-**Symptôme** : pas de bouton "Authorize" dans le Swagger UI à `http://localhost:8200/docs`, donc impossible de tester les endpoints authentifiés directement depuis Swagger.
-**Cause** : la sécurité OpenAPI n'est pas déclarée dans la config FastAPI.
-**Fix à faire** : dans `core/src/tik_core/main.py`, ajouter un schéma de sécurité Bearer dans la configuration OpenAPI (`HTTPBearer` depuis `fastapi.security`), et l'appliquer aux endpoints concernés via `Depends(security)`. Permettrait à l'utilisateur de cliquer "Authorize" dans Swagger et coller sa clé une fois pour toute la session.
-
-### Health check Docker absent sur certains services
-
-**Symptôme** : `tik-ingesters` et `tik-scheduler` apparaissent comme `unhealthy` dans `docker compose ps` car ils n'ont pas de healthcheck défini.
-**Fix à faire** : retirer le port 8200/tcp du Dockerfile pour ces deux services (ils ne servent pas l'API), ou ajouter un healthcheck simple genre vérifier que le process Python tourne.
+Cette section sera repeuplée si de nouveaux bugs sont identifiés. Pour les évolutions fonctionnelles à venir (nouvelles sources, engines flash/macro, NLP, backtest, etc.), voir la section 8 — *Couches encore non-implémentées*.
 
 ---
 
@@ -327,6 +349,6 @@ Si tu es une instance Claude qui prend ce projet en main pour la première fois 
 
 ---
 
-*Dernière mise à jour : 2026-04-21*
-*Version Tik : 0.1.0 (Core MVP livré)*
+*Dernière mise à jour : 2026-04-28*
+*Version Tik : 0.1.0 (Core MVP livré + évolutions Paquet 1.x)*
 *Mainteneur : utilisateur solo + assistant Claude via extension VS Code*
