@@ -35,11 +35,16 @@ async def publish_swing_signal(
     session: AsyncSession,
     redis: Redis,
     decision: SwingDecision,
-    veracity: float = 0.85,
+    veracity: float | None = None,
 ) -> Signal:
-    """Persiste et publie un signal swing."""
+    """Persiste et publie un signal swing.
+
+    La veracity provient de `decision.veracity` (calculée par l'engine via
+    cross-validation). Le paramètre `veracity` reste accepté pour override.
+    """
     signal_id = _make_signal_id("swing", decision.entity_id)
     expiry = datetime.utcnow() + EXPIRY_BY_HORIZON["swing"]
+    final_veracity = veracity if veracity is not None else decision.veracity
 
     signal = Signal(
         id=signal_id,
@@ -48,7 +53,7 @@ async def publish_swing_signal(
         horizon="swing",
         direction=decision.direction,
         confidence=decision.confidence,
-        veracity=veracity,
+        veracity=final_veracity,
         hypothesis=decision.hypothesis,
         counter_scenarios=decision.counter_scenarios,
         evidence=decision.evidence,

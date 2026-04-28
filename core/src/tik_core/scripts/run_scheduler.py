@@ -23,7 +23,7 @@ log = structlog.get_logger()
 
 async def _run_swing_btc(session_maker, redis) -> None:
     try:
-        decision = await analyze_swing_btc()
+        decision = await analyze_swing_btc(redis=redis)
         async with session_maker() as session:
             await publish_swing_signal(session, redis, decision)
             await session.commit()

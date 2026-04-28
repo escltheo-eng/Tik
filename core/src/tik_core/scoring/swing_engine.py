@@ -13,6 +13,7 @@ Cette implémentation est un POINT DE DÉPART. Elle sera enrichie par :
 - ML après collecte de données suffisantes
 """
 
+import json
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Literal
@@ -20,6 +21,7 @@ from typing import Literal
 import httpx
 import pandas as pd
 import structlog
+from redis.asyncio import Redis
 
 from tik_core.scoring.indicators import ema, macd, rsi
 
@@ -29,11 +31,15 @@ BINANCE_KLINES = "https://api.binance.com/api/v3/klines"
 YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 UA = "Mozilla/5.0 (compatible; TikBot/0.1)"
 
-# Binance = flux marché direct, Yahoo = agrégateur avec délai 15min.
+# Binance = flux marché direct, Yahoo = agrégateur avec délai 15min,
+# alternative.me FNG = sentiment indirect (donc score modéré).
 SOURCE_SCORES: dict[str, float] = {
     "binance_klines": 0.90,
     "yahoo_finance": 0.80,
+    "alternative_me_fng": 0.65,
 }
+
+FG_REDIS_KEY = "tik.sentiment.fear_greed"
 
 
 @dataclass
@@ -45,6 +51,7 @@ class SwingDecision:
     direction: Literal["long", "short", "neutral"]
     confidence: float                      # 0..1
     hypothesis: str
+    veracity: float = 0.85                 # ajustée par cross-validation (0..1)
     counter_scenarios: list[dict] = field(default_factory=list)
     evidence: list[dict] = field(default_factory=list)
     triggers: list[dict] = field(default_factory=list)
@@ -243,18 +250,107 @@ def _score_indicators(df: pd.DataFrame) -> SwingDecision:
     )
 
 
-async def analyze_swing_btc() -> SwingDecision:
-    """Analyse swing BTC/USDT sur 4h."""
+def _compute_fg_bias(value: int) -> tuple[float, str]:
+    """Mappe une valeur FG (0..100) à un bias contrarian (-1..+1) + zone.
+
+    -1 = sentiment très baissier sur le marché → contrarian SHORT bias.
+    +1 = panique extrême sur le marché → contrarian LONG bias.
+    """
+    if value <= 25:
+        return 1.0, "extreme_fear"
+    if value <= 45:
+        return 0.5, "fear"
+    if value <= 55:
+        return 0.0, "neutral"
+    if value <= 74:
+        return -0.5, "greed"
+    return -1.0, "extreme_greed"
+
+
+def _veracity_from_concordance(direction: str, fg_bias: float) -> float:
+    """Veracity dynamique selon concordance entre direction technique et bias FG.
+
+    Concordance = +1 (parfaite) → 0.95 ; -1 (opposition franche) → 0.70.
+    """
+    dir_score = {"long": 1.0, "short": -1.0, "neutral": 0.0}[direction]
+    concordance = dir_score * fg_bias
+    if concordance >= 0.9:
+        return 0.95
+    if concordance >= 0.4:
+        return 0.90
+    if concordance > -0.4:
+        return 0.85
+    if concordance > -0.9:
+        return 0.78
+    return 0.70
+
+
+async def _read_fear_greed(redis: Redis) -> dict | None:
+    raw = await redis.get(FG_REDIS_KEY)
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _apply_fear_greed_overlay(decision: SwingDecision, fg: dict) -> SwingDecision:
+    """Enrichit une décision swing avec l'overlay sentiment FG."""
+    try:
+        value = int(fg["value"])
+        classification = str(fg.get("classification", "unknown"))
+    except (KeyError, TypeError, ValueError):
+        return decision
+
+    bias, zone = _compute_fg_bias(value)
+    bias_label = (
+        "contrarian bull" if bias > 0
+        else "contrarian bear" if bias < 0
+        else "neutral"
+    )
+
+    decision.evidence.append(
+        {
+            "source": "alternative_me_fng",
+            "score": SOURCE_SCORES.get("alternative_me_fng", 0.5),
+            "fact": f"FG={value} ({classification})",
+        }
+    )
+    decision.triggers.append(
+        {
+            "type": "fear_greed",
+            "value": f"FG={value} ({zone} → {bias_label})",
+            "weight": 0.10,
+        }
+    )
+    decision.veracity = _veracity_from_concordance(decision.direction, bias)
+    return decision
+
+
+async def analyze_swing_btc(redis: Redis | None = None) -> SwingDecision:
+    """Analyse swing BTC/USDT sur 4h, avec overlay sentiment Fear & Greed si dispo."""
     df = await _fetch_binance_klines("BTCUSDT", "4h", 200)
     df.attrs["entity_id"] = "BTC"
     df.attrs["source"] = "binance_klines"
     decision = _score_indicators(df)
     decision.entity_id = "BTC"
+
+    if redis is not None:
+        fg = await _read_fear_greed(redis)
+        if fg is not None:
+            decision = _apply_fear_greed_overlay(decision, fg)
+        else:
+            log.info("swing.btc.fear_greed_unavailable")
+
     return decision
 
 
 async def analyze_swing_gold() -> SwingDecision:
-    """Analyse swing Gold (GC=F) sur 1h/60d."""
+    """Analyse swing Gold (GC=F) sur 1h/60d.
+
+    Pas d'overlay FG : l'index Fear & Greed est crypto-spécifique.
+    """
     df = await _fetch_yahoo_klines("GC=F", "1h", "60d")
     df.attrs["entity_id"] = "GOLD"
     df.attrs["source"] = "yahoo_finance"
