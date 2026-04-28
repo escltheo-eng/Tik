@@ -9,11 +9,15 @@ from contextlib import asynccontextmanager
 import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.utils import get_openapi
 
 from tik_core import __version__
 from tik_core.api import entities, feedback, health, signals, veracity, ws
 from tik_core.config import get_settings
 from tik_core.storage.database import close_engine, init_engine
+
+# Endpoints qui n'exigent pas de clé API (cadenas masqué dans Swagger).
+PUBLIC_PATHS: set[str] = {"/api/v1/health"}
 
 
 def _configure_logging(log_level: str) -> None:
@@ -84,6 +88,39 @@ def create_app() -> FastAPI:
     app.include_router(feedback.router, prefix=prefix, tags=["feedback"])
     app.include_router(ws.router, prefix=prefix, tags=["websocket"])
 
+    def custom_openapi() -> dict:
+        if app.openapi_schema:
+            return app.openapi_schema
+
+        schema = get_openapi(
+            title=app.title,
+            version=app.version,
+            description=app.description,
+            routes=app.routes,
+        )
+        schema.setdefault("components", {})["securitySchemes"] = {
+            "bearerAuth": {
+                "type": "http",
+                "scheme": "bearer",
+                "bearerFormat": "API Key",
+                "description": (
+                    "Clé API au format `tik_xxxxx`. "
+                    "Coller juste la clé brute, sans le préfixe `Bearer `."
+                ),
+            }
+        }
+        for path, path_item in schema.get("paths", {}).items():
+            if path in PUBLIC_PATHS:
+                continue
+            for method, operation in path_item.items():
+                if method.lower() not in {"get", "post", "put", "delete", "patch"}:
+                    continue
+                operation.setdefault("security", [{"bearerAuth": []}])
+
+        app.openapi_schema = schema
+        return schema
+
+    app.openapi = custom_openapi
     return app
 
 
