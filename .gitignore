@@ -49,3 +49,6 @@ web-build/
 
 # Docker
 *.dockerignore.local
+
+# Claude Code (worktrees temporaires des sessions)
+.claude/
