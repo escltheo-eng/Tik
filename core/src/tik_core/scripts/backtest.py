@@ -18,6 +18,7 @@ Limitations connues (à garder en tête) :
 
 import argparse
 import asyncio
+import random
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from statistics import mean
@@ -218,12 +219,148 @@ def print_report(results: list[dict], horizon_days: int, threshold_pct: float) -
     for r in sorted_by_gain[-3:]:
         print(f"   {r['entity']:5s} {r['direction']:8s} verac {r['veracity']:.2f} conf {r['confidence']:.2f} → delta {r['delta_pct']:+6.2f}% gain {gain_for_direction(r):+6.2f}% [{'OK' if r['success'] else 'KO'}]")
 
+    print_baselines_comparison(results, threshold_pct)
+
     print()
     print("=" * 70)
     print("  Note : ce backtest n'inclut pas les coûts de transaction")
     print("  (spread, fees, slippage). Les gains affichés sont théoriques.")
     print("=" * 70)
     print()
+
+
+# ----- Baselines -----
+
+def _gain_for(direction: str, delta_pct: float) -> float:
+    """Gain réel d'une décision selon la direction prise et le delta observé."""
+    if direction == "long":
+        return delta_pct
+    if direction == "short":
+        return -delta_pct
+    return -abs(delta_pct)  # neutral : on est précis si |delta| est petit
+
+
+def _success_for(direction: str, delta_pct: float, threshold_pct: float) -> bool:
+    if direction == "long":
+        return delta_pct > threshold_pct
+    if direction == "short":
+        return delta_pct < -threshold_pct
+    return abs(delta_pct) < threshold_pct
+
+
+def evaluate_constant_baseline(
+    results: list[dict],
+    direction: str,
+    threshold_pct: float,
+) -> dict:
+    """Évalue une stratégie qui prédit toujours la même direction."""
+    n = len(results)
+    if n == 0:
+        return {"name": f"always {direction}", "n": 0, "hit_rate": 0.0, "avg_gain": 0.0}
+    n_success = sum(1 for r in results if _success_for(direction, r["delta_pct"], threshold_pct))
+    avg_gain = mean(_gain_for(direction, r["delta_pct"]) for r in results)
+    return {
+        "name": f"always {direction}",
+        "n": n,
+        "n_success": n_success,
+        "hit_rate": n_success / n,
+        "avg_gain": avg_gain,
+    }
+
+
+def evaluate_random_baseline(
+    results: list[dict],
+    threshold_pct: float,
+    n_runs: int = 100,
+    seed: int = 42,
+) -> dict:
+    """Évalue une stratégie random uniforme (1/3 long, 1/3 short, 1/3 neutral)
+    moyennée sur n_runs simulations indépendantes pour stabiliser le résultat.
+    """
+    n = len(results)
+    if n == 0:
+        return {"name": "random", "n": 0, "hit_rate": 0.0, "avg_gain": 0.0}
+    rng = random.Random(seed)
+    choices = ("long", "short", "neutral")
+    total_success = 0
+    total_gain = 0.0
+    for _ in range(n_runs):
+        for r in results:
+            d = rng.choice(choices)
+            if _success_for(d, r["delta_pct"], threshold_pct):
+                total_success += 1
+            total_gain += _gain_for(d, r["delta_pct"])
+    total_evals = n * n_runs
+    return {
+        "name": "random (avg 100 runs)",
+        "n": n,
+        "n_success": total_success / n_runs,
+        "hit_rate": total_success / total_evals,
+        "avg_gain": total_gain / total_evals,
+    }
+
+
+def evaluate_tik_baseline(results: list[dict], threshold_pct: float) -> dict:
+    """Stats Tik (rappel pour la comparaison, recalculé sur les mêmes signaux)."""
+    n = len(results)
+    if n == 0:
+        return {"name": "Tik", "n": 0, "hit_rate": 0.0, "avg_gain": 0.0}
+    n_success = sum(1 for r in results if r["success"])
+    avg_gain = mean(_gain_for(r["direction"], r["delta_pct"]) for r in results)
+    return {
+        "name": "Tik",
+        "n": n,
+        "n_success": n_success,
+        "hit_rate": n_success / n,
+        "avg_gain": avg_gain,
+    }
+
+
+def print_baselines_comparison(results: list[dict], threshold_pct: float) -> None:
+    """Tableau comparatif Tik vs baselines naïfs, global puis par entity."""
+    if not results:
+        return
+
+    by_entity: dict[str, list[dict]] = defaultdict(list)
+    for r in results:
+        by_entity[r["entity"]].append(r)
+
+    strategies = [
+        ("Tik", evaluate_tik_baseline),
+        ("Random", lambda rs, t: evaluate_random_baseline(rs, t)),
+        ("Always LONG", lambda rs, t: evaluate_constant_baseline(rs, "long", t)),
+        ("Always SHORT", lambda rs, t: evaluate_constant_baseline(rs, "short", t)),
+        ("Always NEUTRAL", lambda rs, t: evaluate_constant_baseline(rs, "neutral", t)),
+    ]
+
+    print("\n--- Tik vs baselines naïfs ---")
+    print(f"\n{'Stratégie':<18} | {'Global':<22} | {'BTC':<22} | {'GOLD':<22}")
+    print(f"{'':18} | {'hit / n   gain':<22} | {'hit / n   gain':<22} | {'hit / n   gain':<22}")
+    print("-" * 92)
+
+    for name, fn in strategies:
+        global_stats = fn(results, threshold_pct)
+        btc_stats = fn(by_entity.get("BTC", []), threshold_pct)
+        gold_stats = fn(by_entity.get("GOLD", []), threshold_pct)
+
+        def fmt(s):
+            if s["n"] == 0:
+                return f"{'-/-':<10}{'':>12}"
+            n_succ = s.get("n_success", 0)
+            if isinstance(n_succ, float):
+                hit_str = f"{n_succ:.1f}/{s['n']}"
+            else:
+                hit_str = f"{n_succ}/{s['n']}"
+            return f"{hit_str:<10} {s['hit_rate'] * 100:5.1f}% {s['avg_gain']:+5.2f}%"
+
+        print(f"{name:<18} | {fmt(global_stats):<22} | {fmt(btc_stats):<22} | {fmt(gold_stats):<22}")
+
+    print()
+    print("Lecture du tableau :")
+    print("  - hit/n   = nombre de signaux réussis / nombre total")
+    print("  - %       = hit rate")
+    print("  - +X.XX%  = gain moyen par signal selon direction prédite")
+    print("  - Si Tik fait pire qu'un baseline, il n'apporte pas de valeur sur ce segment.")
 
 
 # ----- Main -----

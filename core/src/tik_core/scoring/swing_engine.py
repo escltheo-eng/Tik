@@ -203,11 +203,14 @@ def _score_indicators(df: pd.DataFrame) -> SwingDecision:
     if macd_bear_cross:
         bear_score += 0.15
 
-    # Direction
-    if bull_score > bear_score + 0.15:
+    # Direction. Seuil de "directionnalité" calibré à 0.08 après backtest
+    # 2026-04-29 : à 0.15, trop de signaux étaient classés "neutral" alors que
+    # le marché bougeait clairement (cf docs/backtest). À surveiller — un
+    # seuil trop bas peut générer des whipsaws en marché choppy.
+    if bull_score > bear_score + 0.08:
         direction: Literal["long", "short", "neutral"] = "long"
         confidence = min(bull_score, 1.0)
-    elif bear_score > bull_score + 0.15:
+    elif bear_score > bull_score + 0.08:
         direction = "short"
         confidence = min(bear_score, 1.0)
     else:
