@@ -113,6 +113,17 @@ Structure unique `Tik/` avec sous-dossiers `core/`, `sdk/` (à venir), `dashboar
 - `kill_switch_service.py` est la **seule** voie pour Tik de freezer Zeta
 - Un nouveau check **V16 optionnel** pourra être ajouté : "véracité globale Tik > seuil"
 
+### ADR-004 — Architecture multi-overlay pour la cross-validation
+
+Pattern **`_enrich_with_<source>(decision, data) -> bias | None`** dans `swing_engine.py` :
+
+- Chaque source de sentiment / macro retourne un bias dans `[-1, +1]` (contrarian pour FG/DXY, trend-following pour news), n'altère **jamais directement la veracity**
+- La fonction d'analyse principale (`analyze_swing_btc`, `analyze_swing_gold`) collecte tous les biais valides et calcule la veracity finale via `_veracity_from_concordance(direction_technique, moyenne_des_biais)`
+- Sources contradictoires se neutralisent (moyenne tend vers 0 → veracity = 0.85)
+- **Ajouter une source = 4 lignes dans `analyze_swing_xxx` + un nouveau helper**
+- Moyenne arithmétique non pondérée (à réviser plus tard avec données de backtest)
+- Implémentations actuelles : `_enrich_with_fear_greed` (BTC), `_enrich_with_cryptocompare` (BTC), `_enrich_with_dxy` (GOLD)
+
 ---
 
 ## 5. Garde-fous opérationnels (validés par l'utilisateur)

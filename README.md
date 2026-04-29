@@ -54,6 +54,8 @@ Voir `core/README.md` pour les détails.
 - [ADR-001 — Authentification pluggable](docs/adr/001-auth-pluggable.md)
 - [ADR-002 — Monorepo](docs/adr/002-monorepo.md)
 - [ADR-003 — Intégration Zeta sans bypass V01-V15](docs/adr/003-zeta-integration.md)
+- [ADR-004 — Architecture multi-overlay pour la cross-validation](docs/adr/004-multi-overlay-architecture.md)
+- [Comprendre Tik (guide pédagogique)](docs/comprendre_tik.md)
 
 ---
 
