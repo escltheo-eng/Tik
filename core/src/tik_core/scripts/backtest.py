@@ -29,7 +29,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from tik_core.config import get_settings
-from tik_core.storage.models import Signal
+from tik_core.storage.models import BacktestRun, Signal
 
 log = structlog.get_logger()
 
@@ -363,6 +363,106 @@ def print_baselines_comparison(results: list[dict], threshold_pct: float) -> Non
     print("  - Si Tik fait pire qu'un baseline, il n'apporte pas de valeur sur ce segment.")
 
 
+# ----- Persistance des runs -----
+
+def _build_run_stats(results: list[dict], threshold_pct: float) -> dict:
+    """Construit le dict des stats détaillées à stocker dans BacktestRun (JSON columns)."""
+    by_entity: dict[str, list[dict]] = defaultdict(list)
+    for r in results:
+        by_entity[r["entity"]].append(r)
+
+    stats_by_entity: dict[str, dict] = {}
+    for entity, rs in by_entity.items():
+        n = len(rs)
+        s = sum(1 for r in rs if r["success"])
+        avg = mean(_gain_for(r["direction"], r["delta_pct"]) for r in rs)
+        per_dir: dict[str, dict] = {}
+        for direction in ("long", "short", "neutral"):
+            drs = [r for r in rs if r["direction"] == direction]
+            if not drs:
+                continue
+            ds = sum(1 for r in drs if r["success"])
+            davg = mean(_gain_for(direction, r["delta_pct"]) for r in drs)
+            per_dir[direction] = {"n": len(drs), "n_success": ds, "hit_rate": ds / len(drs), "avg_gain_pct": davg}
+        stats_by_entity[entity] = {
+            "n": n,
+            "n_success": s,
+            "hit_rate": s / n if n else 0.0,
+            "avg_gain_pct": avg,
+            "by_direction": per_dir,
+        }
+
+    veracity_buckets: dict[float, list[dict]] = defaultdict(list)
+    for r in results:
+        veracity_buckets[round(r["veracity"], 2)].append(r)
+    stats_by_veracity = {
+        f"{bucket:.2f}": {
+            "n": len(rs),
+            "n_success": sum(1 for r in rs if r["success"]),
+            "hit_rate": sum(1 for r in rs if r["success"]) / len(rs),
+            "avg_gain_pct": mean(_gain_for(r["direction"], r["delta_pct"]) for r in rs),
+        }
+        for bucket, rs in veracity_buckets.items()
+    }
+
+    baselines = {
+        "tik": evaluate_tik_baseline(results, threshold_pct),
+        "random": evaluate_random_baseline(results, threshold_pct),
+        "always_long": evaluate_constant_baseline(results, "long", threshold_pct),
+        "always_short": evaluate_constant_baseline(results, "short", threshold_pct),
+        "always_neutral": evaluate_constant_baseline(results, "neutral", threshold_pct),
+    }
+    # Cleanup : "name" est redondant (clé du dict)
+    for v in baselines.values():
+        v.pop("name", None)
+
+    return {
+        "stats_by_entity": stats_by_entity,
+        "stats_by_veracity": stats_by_veracity,
+        "baselines": baselines,
+    }
+
+
+async def _persist_run(
+    session_maker,
+    *,
+    horizon_days: int,
+    threshold_pct: float,
+    total_signals: int,
+    n_eligible: int,
+    results: list[dict],
+    notes: str | None = None,
+) -> str:
+    """Insère un BacktestRun dans la DB et retourne son id."""
+    n_eval = len(results)
+    n_success = sum(1 for r in results if r["success"])
+    hit_rate = n_success / n_eval if n_eval else 0.0
+    avg_gain = (
+        mean(_gain_for(r["direction"], r["delta_pct"]) for r in results)
+        if n_eval else 0.0
+    )
+    stats = _build_run_stats(results, threshold_pct)
+
+    run = BacktestRun(
+        horizon_days=horizon_days,
+        threshold_pct=threshold_pct,
+        total_signals=total_signals,
+        n_eligible=n_eligible,
+        n_evaluated=n_eval,
+        hit_rate=hit_rate,
+        avg_gain_pct=avg_gain,
+        stats_by_entity=stats["stats_by_entity"],
+        stats_by_veracity=stats["stats_by_veracity"],
+        baselines=stats["baselines"],
+        notes=notes,
+    )
+    async with session_maker() as session:
+        session.add(run)
+        await session.commit()
+        await session.refresh(run)
+    return run.id
+
+
 # ----- Main -----
 
 async def main() -> None:
@@ -378,6 +478,17 @@ async def main() -> None:
         type=float,
         default=0.5,
         help="Seuil de variation en %% pour qu'un signal soit considéré comme réussi (défaut 0.5)",
+    )
+    parser.add_argument(
+        "--no-save",
+        action="store_true",
+        help="Ne pas archiver le run dans la table backtest_runs (utile en dev/debug).",
+    )
+    parser.add_argument(
+        "--notes",
+        type=str,
+        default=None,
+        help="Note libre stockée avec le run (ex: 'avant refactor seuil NEUTRAL').",
     )
     args = parser.parse_args()
 
@@ -422,6 +533,20 @@ async def main() -> None:
     print(f"  → {len(results)} évalués, {skipped} ignorés (prix non trouvé dans la fenêtre)")
 
     print_report(results, args.horizon_days, args.threshold)
+
+    if args.no_save:
+        print("(--no-save activé : run non archivé en DB)\n")
+    else:
+        run_id = await _persist_run(
+            session_maker,
+            horizon_days=args.horizon_days,
+            threshold_pct=args.threshold,
+            total_signals=len(signals),
+            n_eligible=len(eligible),
+            results=results,
+            notes=args.notes,
+        )
+        print(f"Run archivé en DB sous l'id : {run_id}\n")
 
     await engine.dispose()
 

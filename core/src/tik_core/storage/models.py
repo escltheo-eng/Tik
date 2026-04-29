@@ -137,6 +137,40 @@ class Feedback(Base):
     received_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class BacktestRun(Base):
+    """Résultat d'un run de backtest, archivé pour suivi temporel.
+
+    Permet de comparer dans le temps si Tik s'améliore (hit rate qui monte,
+    gain moyen qui s'améliore, veracity dynamique qui se déclenche, etc.).
+    """
+
+    __tablename__ = "backtest_runs"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid4())
+    )
+    run_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+    # Paramètres du run
+    horizon_days: Mapped[int] = mapped_column(Integer, nullable=False)
+    threshold_pct: Mapped[float] = mapped_column(Float, nullable=False)
+
+    # Stats globales
+    total_signals: Mapped[int] = mapped_column(Integer, nullable=False)
+    n_eligible: Mapped[int] = mapped_column(Integer, nullable=False)
+    n_evaluated: Mapped[int] = mapped_column(Integer, nullable=False)
+    hit_rate: Mapped[float] = mapped_column(Float, nullable=False)
+    avg_gain_pct: Mapped[float] = mapped_column(Float, nullable=False)
+
+    # Stats détaillées (JSON pour flexibilité)
+    stats_by_entity: Mapped[dict] = mapped_column(JSON, default=dict)
+    stats_by_veracity: Mapped[dict] = mapped_column(JSON, default=dict)
+    baselines: Mapped[dict] = mapped_column(JSON, default=dict)
+
+    # Métadonnées
+    notes: Mapped[str | None] = mapped_column(Text)
+
+
 class ApiKey(Base):
     """Clé API pour authentification des SDK clients.
 
