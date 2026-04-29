@@ -311,13 +311,22 @@ Plus une source est **directe et neutre**, plus son score est élevé. Une sourc
 - ✅ **Veracity dynamique** pour les deux actifs (entre 0.70 et 0.95) selon la concordance entre sources. Pour BTC, la veracity est calculée sur la **moyenne des biais sentiment** (architecture multi-overlay extensible)
 - ✅ Framework « paranoïa contrôlée » respecté : chaque signal contient hypothèse, contre-scénarios, evidence et triggers
 - ✅ Authentification API (clé Bearer), Swagger interactif, healthchecks Docker propres
+- ✅ **Script de backtest** (`docker compose exec core python -m tik_core.scripts.backtest`) qui mesure si Tik bat des stratégies naïves (Random, Always LONG, Always SHORT, Always NEUTRAL). Premier verdict 2026-04-29 : Tik bat Random largement, mais sur cette période bullish BTC, un naïf "toujours long" performait mieux. Conclusion : besoin de plus de données et de périodes variées.
 
 **Les deux actifs sont cross-validés multi-sources** avec veracity dynamique. Le pattern d'overlay est un composant réutilisable : ajouter une 4e source pour BTC (ou une 3e pour GOLD) = quelques lignes de code.
 
+### Premières leçons du backtest (à raffiner avec plus de données)
+
+- **Sweet spot horizon swing : 5 jours** (vs 3 jours initialement supposés)
+- **GOLD est slow-burn** : ses mouvements macro se matérialisent sur 5-7 jours, pas 1-3
+- **Le seuil NEUTRAL était trop large** (0.15) : il rangeait des situations directionnelles en "neutral" et ratait des opportunités. Recalibré à **0.08** le 2026-04-29
+- **L'edge réel de Tik se mesurera en cas de retournement de tendance** — pas en période trending forte où des trend-followers naïfs suffisent
+
 ### Pistes futures (par ordre de priorité)
 
-- **Backtest** : faire jouer les signaux passés contre les cours historiques pour mesurer si l'edge est réel
+- **Continuer à laisser tourner Tik 4-8 semaines** pour avoir au moins une période de retournement de tendance dans le backtest, et plus de signaux directionnels à veracity dynamique
 - **NLP avancé** : remplacer l'analyse par mots-clés (CryptoCompare) par un vrai modèle (FinBERT, ou un LLM local via Ollama) pour mieux gérer la négation, le contexte, le sarcasme
+- **Enrichir le backtest** : stockage des résultats en DB pour suivi temporel, comparaison veracity-by-bucket plus fine, lancement multi-horizons en une commande
 - **SDK Python** (`tik-sdk`) : package pip-installable pour brancher les bots clients (Zeta, Totem) sur Tik
 - **Dashboard Expo mobile** : visualisation temps réel des signaux sur smartphone
 - **Engines flash et macro** : étendre les horizons d'analyse (minutes pour flash, semaines pour macro)
@@ -344,4 +353,4 @@ Plus une source est **directe et neutre**, plus son score est élevé. Une sourc
 
 ---
 
-*Document rédigé le 2026-04-28, mis à jour le 2026-04-29 (ajout 3e source CryptoCompare pour BTC). Pour expliquer Tik à toute personne curieuse, sans prérequis technique.*
+*Document rédigé le 2026-04-28, mis à jour le 2026-04-29 (ajout 3e source CryptoCompare, premier backtest avec baselines, recalibrage seuil NEUTRAL). Pour expliquer Tik à toute personne curieuse, sans prérequis technique.*
