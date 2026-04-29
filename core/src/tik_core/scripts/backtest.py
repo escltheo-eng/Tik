@@ -149,17 +149,31 @@ def evaluate_signal(
     }
 
 
+# ----- Helpers de scoring partagés -----
+
+def _gain_for(direction: str, delta_pct: float) -> float:
+    """Gain réel d'une décision selon la direction prise et le delta observé.
+
+    - long : on profite du delta tel quel (positif si le marché monte)
+    - short : on profite de l'inverse du delta (positif si le marché baisse)
+    - neutral : on considère réussi un signal stable, donc précis quand |delta| est petit
+    """
+    if direction == "long":
+        return delta_pct
+    if direction == "short":
+        return -delta_pct
+    return -abs(delta_pct)
+
+
+def _success_for(direction: str, delta_pct: float, threshold_pct: float) -> bool:
+    if direction == "long":
+        return delta_pct > threshold_pct
+    if direction == "short":
+        return delta_pct < -threshold_pct
+    return abs(delta_pct) < threshold_pct
+
+
 # ----- Rapport -----
-
-def gain_for_direction(r: dict) -> float:
-    """Gain réel selon la direction prédite (positif = bon coup)."""
-    if r["direction"] == "long":
-        return r["delta_pct"]
-    if r["direction"] == "short":
-        return -r["delta_pct"]
-    # neutral : un signal "stable" est d'autant plus précis que le delta absolu est petit
-    return -abs(r["delta_pct"])
-
 
 def print_report(results: list[dict], horizon_days: int, threshold_pct: float) -> None:
     if not results:
@@ -173,7 +187,7 @@ def print_report(results: list[dict], horizon_days: int, threshold_pct: float) -
 
     n = len(results)
     n_success = sum(1 for r in results if r["success"])
-    avg_pnl = mean(gain_for_direction(r) for r in results)
+    avg_pnl = mean(_gain_for(r["direction"], r["delta_pct"]) for r in results)
     print(f"\nSignaux évalués : {n}")
     print(f"Hit rate global  : {n_success}/{n} = {n_success / n * 100:.1f}%")
     print(f"Gain moyen       : {avg_pnl:+.2f}% par signal (selon direction)")
@@ -187,7 +201,7 @@ def print_report(results: list[dict], horizon_days: int, threshold_pct: float) -
     for entity in sorted(by_entity.keys()):
         rs = by_entity[entity]
         s = sum(1 for r in rs if r["success"])
-        avg = mean(gain_for_direction(r) for r in rs)
+        avg = mean(_gain_for(r["direction"], r["delta_pct"]) for r in rs)
         print(f"\n{entity} : {len(rs)} signaux, hit {s}/{len(rs)} = {s / len(rs) * 100:.1f}%, gain moy {avg:+.2f}%")
         by_dir: dict[str, list[dict]] = defaultdict(list)
         for r in rs:
@@ -195,7 +209,7 @@ def print_report(results: list[dict], horizon_days: int, threshold_pct: float) -
         for direction in sorted(by_dir.keys()):
             drs = by_dir[direction]
             ds = sum(1 for r in drs if r["success"])
-            davg = mean(gain_for_direction(r) for r in drs)
+            davg = mean(_gain_for(r["direction"], r["delta_pct"]) for r in drs)
             print(f"   {direction:8s} : {len(drs):3d} signaux, hit {ds}/{len(drs)} = {ds / len(drs) * 100:5.1f}%, gain moy {davg:+.2f}%")
 
     # Par tranche de veracity
@@ -207,17 +221,26 @@ def print_report(results: list[dict], horizon_days: int, threshold_pct: float) -
     for bucket in sorted(veracity_buckets.keys()):
         rs = veracity_buckets[bucket]
         s = sum(1 for r in rs if r["success"])
-        avg = mean(gain_for_direction(r) for r in rs)
+        avg = mean(_gain_for(r["direction"], r["delta_pct"]) for r in rs)
         print(f"   veracity {bucket:.2f} : {len(rs):3d} signaux, hit {s:2d}/{len(rs):2d} = {s / len(rs) * 100:5.1f}%, gain moy {avg:+.2f}%")
 
     # Top best / worst
-    sorted_by_gain = sorted(results, key=gain_for_direction, reverse=True)
+    def _row(r: dict) -> str:
+        gain = _gain_for(r["direction"], r["delta_pct"])
+        status = "OK" if r["success"] else "KO"
+        return (
+            f"   {r['entity']:5s} {r['direction']:8s} verac {r['veracity']:.2f} "
+            f"conf {r['confidence']:.2f} → delta {r['delta_pct']:+6.2f}% "
+            f"gain {gain:+6.2f}% [{status}]"
+        )
+
+    sorted_by_gain = sorted(results, key=lambda r: _gain_for(r["direction"], r["delta_pct"]), reverse=True)
     print("\n--- Top 3 BEST (gain le plus élevé selon direction) ---")
     for r in sorted_by_gain[:3]:
-        print(f"   {r['entity']:5s} {r['direction']:8s} verac {r['veracity']:.2f} conf {r['confidence']:.2f} → delta {r['delta_pct']:+6.2f}% gain {gain_for_direction(r):+6.2f}% [{'OK' if r['success'] else 'KO'}]")
+        print(_row(r))
     print("\n--- Top 3 WORST (gain le plus négatif) ---")
     for r in sorted_by_gain[-3:]:
-        print(f"   {r['entity']:5s} {r['direction']:8s} verac {r['veracity']:.2f} conf {r['confidence']:.2f} → delta {r['delta_pct']:+6.2f}% gain {gain_for_direction(r):+6.2f}% [{'OK' if r['success'] else 'KO'}]")
+        print(_row(r))
 
     print_baselines_comparison(results, threshold_pct)
 
@@ -230,23 +253,6 @@ def print_report(results: list[dict], horizon_days: int, threshold_pct: float) -
 
 
 # ----- Baselines -----
-
-def _gain_for(direction: str, delta_pct: float) -> float:
-    """Gain réel d'une décision selon la direction prise et le delta observé."""
-    if direction == "long":
-        return delta_pct
-    if direction == "short":
-        return -delta_pct
-    return -abs(delta_pct)  # neutral : on est précis si |delta| est petit
-
-
-def _success_for(direction: str, delta_pct: float, threshold_pct: float) -> bool:
-    if direction == "long":
-        return delta_pct > threshold_pct
-    if direction == "short":
-        return delta_pct < -threshold_pct
-    return abs(delta_pct) < threshold_pct
-
 
 def evaluate_constant_baseline(
     results: list[dict],
