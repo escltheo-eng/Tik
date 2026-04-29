@@ -9,6 +9,7 @@ import redis.asyncio as aioredis
 import structlog
 
 from tik_core.aggregator.binance_ingester import BinanceTradesIngester
+from tik_core.aggregator.cryptocompare_ingester import CryptoCompareIngester
 from tik_core.aggregator.fear_greed_ingester import FearGreedIngester
 from tik_core.aggregator.fred_ingester import FredIngester
 from tik_core.aggregator.yahoo_ingester import YahooPoller
@@ -26,6 +27,12 @@ async def main() -> None:
         YahooPoller(redis, symbol="GC=F", entity_id="GOLD", interval_s=60),
         FredIngester(redis, api_key=settings.fred_api_key, interval_s=3600),
         FearGreedIngester(redis, interval_s=3600),
+        CryptoCompareIngester(
+            redis,
+            api_key=settings.cryptocompare_api_key,
+            currency="BTC",
+            interval_s=3600,
+        ),
     ]
 
     for ing in ingesters:

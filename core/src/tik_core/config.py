@@ -47,6 +47,7 @@ class Settings(BaseSettings):
     # --- APIs externes ---
     fred_api_key: str = ""
     cryptopanic_api_key: str = ""
+    cryptocompare_api_key: str = ""
 
     # --- Scoring defaults ---
     default_min_veracity: float = 0.70

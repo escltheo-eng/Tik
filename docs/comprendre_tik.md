@@ -267,8 +267,9 @@ Toutes les sources ne se valent pas. Tik leur attribue un **score de crédibilit
 | Source | Score | Justification |
 |---|---|---|
 | Binance (cours BTC) | **0.90** | Flux marché direct, données temps réel non altérées |
-| FRED (données macro US) | **0.85** | Source officielle de la Réserve Fédérale, fiabilité gouvernementale |
+| FRED (données macro US, dont DXY) | **0.85** | Source officielle de la Réserve Fédérale, fiabilité gouvernementale |
 | Yahoo Finance (cours GOLD) | **0.80** | Agrégateur grand public avec délai 15 min, fiable mais moins direct |
+| CryptoCompare news (CoinDesk Data) | **0.70** | Signal direct mais textuel, sentiment dérivé via mots-clés sur titres |
 | Fear & Greed Index | **0.65** | Sentiment indirect, agrégat d'agrégats, plus interprétatif |
 
 Plus une source est **directe et neutre**, plus son score est élevé. Une source qui interprète déjà des données (comme un indice de sentiment) a un score plus modéré.
@@ -305,22 +306,22 @@ Plus une source est **directe et neutre**, plus son score est élevé. Une sourc
 
 ### Ce qui marche aujourd'hui
 
-- ✅ Analyse swing pour **BTC** (toutes les 15 min) avec 2 sources : **Binance** (cours) + **Fear & Greed Index** (sentiment)
-- ✅ Analyse swing pour **GOLD** (toutes les 30 min) avec 2 sources : **Yahoo Finance** (cours) + **FRED DXY** (macro)
-- ✅ **Veracity dynamique** pour les deux actifs (entre 0.70 et 0.95) selon la concordance entre sources
+- ✅ Analyse swing pour **BTC** (toutes les 15 min) avec **3 sources** : **Binance** (cours) + **Fear & Greed Index** (sentiment crypto contrarian) + **CryptoCompare news** (sentiment textuel trend-following)
+- ✅ Analyse swing pour **GOLD** (toutes les 30 min) avec **2 sources** : **Yahoo Finance** (cours) + **FRED DXY** (macro)
+- ✅ **Veracity dynamique** pour les deux actifs (entre 0.70 et 0.95) selon la concordance entre sources. Pour BTC, la veracity est calculée sur la **moyenne des biais sentiment** (architecture multi-overlay extensible)
 - ✅ Framework « paranoïa contrôlée » respecté : chaque signal contient hypothèse, contre-scénarios, evidence et triggers
 - ✅ Authentification API (clé Bearer), Swagger interactif, healthchecks Docker propres
 
-**Les deux actifs (BTC et GOLD) sont au même niveau d'intelligence** : multi-sources, cross-validés, veracity dynamique. Le pattern d'overlay est devenu un composant réutilisable.
+**Les deux actifs sont cross-validés multi-sources** avec veracity dynamique. Le pattern d'overlay est un composant réutilisable : ajouter une 4e source pour BTC (ou une 3e pour GOLD) = quelques lignes de code.
 
 ### Pistes futures (par ordre de priorité)
 
-- **CryptoPanic** : 3e source pour BTC (news + sentiment textuel temps réel) — étendrait encore la cross-validation
 - **Backtest** : faire jouer les signaux passés contre les cours historiques pour mesurer si l'edge est réel
+- **NLP avancé** : remplacer l'analyse par mots-clés (CryptoCompare) par un vrai modèle (FinBERT, ou un LLM local via Ollama) pour mieux gérer la négation, le contexte, le sarcasme
 - **SDK Python** (`tik-sdk`) : package pip-installable pour brancher les bots clients (Zeta, Totem) sur Tik
 - **Dashboard Expo mobile** : visualisation temps réel des signaux sur smartphone
 - **Engines flash et macro** : étendre les horizons d'analyse (minutes pour flash, semaines pour macro)
-- **Pipeline NLP** : analyse automatique du sentiment des news textuelles via un modèle local (Ollama)
+- **Sources additionnelles** : Reddit (r/CryptoCurrency), Polymarket (marchés prédictifs), on-chain metrics (Glassnode), CFTC COT report pour GOLD
 - **Module anti-fake-news** : cross-validation entre sources de news pour détecter les rumeurs/manipulations
 
 ---
@@ -343,4 +344,4 @@ Plus une source est **directe et neutre**, plus son score est élevé. Une sourc
 
 ---
 
-*Document rédigé le 2026-04-28, mis à jour le 2026-04-29. Pour expliquer Tik à toute personne curieuse, sans prérequis technique.*
+*Document rédigé le 2026-04-28, mis à jour le 2026-04-29 (ajout 3e source CryptoCompare pour BTC). Pour expliquer Tik à toute personne curieuse, sans prérequis technique.*

@@ -32,15 +32,18 @@ YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 UA = "Mozilla/5.0 (compatible; TikBot/0.1)"
 
 # Binance = flux marché direct ; Yahoo = agrégateur délai 15min ;
-# alternative.me FNG = sentiment indirect ; FRED DTWEXBGS = source officielle US gov.
+# alternative.me FNG = sentiment indirect ; FRED DTWEXBGS = source officielle US gov ;
+# CryptoCompare news = signal direct des news mais peut être manipulé/biaisé.
 SOURCE_SCORES: dict[str, float] = {
     "binance_klines": 0.90,
     "yahoo_finance": 0.80,
     "alternative_me_fng": 0.65,
     "fred_dtwexbgs": 0.85,
+    "cryptocompare_news": 0.70,
 }
 
 FG_REDIS_KEY = "tik.sentiment.fear_greed"
+CC_REDIS_KEY_TPL = "tik.sentiment.cryptocompare.{currency}"
 FRED_OBS_URL = "https://api.stlouisfed.org/fred/series/observations"
 DXY_SERIES_ID = "DTWEXBGS"
 
@@ -298,13 +301,17 @@ async def _read_fear_greed(redis: Redis) -> dict | None:
         return None
 
 
-def _apply_fear_greed_overlay(decision: SwingDecision, fg: dict) -> SwingDecision:
-    """Enrichit une décision swing avec l'overlay sentiment FG."""
+def _enrich_with_fear_greed(decision: SwingDecision, fg: dict) -> float | None:
+    """Ajoute evidence + trigger FG à la décision, retourne le bias contrarian.
+
+    NE set PAS la veracity — responsabilité du caller pour combiner plusieurs sources.
+    Retourne None si la donnée FG est invalide.
+    """
     try:
         value = int(fg["value"])
         classification = str(fg.get("classification", "unknown"))
     except (KeyError, TypeError, ValueError):
-        return decision
+        return None
 
     bias, zone = _compute_fg_bias(value)
     bias_label = (
@@ -327,24 +334,106 @@ def _apply_fear_greed_overlay(decision: SwingDecision, fg: dict) -> SwingDecisio
             "weight": 0.10,
         }
     )
-    decision.veracity = _veracity_from_concordance(decision.direction, bias)
-    return decision
+    return bias
+
+
+async def _read_cryptocompare(redis: Redis, currency: str = "BTC") -> dict | None:
+    raw = await redis.get(CC_REDIS_KEY_TPL.format(currency=currency.lower()))
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _compute_cryptocompare_bias(score: float) -> tuple[float, str]:
+    """Mappe un score net CryptoCompare (-1..+1) à un bias trend-following.
+
+    Contrairement à FG (contrarian), pour les news on suit le sentiment :
+    news bullish → bias bull, news bearish → bias bear.
+    """
+    if score >= 0.4:
+        return 1.0, "news_strong_bullish"
+    if score >= 0.1:
+        return 0.5, "news_bullish"
+    if score <= -0.4:
+        return -1.0, "news_strong_bearish"
+    if score <= -0.1:
+        return -0.5, "news_bearish"
+    return 0.0, "news_neutral"
+
+
+def _enrich_with_cryptocompare(decision: SwingDecision, cc: dict) -> float | None:
+    """Ajoute evidence + trigger CryptoCompare news, retourne le bias trend-following."""
+    try:
+        score = float(cc["score"])
+        n_articles = int(cc.get("n_articles", 0))
+        n_bull = int(cc.get("n_bullish", 0))
+        n_bear = int(cc.get("n_bearish", 0))
+    except (KeyError, TypeError, ValueError):
+        return None
+
+    bias, zone = _compute_cryptocompare_bias(score)
+    bias_label = (
+        "bull" if bias > 0
+        else "bear" if bias < 0
+        else "neutral"
+    )
+
+    decision.evidence.append(
+        {
+            "source": "cryptocompare_news",
+            "score": SOURCE_SCORES.get("cryptocompare_news", 0.5),
+            "fact": f"News score={score:+.2f} (bull={n_bull}, bear={n_bear} on {n_articles} BTC titles)",
+        }
+    )
+    decision.triggers.append(
+        {
+            "type": "news_sentiment",
+            "value": f"News {zone} (score={score:+.2f}) → {bias_label}",
+            "weight": 0.10,
+        }
+    )
+    return bias
 
 
 async def analyze_swing_btc(redis: Redis | None = None) -> SwingDecision:
-    """Analyse swing BTC/USDT sur 4h, avec overlay sentiment Fear & Greed si dispo."""
+    """Analyse swing BTC/USDT sur 4h, avec overlays Fear & Greed + CryptoCompare news.
+
+    La veracity finale est calculée sur la concordance moyenne des biais des sources
+    de sentiment disponibles. Permet d'ajouter facilement de nouvelles sources.
+    """
     df = await _fetch_binance_klines("BTCUSDT", "4h", 200)
     df.attrs["entity_id"] = "BTC"
     df.attrs["source"] = "binance_klines"
     decision = _score_indicators(df)
     decision.entity_id = "BTC"
 
-    if redis is not None:
-        fg = await _read_fear_greed(redis)
-        if fg is not None:
-            decision = _apply_fear_greed_overlay(decision, fg)
-        else:
-            log.info("swing.btc.fear_greed_unavailable")
+    if redis is None:
+        return decision
+
+    bias_signals: list[float] = []
+
+    fg = await _read_fear_greed(redis)
+    if fg is not None:
+        bias = _enrich_with_fear_greed(decision, fg)
+        if bias is not None:
+            bias_signals.append(bias)
+    else:
+        log.info("swing.btc.fear_greed_unavailable")
+
+    cc = await _read_cryptocompare(redis, currency="BTC")
+    if cc is not None:
+        bias = _enrich_with_cryptocompare(decision, cc)
+        if bias is not None:
+            bias_signals.append(bias)
+    else:
+        log.info("swing.btc.cryptocompare_unavailable")
+
+    if bias_signals:
+        combined_bias = sum(bias_signals) / len(bias_signals)
+        decision.veracity = _veracity_from_concordance(decision.direction, combined_bias)
 
     return decision
 
