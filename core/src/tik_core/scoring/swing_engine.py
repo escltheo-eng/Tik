@@ -501,11 +501,15 @@ def _compute_dxy_bias(history: list[dict]) -> tuple[float, str, float, float] | 
     return 0.0, "dxy_stable", recent, past
 
 
-def _apply_dxy_overlay(decision: SwingDecision, history: list[dict]) -> SwingDecision:
-    """Enrichit une décision swing GOLD avec l'overlay corrélation DXY."""
+def _enrich_with_dxy(decision: SwingDecision, history: list[dict]) -> float | None:
+    """Ajoute evidence + trigger DXY à la décision, retourne le bias contrarian.
+
+    NE set PAS la veracity — responsabilité du caller pour combiner plusieurs sources.
+    Retourne None si la donnée DXY est insuffisante.
+    """
     result = _compute_dxy_bias(history)
     if result is None:
-        return decision
+        return None
     bias, zone, recent, past = result
     var_pct = (recent - past) / past * 100
 
@@ -529,12 +533,16 @@ def _apply_dxy_overlay(decision: SwingDecision, history: list[dict]) -> SwingDec
             "weight": 0.10,
         }
     )
-    decision.veracity = _veracity_from_concordance(decision.direction, bias)
-    return decision
+    return bias
 
 
 async def analyze_swing_gold(fred_api_key: str | None = None) -> SwingDecision:
-    """Analyse swing Gold (GC=F) sur 1h/60d, avec overlay corrélation DXY si dispo.
+    """Analyse swing Gold (GC=F) sur 1h/60d, avec overlays multi-sources.
+
+    Aujourd'hui : seule la corrélation DXY (FRED) est utilisée. La veracity
+    finale est calculée sur la moyenne des biais disponibles — même architecture
+    que analyze_swing_btc, prête à accueillir une 2e source GOLD plus tard
+    (ex: CFTC COT report, on-chain miners, etc.).
 
     Pas d'overlay Fear & Greed : l'index FG est crypto-spécifique.
     """
@@ -544,11 +552,21 @@ async def analyze_swing_gold(fred_api_key: str | None = None) -> SwingDecision:
     decision = _score_indicators(df)
     decision.entity_id = "GOLD"
 
-    if fred_api_key:
-        history = await _fetch_dxy_history(fred_api_key)
-        if history:
-            decision = _apply_dxy_overlay(decision, history)
-        else:
-            log.info("swing.gold.dxy_unavailable")
+    if not fred_api_key:
+        return decision
+
+    bias_signals: list[float] = []
+
+    history = await _fetch_dxy_history(fred_api_key)
+    if history:
+        bias = _enrich_with_dxy(decision, history)
+        if bias is not None:
+            bias_signals.append(bias)
+    else:
+        log.info("swing.gold.dxy_unavailable")
+
+    if bias_signals:
+        combined_bias = sum(bias_signals) / len(bias_signals)
+        decision.veracity = _veracity_from_concordance(decision.direction, combined_bias)
 
     return decision

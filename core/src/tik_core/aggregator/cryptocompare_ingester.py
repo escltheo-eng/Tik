@@ -29,25 +29,48 @@ REDIS_TTL_S = 2 * 3600  # 2h, plus court que FG car les news bougent vite
 
 # Listes volontairement courtes mais distinctives (anglais uniquement, on
 # filtre lang=EN sur l'API). Match par "le mot apparaît dans le titre".
+# Enrichies 2026-04-29 après analyse de 20 titres réels qui montraient des
+# faux négatifs (bottoming = bull contextuel, ease = bull) et faux positifs
+# (lowers target = bear malgré "outperform" en suite).
 BULLISH_KEYWORDS: set[str] = {
+    # Direction haussière classique
     "surge", "surges", "soar", "soars", "rally", "rallies", "jump", "jumps",
     "gain", "gains", "rise", "rises", "rising", "rose", "climb", "climbs",
     "advance", "rebound", "rebounds", "recover", "recovers", "skyrocket",
+    # Marqueurs bull / accumulation
     "bull", "bullish", "moon", "pump", "breakthrough", "milestone", "record",
-    "ath", "high", "approval", "approve", "approved", "adopt", "adoption",
-    "launch", "launches", "partnership", "boost", "boosts", "outperform",
-    "optimistic", "win", "wins", "winning", "uptrend", "bullrun",
+    "ath", "high", "uptrend", "bullrun",
+    "accumulate", "accumulating", "accumulation",
+    # Retournement / fin de baisse
+    "bottom", "bottoming", "ease", "eases", "easing",
+    "support", "supports", "supporting",
+    # Régulation / institutionnels positifs
+    "approval", "approve", "approved", "adopt", "adoption",
+    "launch", "launches", "partnership", "upgrade", "upgrades",
+    # Sentiment positif
+    "boost", "boosts", "outperform", "optimistic", "optimism",
+    "confidence", "win", "wins", "winning",
 }
 
 BEARISH_KEYWORDS: set[str] = {
+    # Direction baissière classique
     "crash", "crashes", "plunge", "plunges", "dump", "dumps", "drop", "drops",
     "fall", "falls", "fell", "collapse", "collapses", "tumble", "tumbles",
     "slump", "slumps", "slip", "slips", "slide", "slides", "decline", "declines",
-    "bear", "bearish", "fear", "panic", "selloff", "sell-off", "loss", "losses",
-    "ban", "banned", "crackdown", "hack", "hacked", "exploit", "scam", "fraud",
-    "breach", "liquidation", "liquidate", "liquidated", "bankruptcy",
-    "insolvency", "warning", "concern", "concerns", "risk", "risks", "crisis",
-    "downtrend", "pessimistic", "weak", "weakness",
+    # Marqueurs bear
+    "bear", "bearish", "fear", "panic", "selloff", "sell-off",
+    "loss", "losses", "downtrend", "pessimistic", "weak", "weakness",
+    # Révisions à la baisse / downgrades
+    "lowers", "lowered", "cuts", "downgrade", "downgrades",
+    # Régulation / juridique négatifs
+    "ban", "banned", "crackdown", "lawsuit", "sue", "sued", "sues",
+    "prison", "arrest", "arrested", "shutdown",
+    "delist", "delisted", "freeze", "freezes",
+    # Crime / risque
+    "hack", "hacked", "exploit", "scam", "fraud", "breach",
+    "liquidation", "liquidate", "liquidated", "bankruptcy", "insolvency",
+    # Sentiment négatif
+    "warning", "concern", "concerns", "risk", "risks", "crisis",
 }
 
 # Tokeniseur simple : extrait les "mots" (lettres + apostrophes/tirets internes).
