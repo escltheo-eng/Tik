@@ -20,7 +20,7 @@ import {
   TikError,
 } from './errors';
 
-export const USER_AGENT = 'tik-dashboard/0.3.0';
+export const USER_AGENT = 'tik-dashboard/0.4.0';
 export const API_PREFIX = '/api/v1';
 const DEFAULT_TIMEOUT_MS = 10_000;
 

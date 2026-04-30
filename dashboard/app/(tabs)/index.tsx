@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, StyleSheet } from 'react-native';
 
+import { KpiCard } from '@/components/dashboard/kpi-card';
+import { MiniSparkline } from '@/components/dashboard/mini-sparkline';
+import { VeracityGauge } from '@/components/dashboard/veracity-gauge';
 import ParallaxScrollView from '@/components/parallax-scroll-view';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -10,8 +13,9 @@ import { getHealth } from '@/src/api/endpoints';
 import { TikError } from '@/src/api/errors';
 import { Health } from '@/src/api/types';
 import { useAuth } from '@/src/auth/AuthContext';
+import { useDashboardKpis } from '@/src/hooks/useDashboardKpis';
 
-const REFRESH_INTERVAL_MS = 30_000;
+const HEALTH_REFRESH_INTERVAL_MS = 30_000;
 
 interface HealthState {
   status: 'idle' | 'loading' | 'ok' | 'error';
@@ -20,19 +24,44 @@ interface HealthState {
   lastChecked: Date | null;
 }
 
-const INITIAL_STATE: HealthState = {
+const INITIAL_HEALTH: HealthState = {
   status: 'idle',
   data: null,
   error: null,
   lastChecked: null,
 };
 
+function timeAgo(iso: string): string {
+  const then = new Date(iso).getTime();
+  const now = Date.now();
+  const diffMs = Math.max(0, now - then);
+  const sec = Math.floor(diffMs / 1000);
+  if (sec < 60) return `il y a ${sec} s`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `il y a ${min} min`;
+  const hours = Math.floor(min / 60);
+  if (hours < 24) return `il y a ${hours} h`;
+  const days = Math.floor(hours / 24);
+  return `il y a ${days} j`;
+}
+
+function directionColor(direction: string): string {
+  switch (direction) {
+    case 'long':
+      return '#27ae60';
+    case 'short':
+      return '#c0392b';
+    default:
+      return '#7f8c8d';
+  }
+}
+
 export default function HomeScreen() {
   const { client, baseUrl, signOut } = useAuth();
   const colorScheme = useColorScheme() ?? 'light';
   const palette = Colors[colorScheme];
 
-  const [healthState, setHealthState] = useState<HealthState>(INITIAL_STATE);
+  const [healthState, setHealthState] = useState<HealthState>(INITIAL_HEALTH);
 
   const checkHealth = useCallback(async () => {
     setHealthState((s) => ({ ...s, status: 'loading' }));
@@ -47,19 +76,19 @@ export default function HomeScreen() {
 
   useEffect(() => {
     let cancelled = false;
-    const run = async () => {
-      if (cancelled) return;
-      await checkHealth();
-    };
-    void run();
+    void (async () => {
+      if (!cancelled) await checkHealth();
+    })();
     const id = setInterval(() => {
-      if (!cancelled) void run();
-    }, REFRESH_INTERVAL_MS);
+      if (!cancelled) void checkHealth();
+    }, HEALTH_REFRESH_INTERVAL_MS);
     return () => {
       cancelled = true;
       clearInterval(id);
     };
   }, [checkHealth]);
+
+  const kpis = useDashboardKpis();
 
   const statusLabel: Record<HealthState['status'], string> = {
     idle: 'Inactif',
@@ -67,12 +96,34 @@ export default function HomeScreen() {
     ok: 'Connecté',
     error: 'Hors ligne',
   };
-
   const statusColor: Record<HealthState['status'], string> = {
     idle: palette.icon,
     loading: palette.icon,
     ok: '#27ae60',
     error: '#c0392b',
+  };
+
+  const renderEntityCard = (entity: string) => {
+    const last = kpis.lastSignalByEntity[entity];
+    if (!last) {
+      return (
+        <KpiCard
+          key={entity}
+          title={entity}
+          value="—"
+          subtitle="Pas de signal sur 24 h"
+        />
+      );
+    }
+    return (
+      <KpiCard
+        key={entity}
+        title={`${entity} • ${last.horizon}`}
+        value={last.direction.toUpperCase()}
+        accent={directionColor(last.direction)}
+        subtitle={`conf ${(last.confidence * 100).toFixed(0)}% · verac ${(last.veracity * 100).toFixed(0)}% · ${timeAgo(last.timestamp)}`}
+      />
+    );
   };
 
   return (
@@ -93,38 +144,23 @@ export default function HomeScreen() {
 
       <ThemedView style={[styles.statusBox, { borderColor: statusColor[healthState.status] }]}>
         <ThemedView style={styles.statusHeader}>
-          <ThemedText type="subtitle">État du core</ThemedText>
+          <ThemedText type="defaultSemiBold">État du core</ThemedText>
           {healthState.status === 'loading' ? (
             <ActivityIndicator size="small" />
           ) : (
             <ThemedView style={[styles.dot, { backgroundColor: statusColor[healthState.status] }]} />
           )}
         </ThemedView>
-
         <ThemedText style={{ color: statusColor[healthState.status], fontWeight: '600' }}>
           {statusLabel[healthState.status]}
         </ThemedText>
-
         {healthState.status === 'ok' && healthState.data ? (
-          <ThemedText>
-            Version {healthState.data.version} — env {healthState.data.env}
+          <ThemedText style={styles.metaText}>
+            v{healthState.data.version} · env {healthState.data.env} · {baseUrl}
           </ThemedText>
-        ) : null}
-
-        {healthState.status === 'error' && healthState.error ? (
+        ) : healthState.status === 'error' && healthState.error ? (
           <ThemedText style={styles.errorText}>{healthState.error}</ThemedText>
         ) : null}
-
-        <ThemedText style={styles.metaText}>
-          URL : {baseUrl}
-        </ThemedText>
-
-        {healthState.lastChecked ? (
-          <ThemedText style={styles.metaText}>
-            Dernière vérification : {healthState.lastChecked.toLocaleTimeString()}
-          </ThemedText>
-        ) : null}
-
         <Pressable
           onPress={() => void checkHealth()}
           disabled={healthState.status === 'loading'}
@@ -139,13 +175,68 @@ export default function HomeScreen() {
         </Pressable>
       </ThemedView>
 
+      <ThemedView style={[styles.card, { borderColor: palette.icon }]}>
+        {kpis.veracity ? (
+          <>
+            <VeracityGauge value={kpis.veracity.global_veracity} status={kpis.veracity.status} />
+            <ThemedText style={styles.metaText}>
+              {kpis.veracity.sources_count_active} source(s) active(s) · dernière computation {timeAgo(kpis.veracity.last_computed)}
+            </ThemedText>
+          </>
+        ) : kpis.veracityError ? (
+          <ThemedText style={styles.errorText}>Veracity indisponible : {kpis.veracityError}</ThemedText>
+        ) : kpis.loading ? (
+          <ActivityIndicator />
+        ) : (
+          <ThemedText style={{ opacity: 0.6 }}>Veracity inconnue.</ThemedText>
+        )}
+      </ThemedView>
+
+      <ThemedView style={styles.section}>
+        <ThemedText type="subtitle">Activité 24 h</ThemedText>
+        <ThemedView style={styles.kpiRow}>
+          <KpiCard title="Total" value={kpis.signalsByHorizon.total.toString()} subtitle="signaux émis" />
+          <KpiCard title="Flash" value={kpis.signalsByHorizon.flash.toString()} />
+        </ThemedView>
+        <ThemedView style={styles.kpiRow}>
+          <KpiCard title="Swing" value={kpis.signalsByHorizon.swing.toString()} />
+          <KpiCard title="Macro" value={kpis.signalsByHorizon.macro.toString()} />
+        </ThemedView>
+        {kpis.signals24hError ? (
+          <ThemedText style={styles.errorText}>
+            Activité indisponible : {kpis.signals24hError}
+          </ThemedText>
+        ) : null}
+      </ThemedView>
+
+      <ThemedView style={styles.section}>
+        <ThemedText type="subtitle">Dernier signal par actif</ThemedText>
+        <ThemedView style={styles.kpiRow}>
+          {renderEntityCard('BTC')}
+          {renderEntityCard('GOLD')}
+        </ThemedView>
+      </ThemedView>
+
+      <ThemedView style={[styles.card, { borderColor: palette.icon }]}>
+        <ThemedText type="defaultSemiBold">Tendance veracity (12 derniers)</ThemedText>
+        <MiniSparkline
+          values={kpis.veracitySeries}
+          color={Colors.light.tint}
+          thresholds={[0.7, 0.85]}
+          emptyMessage="Pas assez de signaux pour tracer"
+        />
+        <ThemedView style={styles.legendRow}>
+          <ThemedText style={styles.legendItem}>tirets : seuils 0,70 et 0,85</ThemedText>
+        </ThemedView>
+      </ThemedView>
+
       <ThemedView style={styles.section}>
         <ThemedText type="subtitle">Roadmap Paquet 3</ThemedText>
         <ThemedText>
           • Session 1 : Bootstrap & Hello World (livrée){'\n'}
-          • Session 2 : Auth + client HTTP vers le core (en cours){'\n'}
-          • Session 3 : WebSocket live + Signals Feed{'\n'}
-          • Session 4 : KPIs Home + Charts{'\n'}
+          • Session 2 : Auth + client HTTP (livrée){'\n'}
+          • Session 3 : WebSocket + Signals Feed (livrée){'\n'}
+          • Session 4 : KPIs Home + Charts (en cours){'\n'}
           • Session 5 : Notifications push + polish
         </ThemedText>
       </ThemedView>
@@ -161,7 +252,7 @@ export default function HomeScreen() {
 
       <ThemedView style={styles.versionBox}>
         <ThemedText style={styles.versionText}>
-          tik-dashboard v0.3.0 — Expo SDK 54 — plateforme {Platform.OS}
+          tik-dashboard v0.4.0 — Expo SDK 54 — plateforme {Platform.OS}
         </ThemedText>
       </ThemedView>
     </ParallaxScrollView>
@@ -219,9 +310,28 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontWeight: '600',
   },
-  section: {
-    gap: 8,
+  card: {
     marginTop: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderRadius: 12,
+    gap: 8,
+  },
+  section: {
+    gap: 12,
+    marginTop: 16,
+  },
+  kpiRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  legendRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+  },
+  legendItem: {
+    fontSize: 11,
+    opacity: 0.5,
   },
   signOutBtn: {
     marginTop: 24,
