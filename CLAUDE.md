@@ -122,7 +122,7 @@ Pattern **`_enrich_with_<source>(decision, data) -> bias | None`** dans `swing_e
 - Sources contradictoires se neutralisent (moyenne tend vers 0 → veracity = 0.85)
 - **Ajouter une source = 4 lignes dans `analyze_swing_xxx` + un nouveau helper**
 - Moyenne arithmétique non pondérée (à réviser plus tard avec données de backtest)
-- Implémentations actuelles : `_enrich_with_fear_greed` (BTC), `_enrich_with_cryptocompare` (BTC), `_enrich_with_dxy` (GOLD), `_enrich_with_cot` (GOLD)
+- Implémentations actuelles : `_enrich_with_fear_greed` (BTC), `_enrich_with_cryptocompare` (BTC), `_enrich_with_dxy` (GOLD)
 
 ---
 
@@ -228,10 +228,6 @@ Améliorations apportées au Core après le déploiement initial.
   - Sweet spot horizon = 5 jours (79% hit rate vs 61% à 1-3j et 40% à 7j)
   - GOLD SHORT est slow-burn : 27% à 1-3j → 100% à 5-7j (les mouvements macro de l'or se matérialisent sur la semaine)
 - **Révision du seuil de directionnalité dans `_score_indicators`** : passage de **0.15 à 0.08** suite au backtest. Avant, des signaux avec `bull_score - bear_score` autour de 0.10 étaient classés à tort en `neutral` et rataient des opportunités directionnelles claires. Validation runtime immédiate : BTC est passé de `neutral conf 0.10 verac 0.85` à `long conf 0.25 verac 0.90` — la **veracity dynamique se déclenche enfin** sur les signaux réels (concordance partielle techniques ↔ sentiment cross-validé). À surveiller : un seuil trop bas peut générer des whipsaws en marché choppy.
-
-#### Du 2026-04-30
-
-- **Cross-validation GOLD ↔ CFTC COT (Managed Money positioning)** : 2e overlay GOLD ajouté pour valider l'extensibilité du pattern multi-overlay (cf ADR-004). Nouveau ingester `core/src/tik_core/aggregator/cftc_cot_ingester.py` (couche 5, positioning institutionnel) qui polle l'API publique CFTC Socrata (pas de clé requise) toutes les 24h. Récupère le dernier rapport Disaggregated Futures Only sur GOLD COMEX (code `088691`) et stocke `mm_long`, `mm_short`, `mm_net_pct` dans Redis sous `tik.macro.cftc_cot.gold` (TTL 10j car la donnée est hebdomadaire avec lag 3-4j). Côté swing : helpers `_compute_cot_bias` + `_enrich_with_cot` avec **lecture contrarian** : positions Managed Money très net long → bias bear sur GOLD (foule trop unanime → smart money sortira), symétrique pour le net short. Mapping en 5 zones (`mm_extreme_long/net_long/balanced/net_short/extreme_short`) basé sur `net_pct = (long - short) / (long + short)`. `analyze_swing_gold` accepte maintenant `redis` en plus de `fred_api_key` (signature symétrique avec `analyze_swing_btc`). `SOURCE_SCORES` enrichi : `cftc_cot=0.80` (source officielle US gov, score un peu plus prudent que FRED à cause du lag). Limite assumée : seuils absolus, à raffiner via z-score 52 semaines une fois qu'on aura collecté l'historique. Tests : 95 tests unitaires passent (16 nouveaux pour `_compute_cot_bias`, ~6 pour `_enrich_with_cot`, 8 pour `_fetch` de l'ingester via `httpx.MockTransport`).
 
 ### Paquet 2 — SDK Python : ⏳ À FAIRE
 
@@ -380,9 +376,48 @@ Si tu es une instance Claude qui prend ce projet en main pour la première fois 
 8. **Préférer les solutions sans installation lourde** (utiliser Docker, éviter Homebrew)
 9. **Fournir des fichiers complets à remplacer** plutôt que des diffs partiels (l'utilisateur ne maîtrise pas l'indentation Python)
 10. **Vérifier l'état avant chaque action** (où en est l'utilisateur, quel terminal, quel dossier)
+11. **Synchroniser systématiquement worktree → repo principal** (cf section 14)
 
 ---
 
-*Dernière mise à jour : 2026-04-30*
+## 14. Workflow worktree Claude Code — IMPORTANT
+
+Claude Code peut travailler dans un **worktree Git** isolé situé dans `.claude/worktrees/<nom>/`. C'est une copie temporaire du projet où l'instance Claude fait ses modifications, **séparée du repo principal** que GitHub Desktop voit (`/Users/siku/Documents/Tik/`).
+
+**Conséquence importante** : tant que l'instance Claude n'a pas **copié explicitement** un fichier modifié du worktree vers le repo principal, **GitHub Desktop ne le voit pas** et l'utilisateur ne peut pas le commit/push.
+
+### Règle pour toute instance Claude
+
+**À chaque modification d'un fichier dans le worktree** (via `Edit`, `Write`, ou autre), tu DOIS immédiatement le copier vers le repo principal avec une commande Bash :
+
+```bash
+cp /Users/siku/Documents/Tik/.claude/worktrees/<TON_WORKTREE>/<chemin_relatif> /Users/siku/Documents/Tik/<chemin_relatif>
+```
+
+**Ne demande JAMAIS à l'utilisateur de faire cette copie manuellement.** Le faire toi-même via le Bash tool est la règle. Sinon l'utilisateur croit que le travail est fait et essaie de push via GitHub Desktop, mais GitHub Desktop ne voit rien — frustration assurée.
+
+### Exception
+
+Si tu créés un fichier dans le repo principal directement (chemin absolu commençant par `/Users/siku/Documents/Tik/` sans `.claude/worktrees/`), tu n'as pas besoin de copier — il est déjà au bon endroit.
+
+### Vérification que tu fais bien
+
+Après une session, l'utilisateur ouvre GitHub Desktop et **doit voir tous les fichiers modifiés** dans la liste des changements. S'il ne voit que des dossiers `.claude/worktrees/` ou « rien à committer » alors qu'on a fait des modifs, c'est que la sync n'a pas été faite. **C'est un bug bloquant**.
+
+### Pattern recommandé pour les modifications en lot
+
+À la fin d'une étape avec plusieurs fichiers touchés, faire un `cp` groupé via une seule commande Bash :
+
+```bash
+WORKTREE=/Users/siku/Documents/Tik/.claude/worktrees/<nom>
+MAIN=/Users/siku/Documents/Tik
+cp "$WORKTREE/path1" "$MAIN/path1"
+cp "$WORKTREE/path2" "$MAIN/path2"
+# etc.
+```
+
+---
+
+*Dernière mise à jour : 2026-04-29*
 *Version Tik : 0.1.0 (Core MVP livré + évolutions Paquet 1.x)*
 *Mainteneur : utilisateur solo + assistant Claude via extension VS Code*
