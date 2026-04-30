@@ -1,4 +1,4 @@
-"""Scheduler standalone — lance les analyses swing périodiquement.
+"""Scheduler standalone — lance les analyses swing et flash périodiquement.
 
 Usage : `python -m tik_core.scripts.run_scheduler`
 
@@ -8,6 +8,7 @@ dans le même container via docker-compose (scaling vertical suffisant).
 """
 
 import asyncio
+from datetime import datetime
 
 import redis.asyncio as aioredis
 import structlog
@@ -15,7 +16,13 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from tik_core.config import get_settings
-from tik_core.scoring.publisher import publish_swing_signal
+from tik_core.scoring.flash_engine import (
+    analyze_flash_btc,
+    read_last_emission,
+    record_emission,
+    should_emit,
+)
+from tik_core.scoring.publisher import publish_flash_signal, publish_swing_signal
 from tik_core.scoring.swing_engine import analyze_swing_btc, analyze_swing_gold
 
 log = structlog.get_logger()
@@ -39,6 +46,31 @@ async def _run_swing_gold(session_maker, redis, fred_api_key) -> None:
             await session.commit()
     except Exception as exc:  # noqa: BLE001
         log.error("scheduler.swing_gold.error", error=str(exc))
+
+
+async def _run_flash_btc(session_maker, redis) -> None:
+    try:
+        decision = await analyze_flash_btc(redis=redis)
+
+        # Skip si données stale (l'engine a renvoyé confidence=0 + hypothesis explicite)
+        if decision.confidence == 0.0 and "stale" in decision.hypothesis.lower():
+            log.info("scheduler.flash_btc.skipped_stale_feed")
+            return
+
+        last = await read_last_emission(redis, decision.entity_id)
+        if not should_emit(decision, last, datetime.utcnow()):
+            log.info(
+                "scheduler.flash_btc.skipped_no_change",
+                direction=decision.direction,
+            )
+            return
+
+        async with session_maker() as session:
+            await publish_flash_signal(session, redis, decision)
+            await session.commit()
+        await record_emission(redis, decision.entity_id, decision)
+    except Exception as exc:  # noqa: BLE001
+        log.error("scheduler.flash_btc.error", error=str(exc))
 
 
 async def main() -> None:
@@ -69,6 +101,16 @@ async def main() -> None:
         max_instances=1,
         coalesce=True,
     )
+    # Flash BTC : toutes les 5 min (émission conditionnelle gérée dans le job)
+    scheduler.add_job(
+        _run_flash_btc,
+        "interval",
+        minutes=5,
+        args=[session_maker, redis],
+        id="flash_btc",
+        max_instances=1,
+        coalesce=True,
+    )
 
     scheduler.start()
     log.info("scheduler.started", jobs=[j.id for j in scheduler.get_jobs()])
@@ -76,6 +118,7 @@ async def main() -> None:
     # Premier run immédiat
     await _run_swing_btc(session_maker, redis)
     await _run_swing_gold(session_maker, redis, settings.fred_api_key)
+    await _run_flash_btc(session_maker, redis)
 
     try:
         while True:

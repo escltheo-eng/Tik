@@ -5,13 +5,13 @@ Utilisé par les engines (swing, flash, macro) pour émettre un signal.
 
 import json
 import uuid
-from dataclasses import asdict
 from datetime import datetime, timedelta
 
 import structlog
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from tik_core.scoring.flash_engine import FlashDecision
 from tik_core.scoring.swing_engine import SwingDecision
 from tik_core.storage.models import Signal
 
@@ -31,26 +31,27 @@ def _make_signal_id(horizon: str, entity_id: str) -> str:
     return f"TIK-{horizon.upper()}-{entity_id}-{ts}-{short}"
 
 
-async def publish_swing_signal(
+async def _publish_signal(
     session: AsyncSession,
     redis: Redis,
-    decision: SwingDecision,
+    decision: SwingDecision | FlashDecision,
+    horizon: str,
     veracity: float | None = None,
 ) -> Signal:
-    """Persiste et publie un signal swing.
+    """Logique commune de persistance + publication, partagée swing/flash/macro.
 
     La veracity provient de `decision.veracity` (calculée par l'engine via
     cross-validation). Le paramètre `veracity` reste accepté pour override.
     """
-    signal_id = _make_signal_id("swing", decision.entity_id)
-    expiry = datetime.utcnow() + EXPIRY_BY_HORIZON["swing"]
+    signal_id = _make_signal_id(horizon, decision.entity_id)
+    expiry = datetime.utcnow() + EXPIRY_BY_HORIZON[horizon]
     final_veracity = veracity if veracity is not None else decision.veracity
 
     signal = Signal(
         id=signal_id,
         timestamp=decision.timestamp,
         entity_id=decision.entity_id,
-        horizon="swing",
+        horizon=horizon,
         direction=decision.direction,
         confidence=decision.confidence,
         veracity=final_veracity,
@@ -66,7 +67,6 @@ async def publish_swing_signal(
     session.add(signal)
     await session.flush()
 
-    # Publie sur Redis
     payload = {
         "id": signal.id,
         "timestamp": signal.timestamp.isoformat(),
@@ -95,3 +95,23 @@ async def publish_swing_signal(
         confidence=signal.confidence,
     )
     return signal
+
+
+async def publish_swing_signal(
+    session: AsyncSession,
+    redis: Redis,
+    decision: SwingDecision,
+    veracity: float | None = None,
+) -> Signal:
+    """Persiste et publie un signal swing."""
+    return await _publish_signal(session, redis, decision, "swing", veracity)
+
+
+async def publish_flash_signal(
+    session: AsyncSession,
+    redis: Redis,
+    decision: FlashDecision,
+    veracity: float | None = None,
+) -> Signal:
+    """Persiste et publie un signal flash."""
+    return await _publish_signal(session, redis, decision, "flash", veracity)
