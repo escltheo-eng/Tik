@@ -131,7 +131,7 @@ export default function HomeScreen() {
           style={({ pressed }) => [
             styles.refreshBtn,
             {
-              backgroundColor: palette.tint,
+              backgroundColor: Colors.light.tint,
               opacity: pressed || healthState.status === 'loading' ? 0.7 : 1,
             },
           ]}>
@@ -161,7 +161,7 @@ export default function HomeScreen() {
 
       <ThemedView style={styles.versionBox}>
         <ThemedText style={styles.versionText}>
-          tik-dashboard v0.2.0 — Expo SDK 54 — plateforme {Platform.OS}
+          tik-dashboard v0.3.0 — Expo SDK 54 — plateforme {Platform.OS}
         </ThemedText>
       </ThemedView>
     </ParallaxScrollView>

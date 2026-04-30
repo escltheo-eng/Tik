@@ -136,7 +136,7 @@ export default function LoginScreen() {
           disabled={submitting}
           style={({ pressed }) => [
             styles.submit,
-            { backgroundColor: palette.tint, opacity: pressed || submitting ? 0.7 : 1 },
+            { backgroundColor: Colors.light.tint, opacity: pressed || submitting ? 0.7 : 1 },
           ]}>
           {submitting ? (
             <ActivityIndicator color="#ffffff" />

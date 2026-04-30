@@ -24,6 +24,15 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="signals"
+        options={{
+          title: 'Signals',
+          tabBarIcon: ({ color }) => (
+            <IconSymbol size={28} name="chart.line.uptrend.xyaxis" color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="about"
         options={{
           title: 'About',
