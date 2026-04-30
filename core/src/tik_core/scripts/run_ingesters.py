@@ -9,6 +9,7 @@ import redis.asyncio as aioredis
 import structlog
 
 from tik_core.aggregator.binance_ingester import BinanceTradesIngester
+from tik_core.aggregator.cftc_cot_ingester import CftcCotIngester
 from tik_core.aggregator.cryptocompare_ingester import CryptoCompareIngester
 from tik_core.aggregator.fear_greed_ingester import FearGreedIngester
 from tik_core.aggregator.fred_ingester import FredIngester
@@ -33,6 +34,7 @@ async def main() -> None:
             currency="BTC",
             interval_s=3600,
         ),
+        CftcCotIngester(redis, interval_s=24 * 3600),
     ]
 
     for ing in ingesters:

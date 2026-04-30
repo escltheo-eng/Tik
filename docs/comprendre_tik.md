@@ -244,7 +244,97 @@ counter_scenarios :
 
 ---
 
-## 9. Le framework « paranoïa contrôlée »
+## 9. Troisième exemple — La 2e source pour GOLD : CFTC COT (Managed Money)
+
+Ajouté le 2026-04-30. **Le but de cet ajout, au-delà de l'utilité métier, était de tester en grandeur réelle que le pattern multi-overlay marche bien quand on enchaîne plusieurs sources sur la même entity.** Spoiler : oui, et l'ajout n'a coûté qu'un nouvel ingester + un helper + 5 lignes dans la fonction d'analyse GOLD.
+
+### C'est quoi le rapport CFTC COT ?
+
+Le **CFTC COT** (Commitments of Traders) est un rapport hebdomadaire publié **chaque vendredi par la Commodity Futures Trading Commission**, l'autorité américaine qui régule les marchés de matières premières. Il révèle **qui détient quoi** sur les marchés de futures — pas le grand public, mais les **gros acteurs** (banques, hedge funds, producteurs, exportateurs).
+
+Pour l'or, le rapport publie chaque semaine combien de contrats sont :
+- détenus en **achat (long)** par chaque catégorie d'acteur
+- détenus en **vente (short)** par chaque catégorie d'acteur
+
+Les catégories sont notamment : producteurs/négociants, swap dealers, **Managed Money** (= hedge funds, fonds spéculatifs, CTAs), autres.
+
+C'est gratuit, public, sans clé API. Tik récupère les données via l'endpoint Socrata officiel : `https://publicreporting.cftc.gov/resource/72hh-3qpy.json`.
+
+### Pourquoi spécifiquement « Managed Money » ?
+
+Parce que les Managed Money sont la catégorie qui parie le plus activement sur la **direction du prix** (les producteurs et utilisateurs industriels eux couvrent leurs activités physiques, ils ne font pas vraiment de paris directionnels). Si tu veux savoir « qu'est-ce que la smart money pense de l'or ? », tu regardes les Managed Money.
+
+### La métrique : `mm_net_pct`
+
+Tik calcule chaque semaine :
+
+```
+mm_net_pct = (longs MM - shorts MM) / (longs MM + shorts MM)
+```
+
+Cette valeur va de -1 (tous shorts) à +1 (tous longs). Exemple récent du 2026-04-21 :
+
+```
+Longs Managed Money  : 123 681 contrats
+Shorts Managed Money :  30 705 contrats
+mm_net_pct           : (123681 - 30705) / (123681 + 30705) = +0.60
+```
+
+Donc 60 % de plus de longs que de shorts. La smart money est **fortement haussière** sur l'or.
+
+### Logique contrarian (encore !)
+
+Comme pour le Fear & Greed et le DXY, Tik applique une **lecture contrarian** au COT, mais le raisonnement est légèrement différent. Au lieu de regarder une foule anonyme (Fear & Greed), on regarde des **professionnels qui ont parié leur capital** :
+
+- **Si les Managed Money sont massivement net long** (ex : `mm_net_pct ≥ +0.7`), ça veut dire que **tout le monde au sommet est sur la même ligne**. Quand une foule de pros est unanime, c'est souvent **le moment où ils vont commencer à sortir** (prendre leurs bénéfices). Donc Tik émet un **bias bear sur GOLD**.
+- **Si les Managed Money sont massivement net short** (ex : `mm_net_pct ≤ -0.7`), même raisonnement inversé : ils ont déjà parié à la baisse, le retournement à la hausse est probable. Bias **bull sur GOLD**.
+- **Entre les deux**, pas d'avis fort.
+
+| `mm_net_pct` | Zone | Bias contrarian sur GOLD |
+|---|---|---|
+| ≥ +0.7 | `mm_extreme_long` (foule très longue) | **Bear** (vendre) |
+| +0.4 à +0.7 | `mm_net_long` | Bear léger |
+| -0.4 à +0.4 | `mm_balanced` | Pas d'avis |
+| -0.7 à -0.4 | `mm_net_short` | Bull léger (acheter) |
+| ≤ -0.7 | `mm_extreme_short` (foule très shorte) | **Bull** (acheter) |
+
+### La donnée n'est PAS temps réel
+
+Important à comprendre : le COT est une **donnée hebdomadaire avec un lag de 3-4 jours** :
+- Mardi : les positions sont enregistrées
+- Vendredi 15:30 (ET) : le rapport est publié
+
+Donc Tik récupère un instantané qui a 3-4 jours de retard. C'est **une vue de fond, pas un signal de réaction rapide**. C'est pour ça que le score de crédibilité de cette source est de **0.80** (un peu en dessous du DXY à 0.85, qui est mis à jour plus fréquemment).
+
+### Que se passe-t-il pour GOLD maintenant ?
+
+Avant le 2026-04-30, GOLD avait **1 seule source de cross-validation** (DXY). Maintenant, il en a **2** : DXY + COT.
+
+Le mécanisme s'enchaîne automatiquement :
+
+1. Tik calcule le **bias DXY** (par exemple `+0.5` = bull GOLD)
+2. Tik calcule le **bias COT** (par exemple `-1.0` = bear GOLD, foule très longue à fuir)
+3. Tik fait la **moyenne des deux biais** : `(0.5 + (-1.0)) / 2 = -0.25` → contradiction nette
+4. Avec une moyenne proche de 0, la veracity reste à **0.85** (la valeur de base) — *« les sources se contredisent, pas d'avis tranché »*
+
+Et si les deux sources s'accordent :
+
+1. Bias DXY = `+1.0` (dollar en chute → bull GOLD)
+2. Bias COT = `+1.0` (Managed Money très shorts → contrarian bull GOLD)
+3. Moyenne = `+1.0`
+4. Si direction technique = LONG → **veracity = 0.95** (forte concordance)
+
+C'est exactement la même mécanique que pour BTC, juste avec d'autres sources. **Le pattern fonctionne pour n'importe quelle entity du moment qu'on lui ajoute un helper qui retourne un bias entre -1 et +1.**
+
+### Limite assumée
+
+Les seuils contrarian (`±0.4`, `±0.7`) sont **absolus**. Or les Managed Money sont **structurellement net long sur GOLD** (souvent 60-80 % en moyenne historique sur plusieurs années). Donc Tik pourrait ne jamais déclencher le bias bull (il faudrait que les MM passent net short, ce qui est rare). À surveiller dans 3-6 semaines : si les biais COT sont systématiquement à `-0.5` ou `-1.0`, on recalibrera en **z-score 52 semaines** (= "où en sont les MM par rapport à leur propre normale historique ?") plutôt qu'en seuils absolus.
+
+Une routine planifiée a déjà été créée pour faire cette analyse automatiquement le 2026-05-21.
+
+---
+
+## 10. Le framework « paranoïa contrôlée »
 
 Une règle de fer dans Tik : **chaque signal doit toujours contenir au moins 2 contre-scénarios.** Tik se demande systématiquement *« qu'est-ce qui pourrait me faire avoir tort ? »*.
 
@@ -260,7 +350,7 @@ Tik livre ces contre-scénarios **avec chaque signal**. Le bot consommateur (Zet
 
 ---
 
-## 10. La hiérarchie des sources (« scores de crédibilité »)
+## 11. La hiérarchie des sources (« scores de crédibilité »)
 
 Toutes les sources ne se valent pas. Tik leur attribue un **score de crédibilité** entre 0 et 1, qui pèse sur la confiance globale du signal :
 
@@ -269,6 +359,7 @@ Toutes les sources ne se valent pas. Tik leur attribue un **score de crédibilit
 | Binance (cours BTC) | **0.90** | Flux marché direct, données temps réel non altérées |
 | FRED (données macro US, dont DXY) | **0.85** | Source officielle de la Réserve Fédérale, fiabilité gouvernementale |
 | Yahoo Finance (cours GOLD) | **0.80** | Agrégateur grand public avec délai 15 min, fiable mais moins direct |
+| CFTC COT (positioning Managed Money) | **0.80** | Source officielle US gov, mais hebdomadaire avec lag 3-4 jours |
 | CryptoCompare news (CoinDesk Data) | **0.70** | Signal direct mais textuel, sentiment dérivé via mots-clés sur titres |
 | Fear & Greed Index | **0.65** | Sentiment indirect, agrégat d'agrégats, plus interprétatif |
 
@@ -276,7 +367,7 @@ Plus une source est **directe et neutre**, plus son score est élevé. Une sourc
 
 ---
 
-## 11. Pour résumer
+## 12. Pour résumer
 
 ### Ce que Tik fait pour chaque signal
 
@@ -299,21 +390,22 @@ Plus une source est **directe et neutre**, plus son score est élevé. Une sourc
 - **Veracity dynamique** : la fiabilité bouge en fonction de la cohérence des sources
 - **Paranoïa contrôlée** : Tik admet toujours qu'il peut avoir tort
 - **Transparence totale** : chaque signal expose ses preuves et ses doutes
+- **Architecture extensible** : ajouter une nouvelle source = 1 helper + quelques lignes, pas un refactor
 
 ---
 
-## 12. État actuel et pistes futures
+## 13. État actuel et pistes futures
 
 ### Ce qui marche aujourd'hui
 
 - ✅ Analyse swing pour **BTC** (toutes les 15 min) avec **3 sources** : **Binance** (cours) + **Fear & Greed Index** (sentiment crypto contrarian) + **CryptoCompare news** (sentiment textuel trend-following)
-- ✅ Analyse swing pour **GOLD** (toutes les 30 min) avec **2 sources** : **Yahoo Finance** (cours) + **FRED DXY** (macro)
-- ✅ **Veracity dynamique** pour les deux actifs (entre 0.70 et 0.95) selon la concordance entre sources. Pour BTC, la veracity est calculée sur la **moyenne des biais sentiment** (architecture multi-overlay extensible)
+- ✅ Analyse swing pour **GOLD** (toutes les 30 min) avec **3 sources** : **Yahoo Finance** (cours) + **FRED DXY** (macro contrarian) + **CFTC COT Managed Money** (positioning institutionnel contrarian)
+- ✅ **Veracity dynamique** pour les deux actifs (entre 0.70 et 0.95) selon la concordance entre sources, calculée via la **moyenne des biais** disponibles (architecture multi-overlay extensible et désormais validée sur les deux entities)
 - ✅ Framework « paranoïa contrôlée » respecté : chaque signal contient hypothèse, contre-scénarios, evidence et triggers
 - ✅ Authentification API (clé Bearer), Swagger interactif, healthchecks Docker propres
 - ✅ **Script de backtest** (`docker compose exec core python -m tik_core.scripts.backtest`) qui mesure si Tik bat des stratégies naïves (Random, Always LONG, Always SHORT, Always NEUTRAL). Premier verdict 2026-04-29 : Tik bat Random largement, mais sur cette période bullish BTC, un naïf "toujours long" performait mieux. Conclusion : besoin de plus de données et de périodes variées.
 
-**Les deux actifs sont cross-validés multi-sources** avec veracity dynamique. Le pattern d'overlay est un composant réutilisable : ajouter une 4e source pour BTC (ou une 3e pour GOLD) = quelques lignes de code.
+**Les deux actifs sont cross-validés multi-sources** avec veracity dynamique. Le pattern d'overlay est un composant réutilisable : ajouter une 4e source pour BTC (ou une 4e pour GOLD) = 1 nouveau helper + 5 lignes dans la fonction d'analyse, tests inclus.
 
 ### Premières leçons du backtest (à raffiner avec plus de données)
 
@@ -321,16 +413,18 @@ Plus une source est **directe et neutre**, plus son score est élevé. Une sourc
 - **GOLD est slow-burn** : ses mouvements macro se matérialisent sur 5-7 jours, pas 1-3
 - **Le seuil NEUTRAL était trop large** (0.15) : il rangeait des situations directionnelles en "neutral" et ratait des opportunités. Recalibré à **0.08** le 2026-04-29
 - **L'edge réel de Tik se mesurera en cas de retournement de tendance** — pas en période trending forte où des trend-followers naïfs suffisent
+- **Le vrai test du pattern multi-overlay sur GOLD aura lieu le 2026-05-21** : analyse automatique programmée pour vérifier si les seuils COT contrarian se déclenchent correctement après 3 semaines de collecte (ou s'il faut les recalibrer en z-score 52 semaines, vu que les Managed Money sont structurellement net long sur l'or)
 
 ### Pistes futures (par ordre de priorité)
 
 - **Continuer à laisser tourner Tik 4-8 semaines** pour avoir au moins une période de retournement de tendance dans le backtest, et plus de signaux directionnels à veracity dynamique
+- **Recalibrer ou non les seuils COT** après l'analyse automatique du 2026-05-21
 - **NLP avancé** : remplacer l'analyse par mots-clés (CryptoCompare) par un vrai modèle (FinBERT, ou un LLM local via Ollama) pour mieux gérer la négation, le contexte, le sarcasme
 - **Enrichir le backtest** : stockage des résultats en DB pour suivi temporel, comparaison veracity-by-bucket plus fine, lancement multi-horizons en une commande
 - **SDK Python** (`tik-sdk`) : package pip-installable pour brancher les bots clients (Zeta, Totem) sur Tik
 - **Dashboard Expo mobile** : visualisation temps réel des signaux sur smartphone
 - **Engines flash et macro** : étendre les horizons d'analyse (minutes pour flash, semaines pour macro)
-- **Sources additionnelles** : Reddit (r/CryptoCurrency), Polymarket (marchés prédictifs), on-chain metrics (Glassnode), CFTC COT report pour GOLD
+- **Sources additionnelles** : Reddit (r/CryptoCurrency), Polymarket (marchés prédictifs), on-chain metrics (Glassnode), ETF flows GOLD
 - **Module anti-fake-news** : cross-validation entre sources de news pour détecter les rumeurs/manipulations
 
 ---
@@ -345,12 +439,14 @@ Plus une source est **directe et neutre**, plus son score est élevé. Une sourc
 - **Evidence** : les preuves factuelles (chiffres, indicateurs, valeurs) sur lesquelles le signal se base
 - **Triggers** : les éléments déclencheurs de la décision avec leur poids
 - **Counter-scenarios** : les scénarios alternatifs qui pourraient invalider le signal
-- **Source** : un fournisseur de données externe (Binance, Yahoo, FRED, etc.)
+- **Source** : un fournisseur de données externe (Binance, Yahoo, FRED, CFTC, etc.)
 - **Cross-validation** : la confrontation de plusieurs sources pour évaluer la fiabilité
 - **Bias contrarian** : la logique « faire l'inverse de la foule » (acheter quand tout le monde panique, vendre quand tout le monde est euphorique)
 - **RSI / EMA / MACD** : trois indicateurs techniques classiques utilisés en analyse boursière
 - **DXY / DTWEXBGS** : un indice mesurant la force du dollar US
+- **CFTC COT** : Commitments of Traders, rapport hebdomadaire publié par le régulateur américain CFTC qui révèle les positions des grands acteurs sur les marchés de futures
+- **Managed Money** : catégorie d'acteurs dans le rapport COT — hedge funds, fonds spéculatifs, CTAs (= la « smart money » directionnelle)
 
 ---
 
-*Document rédigé le 2026-04-28, mis à jour le 2026-04-29 (ajout 3e source CryptoCompare, premier backtest avec baselines, recalibrage seuil NEUTRAL). Pour expliquer Tik à toute personne curieuse, sans prérequis technique.*
+*Document rédigé le 2026-04-28, mis à jour le 2026-04-29 (ajout 3e source CryptoCompare, premier backtest avec baselines, recalibrage seuil NEUTRAL), puis le 2026-04-30 (ajout 2e source GOLD : CFTC COT Managed Money, validation grandeur réelle du pattern multi-overlay sur GOLD). Pour expliquer Tik à toute personne curieuse, sans prérequis technique.*

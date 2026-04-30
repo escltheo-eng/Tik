@@ -12,9 +12,11 @@ import pytest
 from tik_core.scoring.swing_engine import (
     SOURCE_SCORES,
     SwingDecision,
+    _compute_cot_bias,
     _compute_cryptocompare_bias,
     _compute_dxy_bias,
     _compute_fg_bias,
+    _enrich_with_cot,
     _enrich_with_cryptocompare,
     _enrich_with_dxy,
     _enrich_with_fear_greed,
@@ -325,3 +327,117 @@ def test_enrich_with_dxy_insufficient_history():
     bias = _enrich_with_dxy(decision, history)
     assert bias is None
     assert decision.evidence == []
+
+
+# ----- _compute_cot_bias -----
+
+@pytest.mark.parametrize(
+    "net_pct, expected_bias, expected_zone",
+    [
+        # Coeur des 5 zones
+        (0.85, -1.0, "mm_extreme_long"),
+        (0.55, -0.5, "mm_net_long"),
+        (0.0, 0.0, "mm_balanced"),
+        (-0.55, 0.5, "mm_net_short"),
+        (-0.85, 1.0, "mm_extreme_short"),
+        # Bornes (>= 0.7 = extreme_long, etc.)
+        (0.7, -1.0, "mm_extreme_long"),
+        (0.69, -0.5, "mm_net_long"),
+        (0.4, -0.5, "mm_net_long"),
+        (0.39, 0.0, "mm_balanced"),
+        (-0.39, 0.0, "mm_balanced"),
+        (-0.4, 0.5, "mm_net_short"),
+        (-0.69, 0.5, "mm_net_short"),
+        (-0.7, 1.0, "mm_extreme_short"),
+        # Extrêmes
+        (1.0, -1.0, "mm_extreme_long"),
+        (-1.0, 1.0, "mm_extreme_short"),
+    ],
+)
+def test_compute_cot_bias(net_pct, expected_bias, expected_zone):
+    bias, zone = _compute_cot_bias(net_pct)
+    assert bias == expected_bias
+    assert zone == expected_zone
+
+
+# ----- _enrich_with_cot -----
+
+def test_enrich_with_cot_valid_extreme_long():
+    decision = _make_decision("long")
+    cot = {
+        "mm_long": 123681,
+        "mm_short": 30705,
+        "mm_net_pct": 0.602,
+        "report_date": "2026-04-21T00:00:00.000",
+    }
+    bias = _enrich_with_cot(decision, cot)
+
+    assert bias == -0.5  # zone mm_net_long → contrarian bear GOLD
+    assert len(decision.evidence) == 1
+    assert decision.evidence[0]["source"] == "cftc_cot"
+    assert decision.evidence[0]["score"] == SOURCE_SCORES["cftc_cot"]
+    fact = decision.evidence[0]["fact"]
+    assert "long=123681" in fact
+    assert "short=30705" in fact
+    assert "+0.60" in fact
+    assert "2026-04-21" in fact
+    assert len(decision.triggers) == 1
+    assert decision.triggers[0]["type"] == "cot_positioning"
+    assert "mm_net_long" in decision.triggers[0]["value"]
+
+
+def test_enrich_with_cot_extreme_short():
+    decision = _make_decision("short")
+    cot = {
+        "mm_long": 10000,
+        "mm_short": 90000,
+        "mm_net_pct": -0.8,
+        "report_date": "2026-04-21",
+    }
+    bias = _enrich_with_cot(decision, cot)
+    assert bias == 1.0  # contrarian bull GOLD
+
+
+def test_enrich_with_cot_balanced():
+    decision = _make_decision("neutral")
+    cot = {
+        "mm_long": 50000,
+        "mm_short": 50000,
+        "mm_net_pct": 0.0,
+        "report_date": "2026-04-21",
+    }
+    bias = _enrich_with_cot(decision, cot)
+    assert bias == 0.0
+    # Evidence et trigger sont quand même ajoutés (zone balanced documentée)
+    assert len(decision.evidence) == 1
+    assert len(decision.triggers) == 1
+
+
+def test_enrich_with_cot_missing_field():
+    decision = _make_decision()
+    cot = {"mm_long": 100, "mm_short": 50}  # pas de mm_net_pct
+    bias = _enrich_with_cot(decision, cot)
+    assert bias is None
+    assert decision.evidence == []
+    assert decision.triggers == []
+
+
+def test_enrich_with_cot_invalid_value_type():
+    decision = _make_decision()
+    cot = {
+        "mm_long": "not-a-number",
+        "mm_short": 50,
+        "mm_net_pct": 0.0,
+    }
+    bias = _enrich_with_cot(decision, cot)
+    assert bias is None
+    assert decision.evidence == []
+
+
+def test_enrich_with_cot_missing_report_date_uses_unknown():
+    decision = _make_decision("long")
+    cot = {"mm_long": 100, "mm_short": 50, "mm_net_pct": 0.33}  # pas de report_date
+    bias = _enrich_with_cot(decision, cot)
+    assert bias == 0.0  # mm_balanced
+    # report_date par défaut = "unknown" → tronqué à "unknown"[:10] = "unknown"
+    assert "unknown" in decision.evidence[0]["fact"]

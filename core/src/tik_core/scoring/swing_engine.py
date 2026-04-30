@@ -33,17 +33,20 @@ UA = "Mozilla/5.0 (compatible; TikBot/0.1)"
 
 # Binance = flux marché direct ; Yahoo = agrégateur délai 15min ;
 # alternative.me FNG = sentiment indirect ; FRED DTWEXBGS = source officielle US gov ;
-# CryptoCompare news = signal direct des news mais peut être manipulé/biaisé.
+# CryptoCompare news = signal direct des news mais peut être manipulé/biaisé ;
+# cftc_cot = source officielle US gov mais lag 3-4j (publié vendredi pour le mardi).
 SOURCE_SCORES: dict[str, float] = {
     "binance_klines": 0.90,
     "yahoo_finance": 0.80,
     "alternative_me_fng": 0.65,
     "fred_dtwexbgs": 0.85,
     "cryptocompare_news": 0.70,
+    "cftc_cot": 0.80,
 }
 
 FG_REDIS_KEY = "tik.sentiment.fear_greed"
 CC_REDIS_KEY_TPL = "tik.sentiment.cryptocompare.{currency}"
+COT_REDIS_KEY = "tik.macro.cftc_cot.gold"
 FRED_OBS_URL = "https://api.stlouisfed.org/fred/series/observations"
 DXY_SERIES_ID = "DTWEXBGS"
 
@@ -536,13 +539,91 @@ def _enrich_with_dxy(decision: SwingDecision, history: list[dict]) -> float | No
     return bias
 
 
-async def analyze_swing_gold(fred_api_key: str | None = None) -> SwingDecision:
+async def _read_cot(redis: Redis) -> dict | None:
+    raw = await redis.get(COT_REDIS_KEY)
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _compute_cot_bias(net_pct: float) -> tuple[float, str]:
+    """Mappe un net_pct Managed Money (-1..+1) à un bias contrarian sur GOLD.
+
+    Lecture contrarian classique du COT : positions surchargées d'un côté
+    signalent un risque de retournement (foule trop unanime → smart money
+    sortira). Symétrique pour les deux extrêmes.
+
+    -1 = MM extrêmement net long (foule bullish) → contrarian SHORT bias.
+    +1 = MM extrêmement net short (foule bearish) → contrarian LONG bias.
+    """
+    if net_pct >= 0.7:
+        return -1.0, "mm_extreme_long"
+    if net_pct >= 0.4:
+        return -0.5, "mm_net_long"
+    if net_pct <= -0.7:
+        return 1.0, "mm_extreme_short"
+    if net_pct <= -0.4:
+        return 0.5, "mm_net_short"
+    return 0.0, "mm_balanced"
+
+
+def _enrich_with_cot(decision: SwingDecision, cot: dict) -> float | None:
+    """Ajoute evidence + trigger COT à la décision, retourne le bias contrarian.
+
+    NE set PAS la veracity — responsabilité du caller pour combiner plusieurs sources.
+    Retourne None si la donnée COT est invalide ou incomplète.
+    """
+    try:
+        mm_long = int(cot["mm_long"])
+        mm_short = int(cot["mm_short"])
+        net_pct = float(cot["mm_net_pct"])
+        report_date = str(cot.get("report_date", "unknown"))
+    except (KeyError, TypeError, ValueError):
+        return None
+
+    bias, zone = _compute_cot_bias(net_pct)
+    bias_label = (
+        "contrarian bull GOLD" if bias > 0
+        else "contrarian bear GOLD" if bias < 0
+        else "neutral"
+    )
+
+    decision.evidence.append(
+        {
+            "source": "cftc_cot",
+            "score": SOURCE_SCORES.get("cftc_cot", 0.5),
+            "fact": (
+                f"COT MM long={mm_long} short={mm_short} "
+                f"(net {net_pct:+.2f}, report {report_date[:10]})"
+            ),
+        }
+    )
+    decision.triggers.append(
+        {
+            "type": "cot_positioning",
+            "value": f"COT {zone} (net {net_pct:+.2f}) → {bias_label}",
+            "weight": 0.10,
+        }
+    )
+    return bias
+
+
+async def analyze_swing_gold(
+    fred_api_key: str | None = None,
+    redis: Redis | None = None,
+) -> SwingDecision:
     """Analyse swing Gold (GC=F) sur 1h/60d, avec overlays multi-sources.
 
-    Aujourd'hui : seule la corrélation DXY (FRED) est utilisée. La veracity
-    finale est calculée sur la moyenne des biais disponibles — même architecture
-    que analyze_swing_btc, prête à accueillir une 2e source GOLD plus tard
-    (ex: CFTC COT report, on-chain miners, etc.).
+    Overlays actifs :
+    - DXY (FRED, contrarian) : corrélation négative GOLD/USD
+    - CFTC COT Managed Money (Redis, contrarian) : positioning institutionnel
+
+    La veracity finale est calculée sur la moyenne des biais disponibles —
+    même architecture que analyze_swing_btc, prête à accueillir d'autres
+    sources GOLD plus tard (on-chain miners, ETF flows, etc.).
 
     Pas d'overlay Fear & Greed : l'index FG est crypto-spécifique.
     """
@@ -552,18 +633,25 @@ async def analyze_swing_gold(fred_api_key: str | None = None) -> SwingDecision:
     decision = _score_indicators(df)
     decision.entity_id = "GOLD"
 
-    if not fred_api_key:
-        return decision
-
     bias_signals: list[float] = []
 
-    history = await _fetch_dxy_history(fred_api_key)
-    if history:
-        bias = _enrich_with_dxy(decision, history)
-        if bias is not None:
-            bias_signals.append(bias)
-    else:
-        log.info("swing.gold.dxy_unavailable")
+    if fred_api_key:
+        history = await _fetch_dxy_history(fred_api_key)
+        if history:
+            bias = _enrich_with_dxy(decision, history)
+            if bias is not None:
+                bias_signals.append(bias)
+        else:
+            log.info("swing.gold.dxy_unavailable")
+
+    if redis is not None:
+        cot = await _read_cot(redis)
+        if cot is not None:
+            bias = _enrich_with_cot(decision, cot)
+            if bias is not None:
+                bias_signals.append(bias)
+        else:
+            log.info("swing.gold.cot_unavailable")
 
     if bias_signals:
         combined_bias = sum(bias_signals) / len(bias_signals)

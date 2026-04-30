@@ -33,7 +33,7 @@ async def _run_swing_btc(session_maker, redis) -> None:
 
 async def _run_swing_gold(session_maker, redis, fred_api_key) -> None:
     try:
-        decision = await analyze_swing_gold(fred_api_key=fred_api_key)
+        decision = await analyze_swing_gold(fred_api_key=fred_api_key, redis=redis)
         async with session_maker() as session:
             await publish_swing_signal(session, redis, decision)
             await session.commit()

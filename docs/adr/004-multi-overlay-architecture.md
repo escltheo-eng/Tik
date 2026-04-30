@@ -119,16 +119,23 @@ async def analyze_swing_xxx(...) -> SwingDecision:
   sources mesurent la même chose (ex : deux fournisseurs de news qui
   reprennent les mêmes dépêches), leur bias compte deux fois.
 
-## Implémentation actuelle (au 2026-04-29)
+## Implémentation actuelle (au 2026-04-30)
 
 | Helper | Entity | Sémantique | Source de données |
 |---|---|---|---|
 | `_enrich_with_fear_greed` | BTC | Contrarian | Redis `tik.sentiment.fear_greed` |
 | `_enrich_with_cryptocompare` | BTC | Trend-following | Redis `tik.sentiment.cryptocompare.btc` |
 | `_enrich_with_dxy` | GOLD | Contrarian (corrélation négative GOLD/DXY) | Fetch direct FRED API |
+| `_enrich_with_cot` | GOLD | Contrarian (positions extrêmes Managed Money) | Redis `tik.macro.cftc_cot.gold` |
 
-Tous trois suivent le contrat : retournent `float | None`, n'altèrent pas
+Tous suivent le contrat : retournent `float | None`, n'altèrent pas
 la veracity directement.
+
+L'ajout de `_enrich_with_cot` (2026-04-30) confirme l'extensibilité du
+pattern : 1 nouveau helper + 5 lignes dans `analyze_swing_gold`, aucun
+refactor de la logique existante. GOLD passe de 1 à 2 overlays
+indépendants → la moyenne neutralise les sources contradictoires comme
+prévu, et `_veracity_from_concordance` gère naturellement la combinaison.
 
 La fonction utilitaire `_veracity_from_concordance(direction, bias) -> float`
 applique le mapping suivant :

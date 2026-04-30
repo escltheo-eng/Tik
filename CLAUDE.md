@@ -122,7 +122,7 @@ Pattern **`_enrich_with_<source>(decision, data) -> bias | None`** dans `swing_e
 - Sources contradictoires se neutralisent (moyenne tend vers 0 → veracity = 0.85)
 - **Ajouter une source = 4 lignes dans `analyze_swing_xxx` + un nouveau helper**
 - Moyenne arithmétique non pondérée (à réviser plus tard avec données de backtest)
-- Implémentations actuelles : `_enrich_with_fear_greed` (BTC), `_enrich_with_cryptocompare` (BTC), `_enrich_with_dxy` (GOLD)
+- Implémentations actuelles : `_enrich_with_fear_greed` (BTC), `_enrich_with_cryptocompare` (BTC), `_enrich_with_dxy` (GOLD), `_enrich_with_cot` (GOLD)
 
 ---
 
@@ -228,6 +228,10 @@ Améliorations apportées au Core après le déploiement initial.
   - Sweet spot horizon = 5 jours (79% hit rate vs 61% à 1-3j et 40% à 7j)
   - GOLD SHORT est slow-burn : 27% à 1-3j → 100% à 5-7j (les mouvements macro de l'or se matérialisent sur la semaine)
 - **Révision du seuil de directionnalité dans `_score_indicators`** : passage de **0.15 à 0.08** suite au backtest. Avant, des signaux avec `bull_score - bear_score` autour de 0.10 étaient classés à tort en `neutral` et rataient des opportunités directionnelles claires. Validation runtime immédiate : BTC est passé de `neutral conf 0.10 verac 0.85` à `long conf 0.25 verac 0.90` — la **veracity dynamique se déclenche enfin** sur les signaux réels (concordance partielle techniques ↔ sentiment cross-validé). À surveiller : un seuil trop bas peut générer des whipsaws en marché choppy.
+
+#### Du 2026-04-30
+
+- **Cross-validation GOLD ↔ CFTC COT (Managed Money positioning)** : 2e overlay GOLD ajouté pour valider l'extensibilité du pattern multi-overlay (cf ADR-004). Nouveau ingester `core/src/tik_core/aggregator/cftc_cot_ingester.py` (couche 5, positioning institutionnel) qui polle l'API publique CFTC Socrata (pas de clé requise) toutes les 24h. Récupère le dernier rapport Disaggregated Futures Only sur GOLD COMEX (code `088691`) et stocke `mm_long`, `mm_short`, `mm_net_pct` dans Redis sous `tik.macro.cftc_cot.gold` (TTL 10j car la donnée est hebdomadaire avec lag 3-4j). Côté swing : helpers `_compute_cot_bias` + `_enrich_with_cot` avec **lecture contrarian** : positions Managed Money très net long → bias bear sur GOLD (foule trop unanime → smart money sortira), symétrique pour le net short. Mapping en 5 zones (`mm_extreme_long/net_long/balanced/net_short/extreme_short`) basé sur `net_pct = (long - short) / (long + short)`. `analyze_swing_gold` accepte maintenant `redis` en plus de `fred_api_key` (signature symétrique avec `analyze_swing_btc`). `SOURCE_SCORES` enrichi : `cftc_cot=0.80` (source officielle US gov, score un peu plus prudent que FRED à cause du lag). Limite assumée : seuils absolus, à raffiner via z-score 52 semaines une fois qu'on aura collecté l'historique. Tests : 95 tests unitaires passent (16 nouveaux pour `_compute_cot_bias`, ~6 pour `_enrich_with_cot`, 8 pour `_fetch` de l'ingester via `httpx.MockTransport`).
 
 ### Paquet 2 — SDK Python : ⏳ À FAIRE
 
@@ -379,6 +383,6 @@ Si tu es une instance Claude qui prend ce projet en main pour la première fois 
 
 ---
 
-*Dernière mise à jour : 2026-04-29*
+*Dernière mise à jour : 2026-04-30*
 *Version Tik : 0.1.0 (Core MVP livré + évolutions Paquet 1.x)*
 *Mainteneur : utilisateur solo + assistant Claude via extension VS Code*
