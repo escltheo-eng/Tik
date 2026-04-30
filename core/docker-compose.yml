@@ -53,6 +53,7 @@ services:
     volumes:
       - ./src:/app/src:ro
       - ./migrations:/app/migrations:ro
+      - ./tests:/app/tests:ro
     command: >
       sh -c "
         alembic upgrade head &&

@@ -36,7 +36,8 @@ BULLISH_KEYWORDS: set[str] = {
     # Direction haussière classique
     "surge", "surges", "soar", "soars", "rally", "rallies", "jump", "jumps",
     "gain", "gains", "rise", "rises", "rising", "rose", "climb", "climbs",
-    "advance", "rebound", "rebounds", "recover", "recovers", "skyrocket",
+    "advance", "rebound", "rebounds", "recover", "recovers", "recovery",
+    "skyrocket",
     # Marqueurs bull / accumulation
     "bull", "bullish", "moon", "pump", "breakthrough", "milestone", "record",
     "ath", "high", "uptrend", "bullrun",
@@ -63,7 +64,7 @@ BEARISH_KEYWORDS: set[str] = {
     # Révisions à la baisse / downgrades
     "lowers", "lowered", "cuts", "downgrade", "downgrades",
     # Régulation / juridique négatifs
-    "ban", "banned", "crackdown", "lawsuit", "sue", "sued", "sues",
+    "ban", "banned", "bans", "crackdown", "lawsuit", "sue", "sued", "sues",
     "prison", "arrest", "arrested", "shutdown",
     "delist", "delisted", "freeze", "freezes",
     # Crime / risque
