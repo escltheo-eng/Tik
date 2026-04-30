@@ -15,6 +15,8 @@ import { Health } from '@/src/api/types';
 import { useAuth } from '@/src/auth/AuthContext';
 import { useDashboardKpis } from '@/src/hooks/useDashboardKpis';
 
+const APP_VERSION = '0.5.0';
+
 const HEALTH_REFRESH_INTERVAL_MS = 30_000;
 
 interface HealthState {
@@ -57,7 +59,7 @@ function directionColor(direction: string): string {
 }
 
 export default function HomeScreen() {
-  const { client, baseUrl, signOut } = useAuth();
+  const { client, baseUrl } = useAuth();
   const colorScheme = useColorScheme() ?? 'light';
   const palette = Colors[colorScheme];
 
@@ -236,23 +238,17 @@ export default function HomeScreen() {
           • Session 1 : Bootstrap & Hello World (livrée){'\n'}
           • Session 2 : Auth + client HTTP (livrée){'\n'}
           • Session 3 : WebSocket + Signals Feed (livrée){'\n'}
-          • Session 4 : KPIs Home + Charts (en cours){'\n'}
-          • Session 5 : Notifications push + polish
+          • Session 4 : KPIs Home + Charts (livrée){'\n'}
+          • Session 5 : Alerts + Bots + Config + Push (en cours)
         </ThemedText>
       </ThemedView>
 
-      <Pressable
-        onPress={() => void signOut()}
-        style={({ pressed }) => [
-          styles.signOutBtn,
-          { borderColor: palette.icon, opacity: pressed ? 0.6 : 1 },
-        ]}>
-        <ThemedText style={{ color: palette.icon }}>Se déconnecter</ThemedText>
-      </Pressable>
-
       <ThemedView style={styles.versionBox}>
         <ThemedText style={styles.versionText}>
-          tik-dashboard v0.4.0 — Expo SDK 54 — plateforme {Platform.OS}
+          tik-dashboard v{APP_VERSION} — Expo SDK 54 — plateforme {Platform.OS}
+        </ThemedText>
+        <ThemedText style={styles.versionText}>
+          Pour modifier les credentials ou se déconnecter, voir l’onglet Config.
         </ThemedText>
       </ThemedView>
     </ParallaxScrollView>
@@ -333,16 +329,10 @@ const styles = StyleSheet.create({
     fontSize: 11,
     opacity: 0.5,
   },
-  signOutBtn: {
-    marginTop: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    borderWidth: 1,
-  },
   versionBox: {
-    marginTop: 16,
+    marginTop: 24,
     paddingTop: 12,
+    gap: 4,
   },
   versionText: {
     fontSize: 12,

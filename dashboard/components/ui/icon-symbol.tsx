@@ -19,6 +19,9 @@ const MAPPING = {
   'chevron.left.forwardslash.chevron.right': 'code',
   'chevron.right': 'chevron-right',
   'chart.line.uptrend.xyaxis': 'show-chart',
+  'bell.fill': 'notifications',
+  cpu: 'memory',
+  'gearshape.fill': 'settings',
 } as IconMapping;
 
 /**

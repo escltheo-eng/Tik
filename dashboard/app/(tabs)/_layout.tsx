@@ -5,9 +5,11 @@ import { HapticTab } from '@/components/haptic-tab';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useAlerts } from '@/src/alerts/AlertsContext';
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
+  const { unreadCount } = useAlerts();
 
   return (
     <Tabs
@@ -30,6 +32,28 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => (
             <IconSymbol size={28} name="chart.line.uptrend.xyaxis" color={color} />
           ),
+        }}
+      />
+      <Tabs.Screen
+        name="alerts"
+        options={{
+          title: 'Alerts',
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="bell.fill" color={color} />,
+          tabBarBadge: unreadCount > 0 ? String(unreadCount) : undefined,
+        }}
+      />
+      <Tabs.Screen
+        name="bots"
+        options={{
+          title: 'Bots',
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="cpu" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="config"
+        options={{
+          title: 'Config',
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="gearshape.fill" color={color} />,
         }}
       />
       <Tabs.Screen
