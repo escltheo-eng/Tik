@@ -401,6 +401,7 @@ Plus une source est **directe et neutre**, plus son score est élevé. Une sourc
 - ✅ Analyse swing pour **BTC** (toutes les 15 min) avec **3 sources** : **Binance** (cours) + **Fear & Greed Index** (sentiment crypto contrarian) + **CryptoCompare news** (sentiment textuel trend-following)
 - ✅ Analyse swing pour **GOLD** (toutes les 30 min) avec **3 sources** : **Yahoo Finance** (cours) + **FRED DXY** (macro contrarian) + **CFTC COT Managed Money** (positioning institutionnel contrarian)
 - ✅ **Veracity dynamique** pour les deux actifs (entre 0.70 et 0.95) selon la concordance entre sources, calculée via la **moyenne des biais** disponibles (architecture multi-overlay extensible et désormais validée sur les deux entities)
+- ✅ **NLP via Ollama** pour le sentiment news CryptoCompare : depuis le 2026-04-30, les titres de news ne sont plus classés par une simple liste de mots-clés mais par un **vrai modèle d'IA local** (`llama3.2:3b`, ~2 GB, qui tourne sur le Mac de l'utilisateur en dehors de Docker). Le modèle gère la **négation** ("Fear has eased" → bull), la **polarité contextuelle** ("Capitulation may be near, smart money accumulating" → bull), et les **expressions multi-mots** ("Bitcoin losing support" → bear). Si l'app Ollama plante, Tik bascule automatiquement sur l'ancienne analyse keywords (mode dégradé) sans rien casser.
 - ✅ Framework « paranoïa contrôlée » respecté : chaque signal contient hypothèse, contre-scénarios, evidence et triggers
 - ✅ Authentification API (clé Bearer), Swagger interactif, healthchecks Docker propres
 - ✅ **Script de backtest** (`docker compose exec core python -m tik_core.scripts.backtest`) qui mesure si Tik bat des stratégies naïves (Random, Always LONG, Always SHORT, Always NEUTRAL). Premier verdict 2026-04-29 : Tik bat Random largement, mais sur cette période bullish BTC, un naïf "toujours long" performait mieux. Conclusion : besoin de plus de données et de périodes variées.
@@ -419,7 +420,7 @@ Plus une source est **directe et neutre**, plus son score est élevé. Une sourc
 
 - **Continuer à laisser tourner Tik 4-8 semaines** pour avoir au moins une période de retournement de tendance dans le backtest, et plus de signaux directionnels à veracity dynamique
 - **Recalibrer ou non les seuils COT** après l'analyse automatique du 2026-05-21
-- **NLP avancé** : remplacer l'analyse par mots-clés (CryptoCompare) par un vrai modèle (FinBERT, ou un LLM local via Ollama) pour mieux gérer la négation, le contexte, le sarcasme
+- **Mesurer le gain réel du NLP Ollama vs keywords** : créer un dataset golden d'une cinquantaine de titres réels annotés à la main (BULLISH / BEARISH / NEUTRAL) et comparer quantitativement les deux méthodes (cf. `docs/backlog.md` § 1.B). Le ingester loggue déjà la méthode utilisée par batch (`method:ollama:llama3.2:3b` ou `method:keywords`), donc le backtest pourra aussi comparer le hit rate par méthode sur les vrais signaux.
 - **Enrichir le backtest** : stockage des résultats en DB pour suivi temporel, comparaison veracity-by-bucket plus fine, lancement multi-horizons en une commande
 - **SDK Python** (`tik-sdk`) : package pip-installable pour brancher les bots clients (Zeta, Totem) sur Tik
 - **Dashboard Expo mobile** : visualisation temps réel des signaux sur smartphone
@@ -449,4 +450,4 @@ Plus une source est **directe et neutre**, plus son score est élevé. Une sourc
 
 ---
 
-*Document rédigé le 2026-04-28, mis à jour le 2026-04-29 (ajout 3e source CryptoCompare, premier backtest avec baselines, recalibrage seuil NEUTRAL), puis le 2026-04-30 (ajout 2e source GOLD : CFTC COT Managed Money, validation grandeur réelle du pattern multi-overlay sur GOLD). Pour expliquer Tik à toute personne curieuse, sans prérequis technique.*
+*Document rédigé le 2026-04-28, mis à jour le 2026-04-29 (ajout 3e source CryptoCompare, premier backtest avec baselines, recalibrage seuil NEUTRAL), puis le 2026-04-30 (ajout 2e source GOLD : CFTC COT Managed Money, validation grandeur réelle du pattern multi-overlay sur GOLD ; remplacement de l'analyse par mots-clés CryptoCompare par un LLM local via Ollama avec fallback keywords automatique). Pour expliquer Tik à toute personne curieuse, sans prérequis technique.*

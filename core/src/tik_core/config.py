@@ -49,6 +49,11 @@ class Settings(BaseSettings):
     cryptopanic_api_key: str = ""
     cryptocompare_api_key: str = ""
 
+    # --- News classifier (sentiment textuel) ---
+    news_classifier: Literal["ollama", "keywords"] = "ollama"
+    ollama_url: str = "http://host.docker.internal:11434"
+    ollama_model: str = "llama3.2:3b"
+
     # --- Scoring defaults ---
     default_min_veracity: float = 0.70
     default_min_sources: int = 2
