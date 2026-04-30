@@ -13,6 +13,7 @@ from tik_core.aggregator.cftc_cot_ingester import CftcCotIngester
 from tik_core.aggregator.cryptocompare_ingester import CryptoCompareIngester
 from tik_core.aggregator.fear_greed_ingester import FearGreedIngester
 from tik_core.aggregator.fred_ingester import FredIngester
+from tik_core.aggregator.google_news_ingester import GoogleNewsIngester
 from tik_core.aggregator.news_classifier import build_news_classifier
 from tik_core.aggregator.yahoo_ingester import YahooPoller
 from tik_core.config import get_settings
@@ -24,10 +25,28 @@ async def main() -> None:
     settings = get_settings()
     redis = aioredis.from_url(settings.redis_url, decode_responses=True)
 
-    news_classifier = await build_news_classifier(
-        classifier_type=settings.news_classifier,
-        ollama_url=settings.ollama_url,
-        ollama_model=settings.ollama_model,
+    # ADR-008 — un classifier par ingester pour isoler les circuit breakers
+    # Ollama. Construits en parallèle (3 pings simultanés) pour économiser
+    # ~2 s au boot vs construction séquentielle.
+    cc_btc_classifier, gn_btc_classifier, gn_gold_classifier = await asyncio.gather(
+        build_news_classifier(
+            classifier_type=settings.news_classifier,
+            ollama_url=settings.ollama_url,
+            ollama_model=settings.ollama_model,
+            asset_name="Bitcoin",
+        ),
+        build_news_classifier(
+            classifier_type=settings.news_classifier,
+            ollama_url=settings.ollama_url,
+            ollama_model=settings.ollama_model,
+            asset_name="Bitcoin",
+        ),
+        build_news_classifier(
+            classifier_type=settings.news_classifier,
+            ollama_url=settings.ollama_url,
+            ollama_model=settings.ollama_model,
+            asset_name="Gold",
+        ),
     )
 
     ingesters = [
@@ -38,9 +57,25 @@ async def main() -> None:
         CryptoCompareIngester(
             redis,
             api_key=settings.cryptocompare_api_key,
-            classifier=news_classifier,
+            classifier=cc_btc_classifier,
             currency="BTC",
             interval_s=3600,
+        ),
+        GoogleNewsIngester(
+            redis,
+            classifier=gn_btc_classifier,
+            entity_id="BTC",
+            query="Bitcoin",
+            interval_s=1800,
+            limit=50,
+        ),
+        GoogleNewsIngester(
+            redis,
+            classifier=gn_gold_classifier,
+            entity_id="GOLD",
+            query='"gold price"',
+            interval_s=1800,
+            limit=50,
         ),
         CftcCotIngester(redis, interval_s=24 * 3600),
     ]

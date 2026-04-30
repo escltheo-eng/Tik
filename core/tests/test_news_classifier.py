@@ -311,6 +311,142 @@ async def test_ollama_method_name_includes_model():
     )
 
 
+# =============================================================================
+# Asset-aware (ADR-008) — paramètre asset_name au constructeur
+# =============================================================================
+
+async def test_ollama_default_asset_name_is_bitcoin():
+    """Rétrocompat ADR-006 : sans paramètre, l'asset par défaut est Bitcoin."""
+    classifier = OllamaClassifier(url="http://x", model="llama3.2:3b")
+    assert classifier.asset_name == "Bitcoin"
+
+
+async def test_ollama_custom_asset_name():
+    classifier = OllamaClassifier(
+        url="http://x", model="llama3.2:3b", asset_name="Gold"
+    )
+    assert classifier.asset_name == "Gold"
+
+
+async def test_ollama_prompt_includes_asset_name(monkeypatch):
+    """Le prompt envoyé à Ollama doit contenir le nom de l'asset configuré."""
+    captured_prompts: list[str] = []
+
+    async def fake_post(*args, **kwargs):
+        # On capture le prompt envoyé dans le json={...}
+        body = kwargs.get("json", {})
+        captured_prompts.append(body.get("prompt", ""))
+
+        class _FakeResponse:
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return {"response": "BULLISH"}
+
+        return _FakeResponse()
+
+    classifier_btc = OllamaClassifier(
+        url="http://x", model="llama3.2:3b", asset_name="Bitcoin"
+    )
+    classifier_gold = OllamaClassifier(
+        url="http://x", model="llama3.2:3b", asset_name="Gold"
+    )
+
+    # On force la création du client httpx puis on mock sa méthode .post
+    classifier_btc._client = httpx.AsyncClient()
+    classifier_gold._client = httpx.AsyncClient()
+    monkeypatch.setattr(classifier_btc._client, "post", fake_post)
+    monkeypatch.setattr(classifier_gold._client, "post", fake_post)
+
+    await classifier_btc.classify("BTC surges to ATH")
+    await classifier_gold.classify("Gold price hits new high")
+
+    assert len(captured_prompts) == 2
+    assert "Bitcoin price" in captured_prompts[0]
+    assert "Gold price" not in captured_prompts[0]
+    assert "Gold price" in captured_prompts[1]
+    assert "Bitcoin price" not in captured_prompts[1]
+
+    await classifier_btc.aclose()
+    await classifier_gold.aclose()
+
+
+async def test_ollama_circuit_breakers_are_isolated_per_instance(monkeypatch):
+    """ADR-008 — 2 instances ont des circuit breakers indépendants.
+
+    Si l'instance A subit 3 erreurs et ouvre son breaker, l'instance B
+    (asset différent) doit rester intacte. Garantit qu'un incident sur un
+    ingester ne contamine pas les autres ingesters textuels.
+    """
+    classifier_a = OllamaClassifier(
+        url="http://x", model="llama3.2:3b", asset_name="Bitcoin"
+    )
+    classifier_b = OllamaClassifier(
+        url="http://x", model="llama3.2:3b", asset_name="Gold"
+    )
+
+    # A plante systématiquement, B fonctionne normalement
+    monkeypatch.setattr(
+        classifier_a, "_call_ollama",
+        AsyncMock(side_effect=httpx.ConnectError("down")),
+    )
+    monkeypatch.setattr(
+        classifier_b, "_call_ollama", AsyncMock(return_value="BULLISH")
+    )
+
+    # 3 échecs sur A → son breaker s'ouvre
+    for _ in range(3):
+        await classifier_a.classify("BTC surges")
+    assert classifier_a._batch_circuit_open is True
+
+    # B doit être totalement intact
+    assert classifier_b._batch_circuit_open is False
+    assert classifier_b._consecutive_failures == 0
+
+    # B continue à classifier normalement via Ollama
+    result = await classifier_b.classify("Gold price hits new high")
+    assert result == (1, 0)
+    assert classifier_b._batch_circuit_open is False
+
+
+async def test_build_news_classifier_passes_asset_name_to_ollama(monkeypatch):
+    """La factory doit propager asset_name au OllamaClassifier construit."""
+    fake = _make_fake_client(
+        response_data={"models": [{"name": "llama3.2:3b"}]}
+    )
+    monkeypatch.setattr(
+        "tik_core.aggregator.news_classifier.httpx.AsyncClient", fake
+    )
+
+    classifier = await build_news_classifier(
+        classifier_type="ollama",
+        ollama_url="http://x",
+        ollama_model="llama3.2:3b",
+        asset_name="Gold",
+    )
+    assert isinstance(classifier, OllamaClassifier)
+    assert classifier.asset_name == "Gold"
+
+
+async def test_build_news_classifier_default_asset_is_bitcoin(monkeypatch):
+    """Rétrocompat : sans `asset_name`, la factory passe Bitcoin par défaut."""
+    fake = _make_fake_client(
+        response_data={"models": [{"name": "llama3.2:3b"}]}
+    )
+    monkeypatch.setattr(
+        "tik_core.aggregator.news_classifier.httpx.AsyncClient", fake
+    )
+
+    classifier = await build_news_classifier(
+        classifier_type="ollama",
+        ollama_url="http://x",
+        ollama_model="llama3.2:3b",
+    )
+    assert isinstance(classifier, OllamaClassifier)
+    assert classifier.asset_name == "Bitcoin"
+
+
 async def test_ollama_unparsable_response_returns_neutral(monkeypatch):
     """Si Ollama répond une string sans BULLISH/BEARISH/NEUTRAL,
     on retourne (0, 0) — pas de fallback keywords (le LLM a répondu,

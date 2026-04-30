@@ -1,4 +1,4 @@
-"""Classifieurs de sentiment pour les titres de news crypto.
+"""Classifieurs de sentiment pour les titres de news financières.
 
 Deux implémentations interchangeables :
 
@@ -8,6 +8,10 @@ Deux implémentations interchangeables :
   (par défaut llama3.2:3b). Fallback automatique sur KeywordClassifier
   en cas d'erreur, avec circuit breaker batch-level (3 erreurs successives
   → bascule keywords pour le reste du batch, retry au cycle suivant).
+  **Asset-aware** via le paramètre `asset_name` (défaut "Bitcoin") : le
+  prompt précise au LLM pour quel asset on classifie le sentiment, ce qui
+  permet d'instancier un classifier par couple (asset, ingester) avec
+  des circuit breakers indépendants — voir ADR-008.
 
 Sélection via la factory `build_news_classifier(...)`.
 """
@@ -119,11 +123,17 @@ class KeywordClassifier(NewsClassifier):
 
 
 class OllamaClassifier(NewsClassifier):
-    """Classification via un LLM local Ollama. Fallback keywords sur erreur."""
+    """Classification via un LLM local Ollama. Fallback keywords sur erreur.
+
+    Asset-aware : le prompt mentionne explicitement {asset_name} pour
+    donner le contexte au LLM. Permet de classifier le sentiment news
+    pour Bitcoin, Gold, Ethereum, ou tout autre asset, depuis un même
+    backend Ollama, avec un circuit breaker dédié à chaque instance.
+    """
 
     PROMPT_TEMPLATE = (
-        "You are a financial sentiment classifier for crypto news headlines. "
-        "Classify the following headline by its likely impact on the Bitcoin price. "
+        "You are a financial sentiment classifier for news headlines. "
+        "Classify the following headline by its likely impact on the {asset_name} price. "
         "Reply with EXACTLY one word: BULLISH, BEARISH, or NEUTRAL.\n\n"
         'Headline: "{title}"'
     )
@@ -137,11 +147,13 @@ class OllamaClassifier(NewsClassifier):
         self,
         url: str,
         model: str,
+        asset_name: str = "Bitcoin",
         fallback: NewsClassifier | None = None,
         timeout_s: float = 10.0,
     ) -> None:
         self.url = url.rstrip("/")
         self.model = model
+        self.asset_name = asset_name
         self.fallback = fallback or KeywordClassifier()
         self.timeout_s = timeout_s
         self._consecutive_failures = 0
@@ -174,12 +186,14 @@ class OllamaClassifier(NewsClassifier):
             log.warning(
                 "news_classifier.ollama_error",
                 error=str(exc),
+                asset=self.asset_name,
                 consecutive_failures=self._consecutive_failures,
             )
             if self._consecutive_failures >= self.FAILURE_THRESHOLD:
                 self._batch_circuit_open = True
                 log.warning(
                     "news_classifier.ollama_circuit_open_for_batch",
+                    asset=self.asset_name,
                     threshold=self.FAILURE_THRESHOLD,
                 )
             return await self.fallback.classify(title)
@@ -188,7 +202,10 @@ class OllamaClassifier(NewsClassifier):
         return self._verdict_to_counts(verdict, title)
 
     async def _call_ollama(self, title: str) -> str:
-        prompt = self.PROMPT_TEMPLATE.format(title=title.replace('"', "'"))
+        prompt = self.PROMPT_TEMPLATE.format(
+            asset_name=self.asset_name,
+            title=title.replace('"', "'"),
+        )
         if self._client is None:
             self._client = httpx.AsyncClient(timeout=self.timeout_s)
         r = await self._client.post(
@@ -235,11 +252,18 @@ async def build_news_classifier(
     classifier_type: str,
     ollama_url: str,
     ollama_model: str,
+    asset_name: str = "Bitcoin",
 ) -> NewsClassifier:
     """Sélectionne le classifier selon la config et vérifie la santé d'Ollama
-    si demandé. En cas d'indisponibilité d'Ollama, fallback sur keywords."""
+    si demandé. En cas d'indisponibilité d'Ollama, fallback sur keywords.
+
+    `asset_name` est passé au constructeur de `OllamaClassifier` pour que
+    le prompt au LLM précise pour quel asset on classifie le sentiment.
+    Pour le `KeywordClassifier` (analyse par mots-clés agnostique), le
+    paramètre est loggué mais n'a pas d'effet sur la classification.
+    """
     if classifier_type == "keywords":
-        log.info("news_classifier.using_keywords")
+        log.info("news_classifier.using_keywords", asset=asset_name)
         return KeywordClassifier()
 
     # classifier_type == "ollama" (défaut)
@@ -248,13 +272,19 @@ async def build_news_classifier(
             "news_classifier.ollama_ready",
             url=ollama_url,
             model=ollama_model,
+            asset=asset_name,
         )
-        return OllamaClassifier(url=ollama_url, model=ollama_model)
+        return OllamaClassifier(
+            url=ollama_url,
+            model=ollama_model,
+            asset_name=asset_name,
+        )
 
     log.warning(
         "news_classifier.ollama_unavailable_fallback_keywords",
         url=ollama_url,
         model=ollama_model,
+        asset=asset_name,
     )
     return KeywordClassifier()
 

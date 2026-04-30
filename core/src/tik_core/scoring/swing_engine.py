@@ -34,6 +34,8 @@ UA = "Mozilla/5.0 (compatible; TikBot/0.1)"
 # Binance = flux marché direct ; Yahoo = agrégateur délai 15min ;
 # alternative.me FNG = sentiment indirect ; FRED DTWEXBGS = source officielle US gov ;
 # CryptoCompare news = signal direct des news mais peut être manipulé/biaisé ;
+# google_news_rss = agrégateur news mainstream (Reuters, Bloomberg, FT…), score
+#   provisoire à 0.70 tant que dataset golden non mesuré (cf. ADR-008) ;
 # cftc_cot = source officielle US gov mais lag 3-4j (publié vendredi pour le mardi).
 SOURCE_SCORES: dict[str, float] = {
     "binance_klines": 0.90,
@@ -41,11 +43,13 @@ SOURCE_SCORES: dict[str, float] = {
     "alternative_me_fng": 0.65,
     "fred_dtwexbgs": 0.85,
     "cryptocompare_news": 0.70,
+    "google_news_rss": 0.70,
     "cftc_cot": 0.80,
 }
 
 FG_REDIS_KEY = "tik.sentiment.fear_greed"
 CC_REDIS_KEY_TPL = "tik.sentiment.cryptocompare.{currency}"
+GN_REDIS_KEY_TPL = "tik.sentiment.google_news.{entity}"
 COT_REDIS_KEY = "tik.macro.cftc_cot.gold"
 FRED_OBS_URL = "https://api.stlouisfed.org/fred/series/observations"
 DXY_SERIES_ID = "DTWEXBGS"
@@ -404,11 +408,95 @@ def _enrich_with_cryptocompare(decision: SwingDecision, cc: dict) -> float | Non
     return bias
 
 
-async def analyze_swing_btc(redis: Redis | None = None) -> SwingDecision:
-    """Analyse swing BTC/USDT sur 4h, avec overlays Fear & Greed + CryptoCompare news.
+async def _read_google_news(redis: Redis, entity_id: str) -> dict | None:
+    raw = await redis.get(GN_REDIS_KEY_TPL.format(entity=entity_id.lower()))
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except (TypeError, ValueError):
+        return None
 
-    La veracity finale est calculée sur la concordance moyenne des biais des sources
-    de sentiment disponibles. Permet d'ajouter facilement de nouvelles sources.
+
+def _compute_google_news_bias(score: float) -> tuple[float, str]:
+    """Mappe un score net Google News (-1..+1) à un bias trend-following.
+
+    Paliers identiques à CryptoCompare pour cohérence multi-source news
+    textuelle (cf. ADR-008). Si une source diverge fortement de l'autre,
+    leurs biais se neutralisent dans la moyenne et la veracity baisse via
+    `_veracity_from_concordance` — c'est le contrat ADR-004.
+    """
+    if score >= 0.4:
+        return 1.0, "news_strong_bullish"
+    if score >= 0.1:
+        return 0.5, "news_bullish"
+    if score <= -0.4:
+        return -1.0, "news_strong_bearish"
+    if score <= -0.1:
+        return -0.5, "news_bearish"
+    return 0.0, "news_neutral"
+
+
+def _enrich_with_google_news(decision: SwingDecision, gn: dict) -> float | None:
+    """Ajoute evidence + trigger Google News, retourne le bias trend-following.
+
+    NE set PAS la veracity — responsabilité du caller pour combiner plusieurs sources.
+    Retourne None si la donnée Google News est invalide ou incomplète.
+    """
+    try:
+        score = float(gn["score"])
+        n_articles = int(gn.get("n_articles", 0))
+        n_bull = int(gn.get("n_bullish", 0))
+        n_bear = int(gn.get("n_bearish", 0))
+        top_publishers = gn.get("top_publishers") or []
+    except (KeyError, TypeError, ValueError):
+        return None
+
+    bias, zone = _compute_google_news_bias(score)
+    bias_label = (
+        "bull" if bias > 0
+        else "bear" if bias < 0
+        else "neutral"
+    )
+
+    top_names = [
+        p.get("name", "?")
+        for p in top_publishers[:3]
+        if isinstance(p, dict)
+    ]
+    pubs_str = f", top: {', '.join(top_names)}" if top_names else ""
+
+    decision.evidence.append(
+        {
+            "source": "google_news_rss",
+            "score": SOURCE_SCORES.get("google_news_rss", 0.5),
+            "fact": (
+                f"News score={score:+.2f} (bull={n_bull}, bear={n_bear} "
+                f"on {n_articles} {decision.entity_id} titles{pubs_str})"
+            ),
+        }
+    )
+    decision.triggers.append(
+        {
+            "type": "news_sentiment_google",
+            "value": f"Google News {zone} (score={score:+.2f}) → {bias_label}",
+            "weight": 0.10,
+        }
+    )
+    return bias
+
+
+async def analyze_swing_btc(redis: Redis | None = None) -> SwingDecision:
+    """Analyse swing BTC/USDT sur 4h avec overlays multi-sources.
+
+    Overlays actifs (cf. ADR-004 / ADR-008) :
+    - Fear & Greed (Redis, contrarian)
+    - CryptoCompare news (Redis, trend-following)
+    - Google News BTC (Redis, trend-following) — diversification news mainstream
+
+    La veracity finale est calculée sur la concordance moyenne des biais
+    des sources de sentiment disponibles. Permet d'ajouter facilement de
+    nouvelles sources via le pattern `_enrich_with_<source>`.
     """
     df = await _fetch_binance_klines("BTCUSDT", "4h", 200)
     df.attrs["entity_id"] = "BTC"
@@ -436,6 +524,14 @@ async def analyze_swing_btc(redis: Redis | None = None) -> SwingDecision:
             bias_signals.append(bias)
     else:
         log.info("swing.btc.cryptocompare_unavailable")
+
+    gn = await _read_google_news(redis, entity_id="BTC")
+    if gn is not None:
+        bias = _enrich_with_google_news(decision, gn)
+        if bias is not None:
+            bias_signals.append(bias)
+    else:
+        log.info("swing.btc.google_news_unavailable")
 
     if bias_signals:
         combined_bias = sum(bias_signals) / len(bias_signals)
@@ -617,9 +713,12 @@ async def analyze_swing_gold(
 ) -> SwingDecision:
     """Analyse swing Gold (GC=F) sur 1h/60d, avec overlays multi-sources.
 
-    Overlays actifs :
+    Overlays actifs (cf. ADR-004 / ADR-008) :
     - DXY (FRED, contrarian) : corrélation négative GOLD/USD
     - CFTC COT Managed Money (Redis, contrarian) : positioning institutionnel
+    - Google News GOLD (Redis, trend-following) : premier overlay sentiment
+      news pour GOLD, capte les annonces banques centrales / tensions
+      géopolitiques / flux ETF que les autres overlays ne couvrent pas.
 
     La veracity finale est calculée sur la moyenne des biais disponibles —
     même architecture que analyze_swing_btc, prête à accueillir d'autres
@@ -652,6 +751,14 @@ async def analyze_swing_gold(
                 bias_signals.append(bias)
         else:
             log.info("swing.gold.cot_unavailable")
+
+        gn = await _read_google_news(redis, entity_id="GOLD")
+        if gn is not None:
+            bias = _enrich_with_google_news(decision, gn)
+            if bias is not None:
+                bias_signals.append(bias)
+        else:
+            log.info("swing.gold.google_news_unavailable")
 
     if bias_signals:
         combined_bias = sum(bias_signals) / len(bias_signals)

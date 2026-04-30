@@ -16,10 +16,12 @@ from tik_core.scoring.swing_engine import (
     _compute_cryptocompare_bias,
     _compute_dxy_bias,
     _compute_fg_bias,
+    _compute_google_news_bias,
     _enrich_with_cot,
     _enrich_with_cryptocompare,
     _enrich_with_dxy,
     _enrich_with_fear_greed,
+    _enrich_with_google_news,
     _veracity_from_concordance,
 )
 
@@ -441,3 +443,188 @@ def test_enrich_with_cot_missing_report_date_uses_unknown():
     assert bias == 0.0  # mm_balanced
     # report_date par défaut = "unknown" → tronqué à "unknown"[:10] = "unknown"
     assert "unknown" in decision.evidence[0]["fact"]
+
+
+# ----- _compute_google_news_bias -----
+
+@pytest.mark.parametrize(
+    "score, expected_bias, expected_zone",
+    [
+        # Coeur des 5 zones
+        (0.5, 1.0, "news_strong_bullish"),
+        (0.2, 0.5, "news_bullish"),
+        (0.0, 0.0, "news_neutral"),
+        (-0.2, -0.5, "news_bearish"),
+        (-0.5, -1.0, "news_strong_bearish"),
+        # Bornes (palier inclusif côté fort)
+        (0.4, 1.0, "news_strong_bullish"),
+        (0.39, 0.5, "news_bullish"),
+        (0.1, 0.5, "news_bullish"),
+        (0.09, 0.0, "news_neutral"),
+        (-0.09, 0.0, "news_neutral"),
+        (-0.1, -0.5, "news_bearish"),
+        (-0.4, -1.0, "news_strong_bearish"),
+        # Extrêmes
+        (1.0, 1.0, "news_strong_bullish"),
+        (-1.0, -1.0, "news_strong_bearish"),
+    ],
+)
+def test_compute_google_news_bias(score, expected_bias, expected_zone):
+    bias, zone = _compute_google_news_bias(score)
+    assert bias == expected_bias
+    assert zone == expected_zone
+
+
+# ----- _enrich_with_google_news -----
+
+def test_enrich_with_google_news_valid_btc():
+    decision = _make_decision("long")
+    decision.entity_id = "BTC"
+    gn = {
+        "score": 0.3,
+        "n_articles": 50,
+        "n_bullish": 15,
+        "n_bearish": 10,
+        "top_publishers": [
+            {"name": "Reuters", "count": 8},
+            {"name": "Bloomberg", "count": 5},
+            {"name": "CoinDesk", "count": 3},
+        ],
+    }
+    bias = _enrich_with_google_news(decision, gn)
+
+    assert bias == 0.5  # zone news_bullish
+    assert len(decision.evidence) == 1
+    assert decision.evidence[0]["source"] == "google_news_rss"
+    assert decision.evidence[0]["score"] == SOURCE_SCORES["google_news_rss"]
+    fact = decision.evidence[0]["fact"]
+    assert "+0.30" in fact
+    assert "bull=15" in fact
+    assert "bear=10" in fact
+    assert "BTC" in fact
+    # Top publishers visibles dans l'evidence (3 max)
+    assert "Reuters" in fact
+    assert "Bloomberg" in fact
+    assert "CoinDesk" in fact
+    assert len(decision.triggers) == 1
+    assert decision.triggers[0]["type"] == "news_sentiment_google"
+    assert "Google News" in decision.triggers[0]["value"]
+
+
+def test_enrich_with_google_news_valid_gold():
+    """L'entity_id de la décision doit apparaître dans le fact."""
+    decision = _make_decision("short")
+    decision.entity_id = "GOLD"
+    gn = {
+        "score": -0.5,
+        "n_articles": 40,
+        "n_bullish": 5,
+        "n_bearish": 20,
+        "top_publishers": [{"name": "Financial Times", "count": 10}],
+    }
+    bias = _enrich_with_google_news(decision, gn)
+
+    assert bias == -1.0  # zone news_strong_bearish
+    fact = decision.evidence[0]["fact"]
+    assert "GOLD" in fact
+    assert "Financial Times" in fact
+
+
+def test_enrich_with_google_news_no_publishers():
+    """Sans top_publishers, l'evidence reste valide (juste sans bloc 'top: ...')."""
+    decision = _make_decision("long")
+    decision.entity_id = "BTC"
+    gn = {
+        "score": 0.2,
+        "n_articles": 50,
+        "n_bullish": 10,
+        "n_bearish": 5,
+        "top_publishers": [],
+    }
+    bias = _enrich_with_google_news(decision, gn)
+
+    assert bias == 0.5
+    fact = decision.evidence[0]["fact"]
+    assert "+0.20" in fact
+    # Pas de fragment "top: " si la liste est vide
+    assert "top:" not in fact
+
+
+def test_enrich_with_google_news_missing_top_publishers_field():
+    """Si la clé top_publishers est absente, on tolère (default = [])."""
+    decision = _make_decision("long")
+    decision.entity_id = "BTC"
+    gn = {
+        "score": 0.2,
+        "n_articles": 50,
+        "n_bullish": 10,
+        "n_bearish": 5,
+    }
+    bias = _enrich_with_google_news(decision, gn)
+    assert bias == 0.5
+    assert "top:" not in decision.evidence[0]["fact"]
+
+
+def test_enrich_with_google_news_missing_score():
+    decision = _make_decision()
+    gn = {"n_articles": 50}  # pas de score
+    bias = _enrich_with_google_news(decision, gn)
+    assert bias is None
+    assert decision.evidence == []
+    assert decision.triggers == []
+
+
+def test_enrich_with_google_news_invalid_score_type():
+    decision = _make_decision()
+    gn = {"score": "not-a-number", "n_articles": 50, "n_bullish": 10, "n_bearish": 5}
+    bias = _enrich_with_google_news(decision, gn)
+    assert bias is None
+    assert decision.evidence == []
+
+
+def test_enrich_with_google_news_publishers_truncated_to_3():
+    """Plus de 3 publishers fournis → seulement les 3 premiers dans le fact."""
+    decision = _make_decision("long")
+    decision.entity_id = "BTC"
+    gn = {
+        "score": 0.0,
+        "n_articles": 50,
+        "n_bullish": 0,
+        "n_bearish": 0,
+        "top_publishers": [
+            {"name": "Reuters", "count": 5},
+            {"name": "Bloomberg", "count": 4},
+            {"name": "CoinDesk", "count": 3},
+            {"name": "TheBlock", "count": 2},
+            {"name": "Decrypt", "count": 1},
+        ],
+    }
+    _enrich_with_google_news(decision, gn)
+    fact = decision.evidence[0]["fact"]
+    assert "Reuters" in fact
+    assert "Bloomberg" in fact
+    assert "CoinDesk" in fact
+    # Les 4e et 5e ne doivent pas apparaître
+    assert "TheBlock" not in fact
+    assert "Decrypt" not in fact
+
+
+def test_enrich_with_google_news_malformed_publisher_entry():
+    """Un publisher non-dict est ignoré sans crasher."""
+    decision = _make_decision("long")
+    decision.entity_id = "BTC"
+    gn = {
+        "score": 0.0,
+        "n_articles": 50,
+        "n_bullish": 0,
+        "n_bearish": 0,
+        "top_publishers": [
+            {"name": "Reuters", "count": 5},
+            "not-a-dict",  # malformé, doit être skip
+            {"name": "Bloomberg", "count": 3},
+        ],
+    }
+    _enrich_with_google_news(decision, gn)
+    fact = decision.evidence[0]["fact"]
+    assert "Reuters" in fact
+    assert "Bloomberg" in fact
