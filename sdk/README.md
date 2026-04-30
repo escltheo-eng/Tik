@@ -3,9 +3,9 @@
 Client Python pour consommer les signaux du **core Tik** — destiné aux bots
 clients (Zeta aujourd'hui, Totem demain).
 
-> **Statut** : Sessions 1 + 2 du Paquet 2 livrées — client HTTP + WebSocket
-> avec hooks événementiels et reconnexion auto. Cache, telemetry, config
-> YAML : sessions 3-5 (cf. plan dans CLAUDE.md section 8).
+> **Statut** : Sessions 1 + 2 + 3 du Paquet 2 livrées — client HTTP + WebSocket
+> avec hooks événementiels et reconnexion auto + cache local + circuit breaker.
+> Telemetry, config YAML : sessions 4-5 (cf. plan dans CLAUDE.md section 8).
 
 ## Règle fondamentale (ADR-003)
 
@@ -144,10 +144,70 @@ pip install -e ".[dev]"
 pytest -v
 ```
 
+## Résilience : cache local + circuit breaker LOCAL (Session 3)
+
+Tout est **opt-in**. Sans rien configurer, le SDK se comporte comme avant
+(direct HTTP). Quand tu actives `cache=` et/ou `circuit_breaker=`, le SDK
+absorbe les pannes du core Tik pour que ton bot continue à fonctionner —
+strictement aligné sur ADR-003 *« si Tik est down, Zeta continue normalement »*.
+
+```python
+import asyncio
+from tik_sdk import (
+    TikClient, ApiKeyAuth,
+    InMemoryCache, CircuitBreaker,
+)
+
+async def main():
+    async with TikClient(
+        "http://localhost:8200",
+        ApiKeyAuth("tik_xxx"),
+        cache=InMemoryCache(maxsize=1000),
+        circuit_breaker=CircuitBreaker(failure_threshold=5, reset_timeout_s=30),
+    ) as client:
+        # Premier appel : HTTP + mise en cache (TTL adapté à l'horizon)
+        signals = await client.get_latest_signals(entity="BTC", horizon="swing")
+        # Appel suivant à l'intérieur du TTL : cache hit, pas de HTTP
+        signals = await client.get_latest_signals(entity="BTC", horizon="swing")
+
+asyncio.run(main())
+```
+
+### TTL par horizon (défauts)
+
+| Horizon  | TTL | Pourquoi |
+|----------|-----|----------|
+| `flash`  | 60 s    | données qui bougent vite (BTC minutes) |
+| `swing`  | 5 min   | swing typique RSI/MACD |
+| `macro`  | 1 h     | macro lent (DXY, FRED) |
+| autre    | 5 min   | entities, veracity, signal par id, etc. |
+| `/health`| **jamais cached** | sinon on cache un état périmé |
+
+Override possible : `TikClient(..., ttl_by_horizon={"flash": 30, "swing": 120, ...})`.
+
+### Comportement du circuit breaker
+
+États : `closed` (tout va bien) → après `failure_threshold` échecs consécutifs
+→ `open` (refuse toutes les nouvelles requêtes pendant `reset_timeout_s`) → 
+`half_open` (laisse passer 1 requête de test) → `closed` si succès, `open`
+sinon (timer redémarré).
+
+- Une réponse **5xx** (erreur côté core) compte comme échec → fait avancer le breaker.
+- Une réponse **4xx** (404, 401, 403) ne compte **pas** : c'est un problème
+  de requête, pas de disponibilité.
+- Quand le breaker est `open` mais qu'un **cache hit** est disponible, le
+  cache sert directement (court-circuit total — pas de HTTP, pas d'exception).
+- Quand le breaker est `open` ET cache miss : `CircuitBreakerOpen` levée.
+
+### Bascule sur Redis (futur)
+
+L'interface `Cache` est pluggable. Le jour où tu veux partager le cache
+entre plusieurs processus (ex : plusieurs instances de Zeta), une
+implémentation `RedisCache(redis_url=...)` viendra dans `tik_sdk.cache`
+sans toucher au reste du SDK. À ajouter via `pip install tik-sdk[redis]`.
+
 ## À venir (sessions suivantes)
 
-- **Session 3** — Cache local (in-memory + Redis optionnel) + fallback
-  offline + circuit breaker LOCAL côté SDK.
 - **Session 4** — Config YAML hot-reloadable + telemetry feedback
   automatique (`POST /feedback`).
 - **Session 5** — Documentation d'intégration overlay Zeta + exemples

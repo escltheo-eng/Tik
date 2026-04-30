@@ -275,7 +275,7 @@ Améliorations apportées au Core après le déploiement initial.
 - **ADR-006 documenté** : `docs/adr/006-nlp-ollama-classifier.md` formalise les choix (Ollama plutôt que FinBERT/CryptoBERT pour la réutilisabilité future, pattern Strategy avec injection de dépendance, fallback hiérarchique avec circuit breaker batch-level, prompt one-shot avec parsing tolérant) et liste les conséquences positives/négatives (gestion native négation/contexte/multi-mots vs dépendance Mac hôte, latence, faiblesse sur termes techniques précis comme "higher low" non captés par le 3B).
 - **Backlog `docs/backlog.md` créé** : amélioration différée du fallback keywords (8 mots-clés mono-mot non ambigus à ajouter : `reclaim/reclaims/reclaimed` en bull, `topping/rejection/breakdown/outflows/unloading` en bear) et idée d'un **dataset golden** annoté (~50 titres) pour comparer quantitativement keywords vs Ollama. Reportés car le LLM résout déjà la majorité des cas et le fallback est rare en pratique.
 
-### Paquet 2 — SDK Python : 🚧 EN COURS (Sessions 1+2/5 livrées le 2026-04-30)
+### Paquet 2 — SDK Python : 🚧 EN COURS (Sessions 1+2+3/5 livrées le 2026-04-30)
 
 À implémenter dans `Tik/sdk/`. Découpage en 5 sessions :
 
@@ -283,7 +283,7 @@ Améliorations apportées au Core après le déploiement initial.
 |---|---|---|
 | 1 | Fondations + client HTTP de base + auth pluggable | ✅ livrée le 2026-04-30 |
 | 2 | Client WebSocket + hooks événementiels | ✅ livrée le 2026-04-30 |
-| 3 | Cache local + fallback offline + circuit breaker LOCAL | ⏳ |
+| 3 | Cache local + fallback offline + circuit breaker LOCAL | ✅ livrée le 2026-04-30 |
 | 4 | Config YAML hot-reload + telemetry feedback automatique (POST /feedback) | ⏳ |
 | 5 | Doc intégration overlay Zeta + exemples + polish | ⏳ |
 
@@ -314,12 +314,25 @@ Améliorations apportées au Core après le déploiement initial.
 - **Bump version SDK 0.1.0 → 0.2.0**. Dep ajoutée : `websockets>=13.1` (même version que le core).
 - **Garde-fou ADR-003 toujours vert** : aucune méthode d'envoi WS exposée — le stream est strictement read-only depuis le core vers le bot. Pas de "force signal" possible.
 
+**Session 3 livrée le 2026-04-30** :
+- **`circuit_breaker.py`** : machine à états `closed` → `open` → `half_open` → `closed/open`. Compteur d'échecs consécutifs, ouvre après `failure_threshold` (défaut 5), reste ouvert pendant `reset_timeout_s` (défaut 30 s). `time_fn` injectable pour des tests déterministes (FakeClock plutôt que `asyncio.sleep`). Pas de lock — atomicité garantie par l'event loop mono-thread asyncio.
+- **`cache.py`** : interface abstraite `Cache` + 2 implémentations livrées :
+  - `NoCache` (no-op, défaut)
+  - `InMemoryCache` (TTL en RAM, éviction LRU au-delà de `maxsize`, défaut 1000 entrées)
+  - Future : `RedisCache` via extras `[redis]` quand on aura besoin de partager le cache entre processus
+  - Helper `make_cache_key("GET", path, params)` → clé stable et lisible (params triés alphabétiquement)
+  - `DEFAULT_TTL_BY_HORIZON` : flash 60 s, swing 300 s, macro 3600 s, default 300 s — alignés sur les durées d'expiry du publisher core
+- **`exceptions.py`** : ajout `CircuitBreakerOpen(TikError)` levée quand le breaker est ouvert ET pas de cache disponible
+- **`_http.py` refondu** : flux unifié cache → breaker → HTTP. Cache hit court-circuit tout (pas de HTTP, pas de breaker check). Cache miss + breaker ouvert → `CircuitBreakerOpen` direct. Cache miss + breaker OK → tente HTTP, record_success/failure selon résultat. **5xx compte comme échec** pour le breaker (le core a un souci) ; **4xx ne compte pas** (problème de requête, pas de disponibilité). Bug subtil corrigé pendant le run : l'ordre des `except` était cassé (`ServerError` héritant de `TikError`, le `except TikError` la mangeait avant le `except ServerError` → breaker ne s'ouvrait jamais sur 5xx).
+- **`TikClient`** : nouveaux kwargs optionnels `cache=`, `circuit_breaker=`, `ttl_by_horizon=` (override des défauts). Tout reste rétrocompatible : sans rien configurer, comportement identique aux sessions 1+2. TTL passé automatiquement par méthode selon l'horizon (`get_latest_signals(horizon="flash")` → TTL 60 s ; `get_health` → TTL 0 = jamais cached).
+- **3 fichiers de tests + 56 nouveaux tests** : `test_circuit_breaker.py` (16 tests sur les transitions d'état + cycles complets via FakeClock), `test_cache.py` (23 tests : NoCache, InMemoryCache, TTL/expiration, LRU, helper `make_cache_key`), `test_fallback.py` (17 tests d'intégration via `httpx.MockTransport` : cache hit/miss, fallback sur NetworkError, 5xx ouvre le breaker, 4xx ne l'ouvre pas, scénario complet TikClient).
+- **Total suite** : 144/144 tests verts en ~12 s. Aucune régression Sessions 1+2.
+- **Bump version SDK 0.2.0 → 0.3.0**. Aucune nouvelle dépendance externe (cache + breaker = stdlib pure).
+- **Garde-fou ADR-003 toujours vert** : `test_client_does_not_expose_execution_methods` continue de passer ; les nouvelles classes (`Cache`, `CircuitBreaker`) sont read-only et ne peuvent pas générer de signaux ni d'ordres.
+
 À implémenter dans les sessions suivantes :
-- Cache local Redis ou in-memory avec TTL
-- Fallback offline si core indisponible
-- Circuit breaker LOCAL (indépendant du core)
-- Telemetry retour automatique (`/feedback`)
-- Config YAML hot-reloadable
+- Telemetry retour automatique (`POST /feedback`) — Zeta envoie ses outcomes (win/loss/PnL) au core
+- Config YAML hot-reloadable — pour piloter seuils breaker, TTL cache, hooks WS sans redémarrer le bot
 - Documentation d'intégration Zeta (overlay sur `turbo_v2.py`)
 
 ### Paquet 3 — Dashboard Expo : ⏳ À FAIRE
@@ -498,5 +511,5 @@ cp "$WORKTREE/path2" "$MAIN/path2"
 ---
 
 *Dernière mise à jour : 2026-04-30*
-*Version Tik : 0.1.0 (Core MVP livré + évolutions Paquet 1.x — swing BTC/GOLD multi-overlay + flash BTC + NLP Ollama sur les news ; SDK Paquet 2 Sessions 1+2/5 livrées — client HTTP + WebSocket avec hooks événementiels et reconnexion auto, version SDK 0.2.0)*
+*Version Tik : 0.1.0 (Core MVP livré + évolutions Paquet 1.x — swing BTC/GOLD multi-overlay + flash BTC + NLP Ollama sur les news ; SDK Paquet 2 Sessions 1+2+3/5 livrées — client HTTP + WebSocket avec hooks + cache local + circuit breaker LOCAL, version SDK 0.3.0)*
 *Mainteneur : utilisateur solo + assistant Claude via extension VS Code*

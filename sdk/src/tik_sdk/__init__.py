@@ -10,9 +10,18 @@ asynchrone non bloquant).
 """
 
 from tik_sdk.auth import ApiKeyAuth, AuthMethod
+from tik_sdk.cache import (
+    DEFAULT_TTL_BY_HORIZON,
+    Cache,
+    InMemoryCache,
+    NoCache,
+    make_cache_key,
+)
+from tik_sdk.circuit_breaker import CircuitBreaker
 from tik_sdk.client import TikClient
 from tik_sdk.exceptions import (
     AuthError,
+    CircuitBreakerOpen,
     NetworkError,
     NotFoundError,
     ServerError,
@@ -32,19 +41,25 @@ from tik_sdk.models import (
 )
 from tik_sdk.stream import TikStream
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 __all__ = [
     "Advisory",
     "ApiKeyAuth",
     "AuthError",
     "AuthMethod",
+    "Cache",
+    "CircuitBreaker",
+    "CircuitBreakerOpen",
     "CounterScenario",
+    "DEFAULT_TTL_BY_HORIZON",
     "Entity",
     "Evidence",
     "Health",
     "HookRegistry",
+    "InMemoryCache",
     "NetworkError",
+    "NoCache",
     "NotFoundError",
     "ServerError",
     "Signal",
@@ -55,4 +70,5 @@ __all__ = [
     "Trigger",
     "VeracityStatus",
     "__version__",
+    "make_cache_key",
 ]
