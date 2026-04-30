@@ -1,0 +1,85 @@
+# tik.yaml — Configuration du SDK tik-sdk
+#
+# Ce fichier est destiné à être chargé par TikConfig.load_from_yaml()
+# puis instancié via TikClient.from_config().
+#
+# Toutes les sections sauf `core` sont OPTIONNELLES — les valeurs par
+# défaut sont sensées pour un démarrage en mode SHADOW.
+#
+# Hot-reload : ce fichier est rechargeable à chaud via ConfigWatcher.
+# Périmètre du hot-reload :
+#   - Mutables à chaud : `cache.ttl_by_horizon`, `stream.veracity_collapse_threshold`
+#   - Non mutables (warning loggué, nécessite restart du SDK) : tout le reste
+#
+# Cf. docs/integration_zeta.md pour l'usage côté Zeta + bonnes pratiques.
+
+# ----- SECTION OBLIGATOIRE -----
+
+core:
+  # URL HTTP(S) du core Tik. Sera convertie automatiquement en ws:// pour
+  # les connexions WebSocket (`/ws/signals`).
+  base_url: http://localhost:8200
+
+  # Timeout HTTP pour CHAQUE requête (lecture, POST feedback). 5-10 s
+  # raisonnable. Trop bas → flapping inutile sur des requêtes lentes.
+  timeout_s: 10.0
+
+
+# ----- CACHE LOCAL (Session 3) - opt-in -----
+
+cache:
+  # `false` = pas de cache (NoCache, défaut). `true` = InMemoryCache.
+  enabled: false
+
+  # Capacité max du cache. Au-delà, éviction LRU.
+  # 1000 entrées = ~1 MB de RAM pour des signaux Tik typiques.
+  maxsize: 1000
+
+  # TTL par horizon, en secondes. Adapté aux durées d'expiry des signaux
+  # côté core (cf. core/src/tik_core/scoring/publisher.py EXPIRY_BY_HORIZON).
+  # `default` s'applique aux endpoints non liés à un horizon (entities, veracity).
+  ttl_by_horizon:
+    flash: 60       # 1 min — signaux qui bougent vite (BTC minutes-heures)
+    swing: 300      # 5 min — swing typique RSI/MACD
+    macro: 3600     # 1 h   — macro lent (DXY, FRED)
+    default: 300    # 5 min — entities, veracity, signal par id, etc.
+
+
+# ----- CIRCUIT BREAKER LOCAL (Session 3) - opt-in -----
+
+circuit_breaker:
+  # `false` = pas de circuit breaker (défaut). Activer en production.
+  enabled: false
+
+  # Nombre d'échecs réseau consécutifs avant d'ouvrir le circuit.
+  # 3-5 raisonnable. Trop bas = false positives sur réseaux flaky.
+  failure_threshold: 5
+
+  # Délai avant retentative half_open (en secondes). 30 s laisse au core
+  # le temps de redémarrer si c'était une panne ponctuelle.
+  reset_timeout_s: 30.0
+
+
+# ----- WEBSOCKET STREAM (Session 2) -----
+
+stream:
+  # Seuil sous lequel `on_veracity_collapse` est déclenché.
+  # 0.5 = défaut. Plus strict (ex 0.4) = moins d'alertes mais plus tardives.
+  veracity_collapse_threshold: 0.5
+
+
+# ----- TELEMETRY FEEDBACK (Session 4) -----
+
+feedback:
+  # `false` = pas de queue feedback. report_outcome() lèvera RuntimeError.
+  # `true` = queue active (défaut). Recommandé même en shadow pour
+  # collecter la donnée de calibrage.
+  enabled: true
+
+  # Capacité de la queue en mémoire. Si pleine → drop avec log warning.
+  # 1000 = ~1 MB. Largement suffisant pour un trader < 100 trades/jour.
+  max_queue_size: 1000
+
+  # Tentatives max par payload avant drop. 3 = initial + 3 retries = 4 total.
+  # Backoff exponentiel : 1s → 2s → 4s.
+  max_retries: 3

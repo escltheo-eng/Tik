@@ -3,10 +3,41 @@
 Client Python pour consommer les signaux du **core Tik** — destiné aux bots
 clients (Zeta aujourd'hui, Totem demain).
 
-> **Statut** : Sessions 1 + 2 + 3 + 4 du Paquet 2 livrées — client HTTP +
-> WebSocket avec hooks + cache local + circuit breaker + telemetry feedback
-> non bloquant + config YAML hot-reloadable. Doc d'intégration overlay Zeta :
-> session 5 (cf. CLAUDE.md section 8).
+> **Statut Paquet 2 : ✅ COMPLET** — Sessions 1 à 5 livrées le 2026-04-30.
+> Version 0.5.0. Le SDK sera bumpé à 1.0.0 quand il sera wiré dans Zeta
+> en production et aura passé les 3 mois de mode shadow.
+
+## Liens utiles
+
+- **[`docs/integration_zeta.md`](../docs/integration_zeta.md)** — guide
+  concret pour câbler le SDK dans `cranial_bot/turbo_v2.py` de Zeta sans
+  bypass V01-V15. **À lire avant toute intégration.**
+- **[`docs/adr/007-sdk-architecture.md`](../docs/adr/007-sdk-architecture.md)**
+  — ADR-007 qui formalise les choix d'architecture du SDK.
+- **[`docs/adr/003-zeta-integration.md`](../docs/adr/003-zeta-integration.md)**
+  — règle absolue ADR-003 : pas de bypass du guard V01-V15.
+- **[`sdk/tik.example.yaml`](tik.example.yaml)** — config YAML annotée
+  prête à copier-coller.
+- **[`sdk/examples/`](examples/)** — 4 exemples runnable (basic, streaming,
+  overlay Zeta, full resilience).
+
+## Production checklist
+
+Avant de mettre le SDK en service réel côté Zeta :
+
+- [ ] CLAUDE.md sections 4-5 (ADR + garde-fous) lues.
+- [ ] ADR-003 (intégration sans bypass V01-V15) **explicitement validé**.
+- [ ] Garde-fou 1 (mode SHADOW 3 mois minimum) en place — Tik observe,
+      n'influence rien.
+- [ ] Garde-fou 2 (budget test 5 % capital) prêt pour le passage en
+      mode actif après les 3 mois shadow.
+- [ ] Clé API Tik générée via `core/scripts/create_api_key.py` avec
+      les scopes `read:signals`, `read:entities`, `read:veracity`,
+      `write:feedback`. Pas de `write:entities`.
+- [ ] `tik.yaml` copié depuis `sdk/tik.example.yaml` et adapté.
+- [ ] Logs `tik.overlay.*`, `tik.crash_warning.*`, `tik.feedback.*`
+      monitorés.
+- [ ] Tests Zeta couvrent le cas « Tik down » (overlay no-op, fallback cache).
 
 ## Règle fondamentale (ADR-003)
 
@@ -302,8 +333,16 @@ Sécurité :
 - Si un handler de reload plante → log error, les autres handlers sont
   quand même appelés (isolation des exceptions).
 
-## À venir (session suivante)
+## Roadmap
 
-- **Session 5** — Documentation d'intégration overlay Zeta sur
-  `cranial_bot/turbo_v2.py` (sans bypass V01-V15) + exemples de
-  câblage `on_crash_warning` → `kill_switch_service` + polish CI.
+- **Paquet 2 (SDK)** — ✅ complet. Versions 0.1.0 → 0.5.0.
+- **v1.0.0** — bumpé quand le SDK aura été déployé en production côté
+  Zeta et qu'il aura passé les 3 mois de mode shadow (cf. CLAUDE.md § 5).
+- **Extensions futures** :
+  - `RedisCache` via extras `[redis]` quand on aura besoin de partager
+    le cache entre processus (ex : plusieurs instances de Zeta).
+  - `OAuth2Auth` si le core Tik accepte un jour OAuth2 (cf. ADR-001).
+  - Queue feedback persistante (SQLite ou Redis) si l'opérationnel
+    montre que les pertes de queue lors de crash sont gênantes.
+  - Watchdog inotify/fsevents si le polling mtime 5 s devient un
+    facteur limitant (peu probable pour de la config qui change rarement).

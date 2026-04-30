@@ -16,6 +16,9 @@ from tik_sdk import (
     warn_immutable_changes,
 )
 
+# Chemin vers le fichier d'exemple (Session 5) — utilisé en smoke test.
+EXAMPLE_YAML = Path(__file__).resolve().parent.parent / "tik.example.yaml"
+
 
 # ============================================================================
 # TikConfig — chargement YAML
@@ -111,6 +114,31 @@ def test_load_yaml_empty_file_raises(tmp_path: Path) -> None:
     # YAML vide → on tente {} → manque core
     with pytest.raises(ValidationError):
         TikConfig.load_from_yaml(yaml_path)
+
+
+# ============================================================================
+# Smoke test : `sdk/tik.example.yaml` doit toujours être valide
+# ============================================================================
+
+
+def test_example_yaml_is_valid() -> None:
+    """Le fichier d'exemple livré avec le SDK doit toujours valider.
+
+    Ce test se déclenche si quelqu'un casse `tik.example.yaml` ou si on
+    introduit un nouveau champ obligatoire dans `TikConfig` sans mettre
+    à jour le fichier d'exemple.
+    """
+    assert EXAMPLE_YAML.is_file(), f"missing example file: {EXAMPLE_YAML}"
+    config = TikConfig.load_from_yaml(EXAMPLE_YAML)
+    # Sanity check : champs principaux remplis
+    assert config.core.base_url
+    assert config.core.timeout_s > 0
+    assert "flash" in config.cache.ttl_by_horizon
+    assert "swing" in config.cache.ttl_by_horizon
+    assert "macro" in config.cache.ttl_by_horizon
+    assert "default" in config.cache.ttl_by_horizon
+    assert 0 < config.stream.veracity_collapse_threshold <= 1.0
+    assert config.feedback.max_queue_size >= 1
 
 
 # ============================================================================
