@@ -3,9 +3,10 @@
 Client Python pour consommer les signaux du **core Tik** — destiné aux bots
 clients (Zeta aujourd'hui, Totem demain).
 
-> **Statut** : Sessions 1 + 2 + 3 du Paquet 2 livrées — client HTTP + WebSocket
-> avec hooks événementiels et reconnexion auto + cache local + circuit breaker.
-> Telemetry, config YAML : sessions 4-5 (cf. plan dans CLAUDE.md section 8).
+> **Statut** : Sessions 1 + 2 + 3 + 4 du Paquet 2 livrées — client HTTP +
+> WebSocket avec hooks + cache local + circuit breaker + telemetry feedback
+> non bloquant + config YAML hot-reloadable. Doc d'intégration overlay Zeta :
+> session 5 (cf. CLAUDE.md section 8).
 
 ## Règle fondamentale (ADR-003)
 
@@ -206,9 +207,103 @@ entre plusieurs processus (ex : plusieurs instances de Zeta), une
 implémentation `RedisCache(redis_url=...)` viendra dans `tik_sdk.cache`
 sans toucher au reste du SDK. À ajouter via `pip install tik-sdk[redis]`.
 
-## À venir (sessions suivantes)
+## Telemetry feedback non-bloquante (Session 4)
 
-- **Session 4** — Config YAML hot-reloadable + telemetry feedback
-  automatique (`POST /feedback`).
-- **Session 5** — Documentation d'intégration overlay Zeta + exemples
-  + polish.
+Quand un trade Zeta se termine sur un signal Tik, on renvoie le résultat
+au core pour qu'il recalibre ses engines. **`report_outcome()` est non
+bloquant** (ADR-003) — l'envoi part en file et un worker async POST en
+arrière-plan avec retry exponentiel.
+
+```python
+async with TikClient(...) as client:
+    # Après fermeture d'un trade côté Zeta
+    await client.report_outcome(
+        signal_id="TIK-SWING-BTC-20260430-abc123",
+        outcome="win",       # 'win' | 'loss' | 'breakeven' | 'not_taken'
+        trade_id="trade_42",
+        pnl_pct=1.4,
+        duration_held_s=4200,
+        exit_reason="TP",
+    )
+    # ↑ retour immédiat, le HTTP part en background
+```
+
+Comportement :
+- Queue async par défaut (capacité 1000). Si pleine → drop avec log warning.
+- Worker async POST `/feedback`. Si NetworkError → retry (défaut 3 fois,
+  backoff 1s/2s/4s). Au-delà → drop avec log error.
+- Erreurs 4xx (404 si signal inconnu) → pas de retry, drop direct avec log.
+- À l'arrêt du `TikClient` (`__aexit__`), worker stoppé en fast shutdown
+  (drop ce qui reste). Pour drainer proprement avant stop : 
+  `await client.feedback_queue.stop(drain=True, timeout_s=10)`.
+
+Pas de queue persistante en Session 4 : si le SDK crash, les feedbacks en
+file sont perdus. Acceptable pour le MVP — le core peut être recalibré
+sur les cycles suivants.
+
+## Config YAML hot-reloadable (Session 4)
+
+Toutes les briques précédentes (cache, breaker, hooks, feedback) peuvent
+être pilotées par un fichier YAML rechargé à chaud.
+
+`tik.yaml` :
+
+```yaml
+core:
+  base_url: http://localhost:8200
+  timeout_s: 10.0
+
+cache:
+  enabled: true
+  maxsize: 1000
+  ttl_by_horizon:
+    flash: 60
+    swing: 300
+    macro: 3600
+    default: 300
+
+circuit_breaker:
+  enabled: true
+  failure_threshold: 5
+  reset_timeout_s: 30.0
+
+stream:
+  veracity_collapse_threshold: 0.5
+
+feedback:
+  enabled: true
+  max_queue_size: 1000
+  max_retries: 3
+```
+
+Usage :
+
+```python
+from tik_sdk import TikClient, ApiKeyAuth, TikConfig, ConfigWatcher
+
+config = TikConfig.load_from_yaml("tik.yaml")
+
+async with TikClient.from_config(config, auth=ApiKeyAuth("tik_xxx")) as client:
+    # Hot-reload : poll mtime toutes les 5 s, applique les settings mutables
+    async with ConfigWatcher("tik.yaml", poll_interval_s=5.0) as watcher:
+        watcher.on_reload(lambda old, new: client.apply_mutable_config(new))
+        # ... ton bot tourne ici
+```
+
+Périmètre du hot-reload :
+- **Mutables à chaud** : `cache.ttl_by_horizon`, `stream.veracity_collapse_threshold`.
+- **Non mutables** (logué warning au reload) : `core.base_url`, `core.timeout_s`,
+  `cache.enabled`, `cache.maxsize`, `circuit_breaker.*`, `feedback.*`.
+  Ces changements nécessitent un redémarrage du SDK.
+
+Sécurité :
+- Si le YAML est cassé au reload → log error, on **garde l'ancien config**
+  (jamais d'état corrompu).
+- Si un handler de reload plante → log error, les autres handlers sont
+  quand même appelés (isolation des exceptions).
+
+## À venir (session suivante)
+
+- **Session 5** — Documentation d'intégration overlay Zeta sur
+  `cranial_bot/turbo_v2.py` (sans bypass V01-V15) + exemples de
+  câblage `on_crash_warning` → `kill_switch_service` + polish CI.

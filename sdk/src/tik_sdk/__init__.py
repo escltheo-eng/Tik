@@ -5,8 +5,8 @@
 ADR-003 — Le SDK n'expose AUCUNE méthode d'exécution d'ordre.
 Tik est une source d'edge additionnelle ; tout passe systématiquement
 par le guard V01-V15 et le risk_engine de Zeta. Le SDK fournit
-uniquement de la lecture de signaux (et plus tard du POST /feedback
-asynchrone non bloquant).
+uniquement de la lecture de signaux + un `report_outcome` non-bloquant
+(POST /feedback async via queue + worker).
 """
 
 from tik_sdk.auth import ApiKeyAuth, AuthMethod
@@ -19,6 +19,17 @@ from tik_sdk.cache import (
 )
 from tik_sdk.circuit_breaker import CircuitBreaker
 from tik_sdk.client import TikClient
+from tik_sdk.config import (
+    CacheConfig,
+    CircuitBreakerConfig,
+    ConfigWatcher,
+    CoreConfig,
+    FeedbackConfig,
+    StreamConfig,
+    TikConfig,
+    diff_mutable_settings,
+    warn_immutable_changes,
+)
 from tik_sdk.exceptions import (
     AuthError,
     CircuitBreakerOpen,
@@ -27,6 +38,7 @@ from tik_sdk.exceptions import (
     ServerError,
     TikError,
 )
+from tik_sdk.feedback import FeedbackPayload, FeedbackQueue
 from tik_sdk.hooks import HookRegistry
 from tik_sdk.models import (
     Advisory,
@@ -41,7 +53,7 @@ from tik_sdk.models import (
 )
 from tik_sdk.stream import TikStream
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 __all__ = [
     "Advisory",
@@ -49,12 +61,19 @@ __all__ = [
     "AuthError",
     "AuthMethod",
     "Cache",
+    "CacheConfig",
     "CircuitBreaker",
+    "CircuitBreakerConfig",
     "CircuitBreakerOpen",
+    "ConfigWatcher",
+    "CoreConfig",
     "CounterScenario",
     "DEFAULT_TTL_BY_HORIZON",
     "Entity",
     "Evidence",
+    "FeedbackConfig",
+    "FeedbackPayload",
+    "FeedbackQueue",
     "Health",
     "HookRegistry",
     "InMemoryCache",
@@ -64,11 +83,15 @@ __all__ = [
     "ServerError",
     "Signal",
     "SourceVeracity",
+    "StreamConfig",
     "TikClient",
+    "TikConfig",
     "TikError",
     "TikStream",
     "Trigger",
     "VeracityStatus",
     "__version__",
+    "diff_mutable_settings",
     "make_cache_key",
+    "warn_immutable_changes",
 ]

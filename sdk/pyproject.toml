@@ -4,25 +4,28 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tik-sdk"
-version = "0.3.0"
+version = "0.4.0"
 description = "Tik SDK — client Python pour consommer les signaux du core Tik (Paquet 2)"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Proprietary" }
 authors = [{ name = "Tik" }]
 
-# Deps minimales :
+# Deps :
 #   httpx       — HTTP async (Session 1)
 #   websockets  — WebSocket async (Session 2 — même version que le core)
 #   pydantic    — validation des modèles miroirs des schémas core
 #   structlog   — logging cohérent avec le core
-# Les deps des sessions suivantes (redis, watchdog, pyyaml) seront
-# ajoutées au moment où elles deviennent nécessaires.
+#   pyyaml      — config YAML hot-reloadable (Session 4 — même version que le core)
+# Cache + circuit breaker (Session 3) sont en stdlib pure, pas de dep externe.
+# `redis` viendra plus tard via extras `[redis]` quand on aura besoin de
+# partager le cache entre processus.
 dependencies = [
     "httpx>=0.27.0",
     "websockets>=13.1",
     "pydantic>=2.8.0",
     "structlog>=24.4.0",
+    "pyyaml>=6.0.2",
 ]
 
 [project.optional-dependencies]

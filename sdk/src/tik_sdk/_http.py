@@ -55,7 +55,7 @@ from tik_sdk.exceptions import (
 log = structlog.get_logger(__name__)
 
 DEFAULT_TIMEOUT = 10.0  # secondes
-USER_AGENT = "tik-sdk/0.3.0"
+USER_AGENT = "tik-sdk/0.4.0"
 API_PREFIX = "/api/v1"
 
 
@@ -170,10 +170,38 @@ class HttpClient:
             await self._cache.set(cache_key, data, ttl_s=cache_ttl_s)
         return data
 
+    async def post(
+        self,
+        path: str,
+        *,
+        json: dict[str, Any],
+        authenticated: bool = True,
+    ) -> Any:
+        """POST sur un endpoint relatif au préfixe `/api/v1`.
+
+        Volontairement **sans cache et sans circuit breaker** :
+        - Pas de cache : POST est mutating, le mettre en cache n'a pas de sens.
+        - Pas de circuit breaker : le SDK utilise POST pour la telemetry
+          (`/feedback`), gérée par une queue async avec son propre retry. Si
+          le breaker fermait sur les POST échoués, il bloquerait aussi les
+          GET de signaux — ce qu'on ne veut pas.
+        """
+        headers = self._auth.headers() if authenticated else {}
+        try:
+            response = await self._client.post(path, json=json, headers=headers)
+        except httpx.TimeoutException as exc:
+            log.warning("tik_sdk.http.post_timeout", path=path, error=str(exc))
+            raise NetworkError(f"timeout calling {path}: {exc}") from exc
+        except httpx.TransportError as exc:
+            log.warning("tik_sdk.http.post_transport_error", path=path, error=str(exc))
+            raise NetworkError(f"transport error calling {path}: {exc}") from exc
+
+        return self._parse(response, expected_status=(200, 201))
+
     @staticmethod
-    def _parse(response: httpx.Response) -> Any:
+    def _parse(response: httpx.Response, *, expected_status: tuple[int, ...] = (200,)) -> Any:
         status = response.status_code
-        if status == 200:
+        if status in expected_status:
             return response.json()
         # Tronqué pour éviter de logger 5 MB d'HTML d'erreur en cas de proxy douteux
         body_excerpt = response.text[:200]

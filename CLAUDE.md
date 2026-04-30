@@ -275,7 +275,7 @@ Améliorations apportées au Core après le déploiement initial.
 - **ADR-006 documenté** : `docs/adr/006-nlp-ollama-classifier.md` formalise les choix (Ollama plutôt que FinBERT/CryptoBERT pour la réutilisabilité future, pattern Strategy avec injection de dépendance, fallback hiérarchique avec circuit breaker batch-level, prompt one-shot avec parsing tolérant) et liste les conséquences positives/négatives (gestion native négation/contexte/multi-mots vs dépendance Mac hôte, latence, faiblesse sur termes techniques précis comme "higher low" non captés par le 3B).
 - **Backlog `docs/backlog.md` créé** : amélioration différée du fallback keywords (8 mots-clés mono-mot non ambigus à ajouter : `reclaim/reclaims/reclaimed` en bull, `topping/rejection/breakdown/outflows/unloading` en bear) et idée d'un **dataset golden** annoté (~50 titres) pour comparer quantitativement keywords vs Ollama. Reportés car le LLM résout déjà la majorité des cas et le fallback est rare en pratique.
 
-### Paquet 2 — SDK Python : 🚧 EN COURS (Sessions 1+2+3/5 livrées le 2026-04-30)
+### Paquet 2 — SDK Python : 🚧 EN COURS (Sessions 1+2+3+4/5 livrées le 2026-04-30)
 
 À implémenter dans `Tik/sdk/`. Découpage en 5 sessions :
 
@@ -284,7 +284,7 @@ Améliorations apportées au Core après le déploiement initial.
 | 1 | Fondations + client HTTP de base + auth pluggable | ✅ livrée le 2026-04-30 |
 | 2 | Client WebSocket + hooks événementiels | ✅ livrée le 2026-04-30 |
 | 3 | Cache local + fallback offline + circuit breaker LOCAL | ✅ livrée le 2026-04-30 |
-| 4 | Config YAML hot-reload + telemetry feedback automatique (POST /feedback) | ⏳ |
+| 4 | Config YAML hot-reload + telemetry feedback automatique (POST /feedback) | ✅ livrée le 2026-04-30 |
 | 5 | Doc intégration overlay Zeta + exemples + polish | ⏳ |
 
 **Session 1 livrée le 2026-04-30** :
@@ -330,10 +330,22 @@ Améliorations apportées au Core après le déploiement initial.
 - **Bump version SDK 0.2.0 → 0.3.0**. Aucune nouvelle dépendance externe (cache + breaker = stdlib pure).
 - **Garde-fou ADR-003 toujours vert** : `test_client_does_not_expose_execution_methods` continue de passer ; les nouvelles classes (`Cache`, `CircuitBreaker`) sont read-only et ne peuvent pas générer de signaux ni d'ordres.
 
-À implémenter dans les sessions suivantes :
-- Telemetry retour automatique (`POST /feedback`) — Zeta envoie ses outcomes (win/loss/PnL) au core
-- Config YAML hot-reloadable — pour piloter seuils breaker, TTL cache, hooks WS sans redémarrer le bot
-- Documentation d'intégration Zeta (overlay sur `turbo_v2.py`)
+**Session 4 livrée le 2026-04-30** :
+- **`feedback.py`** — `FeedbackPayload` (Pydantic, miroir du schéma `FeedbackIn` du core) + `FeedbackQueue` (file `asyncio.Queue` + worker async). `submit()` est **synchrone non-bloquant** (`put_nowait` + retour True/False), garantie ADR-003 que `report_outcome` ne ralentit jamais un trade. Si la queue est pleine → drop avec log warning. Worker POST `/feedback` avec retry exponentiel (défaut 3 tentatives, backoff 1s/2s/4s, `backoff_fn` injectable pour tests). Au-delà des retries → drop avec log error. 4xx (404 si signal inconnu côté core) → pas de retry, drop direct (problème de payload, pas de disponibilité). Compteurs publics `sent_count`/`dropped_count`/`failed_count` pour observabilité. `stop(drain=False, timeout_s=5)` par défaut = fast shutdown.
+- **`_http.py` étendu** : ajout `post()`. Volontairement **sans cache et sans circuit breaker** : POST est mutating, pas de cache ; et si on bloquait les POST sur breaker ouvert, ça bloquerait aussi les retries du worker et la coordination casserait. Le breaker reste donc strictement sur les GET. `_parse()` accepte désormais un `expected_status` tuple (200 par défaut, 200/201 pour POST).
+- **`config.py`** — `TikConfig` Pydantic 5-niveaux (`core`, `cache`, `circuit_breaker`, `stream`, `feedback`) avec valeurs par défaut sensées. `TikConfig.load_from_yaml(path)` charge + valide + lève si KO. `ConfigWatcher` polling mtime (défaut 5s, `time_fn` injectable) avec async context manager `async with watcher:`. À chaque changement de mtime : rechargement + appel des handlers `on_reload(old, new)` (sync uniquement, isolation des exceptions). Si reload échoue (YAML cassé / Pydantic invalide) → log error + **conserve l'ancien config** (jamais d'état corrompu). Helpers `diff_mutable_settings(old, new)` et `warn_immutable_changes(old, new)` pour aider le caller à savoir ce qui peut être appliqué à chaud.
+- **Périmètre du hot-reload** : strictement les settings mutables — `cache.ttl_by_horizon` et `stream.veracity_collapse_threshold`. Les settings non mutables (`core.base_url`, `core.timeout_s`, `cache.enabled`, `cache.maxsize`, `circuit_breaker.*`, `feedback.*`) sont loggués en warning au reload mais **ne s'appliquent qu'au redémarrage** — c'est un choix conscient pour éviter des recréations partielles d'objets internes risquées (un `httpx.AsyncClient` ne peut pas changer de `base_url` à chaud).
+- **`TikClient` étendu** : nouveau `report_outcome(signal_id, outcome, **kwargs)` qui valide via `FeedbackPayload` puis enqueue dans la queue. Lifecycle : `__aenter__` démarre le worker feedback, `__aexit__` le stop fast (drop ce qui reste). Nouveau `feedback_queue` property pour observabilité + drain explicite. Nouveau `apply_mutable_config(new_config)` pour le hot-reload (utilisable comme handler de `ConfigWatcher.on_reload`). Nouvelle factory **`TikClient.from_config(TikConfig, auth=…)`** qui matérialise un client avec cache, breaker, queue feedback configurés depuis le YAML. Kwarg `enable_feedback=False` au constructeur si on veut désactiver complètement la queue (lever `RuntimeError` si `report_outcome` appelé).
+- **`pyproject.toml`** : ajout dep `pyyaml>=6.0.2` (même version que le core). Bump version `0.3.0 → 0.4.0`.
+- **42 nouveaux tests** : `test_feedback.py` (20 tests : payload validation, submit/drop, lifecycle, worker send/retry/4xx, drain, integration `TikClient.report_outcome`) + `test_config.py` (22 tests : load YAML minimal/full/missing/invalid, diff mutable, warn immutable, watcher polling avec mtime forcé via `os.utime` pour fiabilité multi-FS, isolation exceptions handler, async context manager, `from_config`, `apply_mutable_config`).
+- **Total suite** : **186/186 tests verts en 17 s**, premier run sans aucune correction. Aucune régression Sessions 1+2+3.
+- **Garde-fou ADR-003 toujours vert** : `test_client_does_not_expose_execution_methods` continue de passer (la liste des méthodes interdites a été vérifiée). `report_outcome` n'est **pas** un canal d'exécution — c'est un canal de telemetry retour, et son non-blocage garantit qu'il ne ralentit jamais un trade.
+
+À implémenter dans la session suivante :
+- Documentation d'intégration Zeta (overlay sur `cranial_bot/turbo_v2.py` sans bypass V01-V15)
+- Exemples concrets : câblage `on_crash_warning` → `kill_switch_service.handle_alert(...)`
+- Fichier `tik.example.yaml` complet pour copier-coller
+- Polish CI (badges README, workflow GitHub Actions pour `sdk/` séparé du core)
 
 ### Paquet 3 — Dashboard Expo : ⏳ À FAIRE
 
@@ -511,5 +523,5 @@ cp "$WORKTREE/path2" "$MAIN/path2"
 ---
 
 *Dernière mise à jour : 2026-04-30*
-*Version Tik : 0.1.0 (Core MVP livré + évolutions Paquet 1.x — swing BTC/GOLD multi-overlay + flash BTC + NLP Ollama sur les news ; SDK Paquet 2 Sessions 1+2+3/5 livrées — client HTTP + WebSocket avec hooks + cache local + circuit breaker LOCAL, version SDK 0.3.0)*
+*Version Tik : 0.1.0 (Core MVP livré + évolutions Paquet 1.x — swing BTC/GOLD multi-overlay + flash BTC + NLP Ollama sur les news ; SDK Paquet 2 Sessions 1+2+3+4/5 livrées — client HTTP + WebSocket avec hooks + cache local + circuit breaker LOCAL + telemetry feedback non-bloquant + config YAML hot-reloadable, version SDK 0.4.0)*
 *Mainteneur : utilisateur solo + assistant Claude via extension VS Code*
