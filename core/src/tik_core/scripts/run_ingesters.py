@@ -13,6 +13,7 @@ from tik_core.aggregator.cftc_cot_ingester import CftcCotIngester
 from tik_core.aggregator.cryptocompare_ingester import CryptoCompareIngester
 from tik_core.aggregator.fear_greed_ingester import FearGreedIngester
 from tik_core.aggregator.fred_ingester import FredIngester
+from tik_core.aggregator.gdelt_ingester import GdeltIngester
 from tik_core.aggregator.google_news_ingester import GoogleNewsIngester
 from tik_core.aggregator.news_classifier import build_news_classifier
 from tik_core.aggregator.reddit_ingester import RedditIngester
@@ -96,6 +97,17 @@ async def main() -> None:
             subreddits=["Bitcoin", "CryptoMarkets"],
             interval_s=1800,
             limit_per_sub=50,
+        ),
+        # ADR-010 — pas de classifier injecté : GDELT consomme le tone brut
+        # calculé par GDELT (NLP scientifique non-LLM), première source de
+        # diversification méthodologique pure dans le pipeline.
+        GdeltIngester(
+            redis,
+            entity_id="GOLD",
+            query='"gold price"',
+            timespan="1d",
+            lang="eng",
+            interval_s=1800,
         ),
         CftcCotIngester(redis, interval_s=24 * 3600),
     ]

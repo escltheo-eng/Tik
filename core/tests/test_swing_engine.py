@@ -16,12 +16,14 @@ from tik_core.scoring.swing_engine import (
     _compute_cryptocompare_bias,
     _compute_dxy_bias,
     _compute_fg_bias,
+    _compute_gdelt_bias,
     _compute_google_news_bias,
     _compute_reddit_bias,
     _enrich_with_cot,
     _enrich_with_cryptocompare,
     _enrich_with_dxy,
     _enrich_with_fear_greed,
+    _enrich_with_gdelt,
     _enrich_with_google_news,
     _enrich_with_reddit,
     _veracity_from_concordance,
@@ -789,3 +791,142 @@ def test_enrich_with_reddit_malformed_sub_entry():
     fact = decision.evidence[0]["fact"]
     assert "r/Bitcoin" in fact
     assert "r/CryptoMarkets" in fact
+
+
+# ----- _compute_gdelt_bias (ADR-010) — mapping CONTRARIAN sur GOLD -----
+
+@pytest.mark.parametrize(
+    "tone, expected_bias, expected_zone",
+    [
+        # Coeur des 5 zones (mapping CONTRARIAN : tone négatif → bull GOLD)
+        (-5.0, 1.0, "tensions_extreme"),
+        (-2.0, 0.5, "tensions_moderate"),
+        (0.0, 0.0, "neutral_climate"),
+        (2.0, -0.5, "optimism"),
+        (5.0, -1.0, "euphoria"),
+        # Bornes (palier inclusif côté fort)
+        (-3.0, 1.0, "tensions_extreme"),
+        (-2.99, 0.5, "tensions_moderate"),
+        (-1.0, 0.5, "tensions_moderate"),
+        (-0.99, 0.0, "neutral_climate"),
+        (0.99, 0.0, "neutral_climate"),
+        (1.0, -0.5, "optimism"),
+        (2.99, -0.5, "optimism"),
+        (3.0, -1.0, "euphoria"),
+        # Extrêmes possibles du GDELT tone
+        (-10.0, 1.0, "tensions_extreme"),
+        (10.0, -1.0, "euphoria"),
+    ],
+)
+def test_compute_gdelt_bias(tone, expected_bias, expected_zone):
+    bias, zone = _compute_gdelt_bias(tone)
+    assert bias == expected_bias
+    assert zone == expected_zone
+
+
+def test_compute_gdelt_bias_is_contrarian_on_gold():
+    """Verifie que le mapping est bien contrarian (tone ↘ → bull GOLD)
+    et pas trend-following (tone ↗ → bull). C'est la décision clé d'ADR-010."""
+    bias_negative, _ = _compute_gdelt_bias(-2.5)
+    bias_positive, _ = _compute_gdelt_bias(2.5)
+    # Tone négatif → bias positif (bull GOLD via safe haven)
+    assert bias_negative > 0
+    # Tone positif → bias négatif (bear GOLD car climat optimiste = pas de safe haven)
+    assert bias_positive < 0
+    # Et symétrie
+    assert bias_negative == -bias_positive
+
+
+# ----- _enrich_with_gdelt -----
+
+def test_enrich_with_gdelt_valid_tensions_extreme():
+    decision = _make_decision("long")
+    decision.entity_id = "GOLD"
+    gd = {
+        "tone": -4.5,
+        "n_points": 24,
+        "timespan": "1d",
+    }
+    bias = _enrich_with_gdelt(decision, gd)
+
+    assert bias == 1.0  # zone tensions_extreme → strong bull GOLD contrarian
+    assert len(decision.evidence) == 1
+    assert decision.evidence[0]["source"] == "gdelt_news"
+    assert decision.evidence[0]["score"] == SOURCE_SCORES["gdelt_news"]
+    fact = decision.evidence[0]["fact"]
+    assert "tone=-4.50" in fact
+    assert "tensions_extreme" in fact
+    assert "24" in fact  # n_points
+    assert "1d" in fact  # timespan
+    assert len(decision.triggers) == 1
+    assert decision.triggers[0]["type"] == "gdelt_tone"
+    assert "GDELT" in decision.triggers[0]["value"]
+    assert "contrarian bull GOLD" in decision.triggers[0]["value"]
+
+
+def test_enrich_with_gdelt_optimism_bear_gold():
+    decision = _make_decision("short")
+    decision.entity_id = "GOLD"
+    gd = {"tone": 2.0, "n_points": 12, "timespan": "1d"}
+    bias = _enrich_with_gdelt(decision, gd)
+    assert bias == -0.5  # optimism → bear GOLD
+    assert "contrarian bear GOLD" in decision.triggers[0]["value"]
+
+
+def test_enrich_with_gdelt_neutral_climate():
+    decision = _make_decision("neutral")
+    decision.entity_id = "GOLD"
+    gd = {"tone": 0.3, "n_points": 10, "timespan": "1d"}
+    bias = _enrich_with_gdelt(decision, gd)
+    assert bias == 0.0  # neutral_climate → bias neutre
+    # L'evidence est tout de même ajoutée (zone neutre est documentée)
+    assert len(decision.evidence) == 1
+    assert "neutral" in decision.triggers[0]["value"]
+
+
+def test_enrich_with_gdelt_missing_tone_returns_none():
+    decision = _make_decision()
+    gd = {"n_points": 10, "timespan": "1d"}  # pas de tone
+    bias = _enrich_with_gdelt(decision, gd)
+    assert bias is None
+    assert decision.evidence == []
+    assert decision.triggers == []
+
+
+def test_enrich_with_gdelt_invalid_tone_type_returns_none():
+    decision = _make_decision()
+    gd = {"tone": "not-a-number", "n_points": 10, "timespan": "1d"}
+    bias = _enrich_with_gdelt(decision, gd)
+    assert bias is None
+    assert decision.evidence == []
+
+
+def test_enrich_with_gdelt_missing_optional_fields_uses_defaults():
+    """Sans n_points et timespan, le fact reste valide (defaults appliqués)."""
+    decision = _make_decision("long")
+    decision.entity_id = "GOLD"
+    gd = {"tone": -1.5}
+    bias = _enrich_with_gdelt(decision, gd)
+    assert bias == 0.5  # tensions_moderate
+    fact = decision.evidence[0]["fact"]
+    assert "tone=-1.50" in fact
+    # Les defaults (0 pts, ?) doivent être présents
+    assert "0" in fact or "?" in fact
+
+
+def test_enrich_with_gdelt_extreme_negative_tone():
+    decision = _make_decision("long")
+    decision.entity_id = "GOLD"
+    gd = {"tone": -8.7, "n_points": 50, "timespan": "1d"}
+    bias = _enrich_with_gdelt(decision, gd)
+    assert bias == 1.0  # tensions extrêmes → strong bull GOLD
+
+
+def test_enrich_with_gdelt_uses_correct_score_in_evidence():
+    """Le score gdelt_news=0.75 (entre éditorial 0.70 et officiel 0.85)
+    doit apparaître dans l'evidence."""
+    decision = _make_decision("long")
+    decision.entity_id = "GOLD"
+    gd = {"tone": -2.0, "n_points": 24, "timespan": "1d"}
+    _enrich_with_gdelt(decision, gd)
+    assert decision.evidence[0]["score"] == 0.75

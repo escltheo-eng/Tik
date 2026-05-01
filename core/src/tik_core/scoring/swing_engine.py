@@ -39,6 +39,9 @@ UA = "Mozilla/5.0 (compatible; TikBot/0.1)"
 # reddit_btc = sentiment retail communautaire pondéré par log(upvotes), score
 #   provisoire 0.65 — un cran sous mainstream pour refléter la nature retail
 #   amateur, mais pas trop pénalisant (cf. ADR-009) ;
+# gdelt_news = NLP scientifique mondial (GDELT 2.0 timelinetone), tone brut
+#   non passé par Ollama, méthode différente des autres news textuelles
+#   (cf. ADR-010) ; score 0.75 entre éditorial (0.70) et officiel chiffré (0.85) ;
 # cftc_cot = source officielle US gov mais lag 3-4j (publié vendredi pour le mardi).
 SOURCE_SCORES: dict[str, float] = {
     "binance_klines": 0.90,
@@ -48,6 +51,7 @@ SOURCE_SCORES: dict[str, float] = {
     "cryptocompare_news": 0.70,
     "google_news_rss": 0.70,
     "reddit_btc": 0.65,
+    "gdelt_news": 0.75,
     "cftc_cot": 0.80,
 }
 
@@ -55,6 +59,7 @@ FG_REDIS_KEY = "tik.sentiment.fear_greed"
 CC_REDIS_KEY_TPL = "tik.sentiment.cryptocompare.{currency}"
 GN_REDIS_KEY_TPL = "tik.sentiment.google_news.{entity}"
 RED_REDIS_KEY_TPL = "tik.sentiment.reddit.{entity}"
+GDELT_REDIS_KEY_TPL = "tik.sentiment.gdelt.{entity}"
 COT_REDIS_KEY = "tik.macro.cftc_cot.gold"
 FRED_OBS_URL = "https://api.stlouisfed.org/fred/series/observations"
 DXY_SERIES_ID = "DTWEXBGS"
@@ -798,18 +803,92 @@ def _enrich_with_cot(decision: SwingDecision, cot: dict) -> float | None:
     return bias
 
 
+async def _read_gdelt(redis: Redis, entity_id: str) -> dict | None:
+    raw = await redis.get(GDELT_REDIS_KEY_TPL.format(entity=entity_id.lower()))
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _compute_gdelt_bias(tone: float) -> tuple[float, str]:
+    """Mappe le tone GDELT [-10, +10] à un bias contrarian sur GOLD.
+
+    Tone négatif = tensions globales (guerre, crises, sanctions, banques en
+    faillite) = rotation safe haven = **bull GOLD**. Cohérent avec FG sur
+    BTC mais inversé : tone GDELT ≈ « global mood very negative » →
+    GOLD bull, similaire à FG faible → BTC bull contrarian.
+
+    Calibration provisoire des seuils ±1, ±3 issus de la littérature
+    GDELT (cf. ADR-010), à réévaluer Session 4 après dataset golden.
+    """
+    if tone <= -3.0:
+        return 1.0, "tensions_extreme"
+    if tone <= -1.0:
+        return 0.5, "tensions_moderate"
+    if tone >= 3.0:
+        return -1.0, "euphoria"
+    if tone >= 1.0:
+        return -0.5, "optimism"
+    return 0.0, "neutral_climate"
+
+
+def _enrich_with_gdelt(decision: SwingDecision, gd: dict) -> float | None:
+    """Ajoute evidence + trigger GDELT, retourne le bias contrarian.
+
+    NE set PAS la veracity — responsabilité du caller pour combiner plusieurs sources.
+    Retourne None si le payload GDELT est invalide ou incomplet.
+    """
+    try:
+        tone = float(gd["tone"])
+        n_points = int(gd.get("n_points", 0))
+        timespan = str(gd.get("timespan", "?"))
+    except (KeyError, TypeError, ValueError):
+        return None
+
+    bias, zone = _compute_gdelt_bias(tone)
+    bias_label = (
+        "contrarian bull GOLD" if bias > 0
+        else "contrarian bear GOLD" if bias < 0
+        else "neutral"
+    )
+
+    decision.evidence.append(
+        {
+            "source": "gdelt_news",
+            "score": SOURCE_SCORES.get("gdelt_news", 0.5),
+            "fact": (
+                f"GDELT tone={tone:+.2f} (zone={zone}, "
+                f"agg {n_points} pts / {timespan})"
+            ),
+        }
+    )
+    decision.triggers.append(
+        {
+            "type": "gdelt_tone",
+            "value": f"GDELT {zone} (tone={tone:+.2f}) → {bias_label}",
+            "weight": 0.10,
+        }
+    )
+    return bias
+
+
 async def analyze_swing_gold(
     fred_api_key: str | None = None,
     redis: Redis | None = None,
 ) -> SwingDecision:
     """Analyse swing Gold (GC=F) sur 1h/60d, avec overlays multi-sources.
 
-    Overlays actifs (cf. ADR-004 / ADR-008) :
+    Overlays actifs (cf. ADR-004 / ADR-008 / ADR-010) :
     - DXY (FRED, contrarian) : corrélation négative GOLD/USD
     - CFTC COT Managed Money (Redis, contrarian) : positioning institutionnel
-    - Google News GOLD (Redis, trend-following) : premier overlay sentiment
-      news pour GOLD, capte les annonces banques centrales / tensions
-      géopolitiques / flux ETF que les autres overlays ne couvrent pas.
+    - Google News GOLD (Redis, trend-following) : sentiment éditorial mainstream
+    - GDELT tone (Redis, contrarian) : NLP scientifique mondial, capte les
+      tensions globales / climat éditorial macro / dimension géopolitique
+      que les autres overlays ne couvrent pas. **Méthode non-LLM**, premier
+      overlay Tik à diversification méthodologique pure (cf. ADR-010).
 
     La veracity finale est calculée sur la moyenne des biais disponibles —
     même architecture que analyze_swing_btc, prête à accueillir d'autres
@@ -850,6 +929,14 @@ async def analyze_swing_gold(
                 bias_signals.append(bias)
         else:
             log.info("swing.gold.google_news_unavailable")
+
+        gd = await _read_gdelt(redis, entity_id="GOLD")
+        if gd is not None:
+            bias = _enrich_with_gdelt(decision, gd)
+            if bias is not None:
+                bias_signals.append(bias)
+        else:
+            log.info("swing.gold.gdelt_unavailable")
 
     if bias_signals:
         combined_bias = sum(bias_signals) / len(bias_signals)

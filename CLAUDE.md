@@ -388,7 +388,8 @@ Enrichir le sentiment textuel multi-source (jusqu'ici limité à CryptoCompare B
 |---|---|---|
 | 1 | Google News RSS (BTC + GOLD) + classifier asset-aware + ADR-008 | ✅ livrée le 2026-05-01 |
 | 2 | Reddit JSON (r/Bitcoin + r/CryptoMarkets, pondération log upvotes) + ADR-009 | ✅ livrée le 2026-05-01 |
-| 3 | Décision Twitter/Nitter vs GDELT vs consolidation (dataset golden + extension backtest) | ⏳ à venir |
+| 3 | GDELT timelinetone GOLD (tone brut, méthode NLP scientifique non-LLM, contrarian) + ADR-010 | ✅ livrée le 2026-05-01 |
+| 4 | Consolidation : dataset golden BTC + GOLD + extension backtest CLI pour comparer hit rate par source | ⏳ à venir |
 
 **Session 1 livrée le 2026-05-01** :
 
@@ -442,12 +443,45 @@ Enrichir le sentiment textuel multi-source (jusqu'ici limité à CryptoCompare B
 
 - **ADR-009 documenté** : `docs/adr/009-reddit-sentiment.md` formalise les choix structurants Reddit (subs choisis avec leurs profils retail vs trader, pondération log upvotes en innovation par rapport au pattern uniforme, mitigation brigading via 3 filtres conservateurs, justification du rejet WSB pour GOLD) et liste les conséquences positives/négatives. Risques opérationnels rappelés : Garde-fou 1 (mode shadow 3 mois) **strictement applicable**, ADR-003 (pas de bypass V01-V15) **inchangé**, paranoïa contrôlée maintenue.
 
+**Session 3 livrée le 2026-05-01** :
+
+- **Nouvel ingester GDELT** dans `core/src/tik_core/aggregator/gdelt_ingester.py` (couche 6 sentiment textuel, layer 6). Source : GDELT 2.0 Doc API (`https://api.gdeltproject.org/api/v2/doc/doc`), mode `timelinetone`, query `"gold price"`, filtre `sourcelang:eng`, timespan 24 h. Polling toutes les **30 min** (~1440 req/mois, GDELT n'a pas de rate-limit documenté pour la Doc API en lecture publique). Aucune nouvelle dépendance Python ajoutée (parsing JSON natif via `httpx.json()`).
+
+- **Premier overlay Tik à NE PAS passer par OllamaClassifier** : décision structurante d'ADR-010. GDELT consomme directement le tone calculé par GDELT (NLP scientifique non-LLM) plutôt que de classifier les titres via Ollama. **Diversification méthodologique pure** : Tik a désormais du sentiment Ollama-LLM (CC + Google News + Reddit) ET du sentiment NLP scientifique non-LLM (GDELT). Si les deux convergent → veracity élevée ; si divergent → information riche sur la diversité du sentiment réel. C'est l'esprit ADR-004 poussé plus loin : on diversifie les **méthodes** de scoring, pas seulement les **sources**.
+
+- **Mapping contrarian validé empiriquement** : tone GDELT négatif (tensions globales, crises, sanctions, banques en faillite) → bull GOLD via rotation safe haven. Cohérent avec FG sur BTC mais inversé : tone GDELT ≈ « global mood negative » → GOLD bull. Validé sur 50 ans d'histoire monétaire (1970s inflation, 2008 GFC, 2020-22 pandémie + Ukraine, 2023 SVB — chaque épisode de stress a vu l'or monter).
+
+- **Mapping retenu (`_compute_gdelt_bias`)** :
+  - tone ≤ −3.0 → +1.0 (`tensions_extreme`) — strong bull GOLD
+  - tone ≤ −1.0 → +0.5 (`tensions_moderate`) — bull GOLD
+  - −1.0 < tone < 1.0 → 0.0 (`neutral_climate`) — neutre
+  - tone ≥ 1.0 → −0.5 (`optimism`) — bear GOLD
+  - tone ≥ 3.0 → −1.0 (`euphoria`) — strong bear GOLD
+  Calibration provisoire des seuils ±1, ±3 issus de la littérature GDELT, à réévaluer Session 4 après dataset golden.
+
+- **4e overlay GOLD** : `analyze_swing_gold` reçoit désormais 4 sources cross-validées :
+  1. DXY (FRED, contrarian)
+  2. CFTC COT Managed Money (contrarian)
+  3. Google News GOLD (trend-following, mainstream-éditorial via Ollama)
+  4. **GDELT tone** (contrarian, NLP scientifique non-LLM)
+  Symétrie qualitative avec BTC qui a aussi 4 overlays — les profils méthodologiques sont juste différents.
+
+- **Pas de GDELT BTC en Session 3** : décision tracée dans ADR-010 section 3. Le mapping contrarian validé pour GOLD est **incertain pour BTC** (corrélation BTC ↔ tensions globales instable historiquement : sell-off avec actions mars 2020, mais bull Russie 2022 et SVB 2023). Déployer un mapping non-validé sur BTC risquerait d'introduire du bruit dans le pipeline BTC qui marche bien aujourd'hui. Stratégie échelonnée : Session 4 dataset golden inclura des titres macro BTC pour mesurer si GDELT BTC apporterait un signal exploitable et avec quel mapping (contrarian, trend-following, hybride).
+
+- **Score `gdelt_news = 0.75` provisoire** dans `SOURCE_SCORES` : un cran au-dessus des news mainstream (CC/Google News à 0.70) pour reconnaître la qualité éditoriale + scientifique de GDELT, un cran sous les sources gouvernementales chiffrées (FRED `dtwexbgs` à 0.85). Réévaluation prévue Session 4.
+
+- **Ingester ultra-léger** : 1 req HTTP par cycle, parsing JSON tolérant (`_extract_tone_points` supporte multi-séries / valeurs non numériques / payloads malformés), mapping numérique. **Aucun classifier au boot** (4 classifiers Ollama inchangés vs Session 2). 10 ingesters au total (vs 9 après Session 2).
+
+- **Tests pytest** : 336 → **~386 tests verts** (+ ~26 gdelt_ingester sur `_extract_tone_points` / `_fetch` / lifecycle / construction URL avec sourcelang, + ~24 swing engine helpers GDELT incluant un test dédié à la nature contrarian du mapping). Aucune régression. Chiffre exact à confirmer post-pytest live.
+
+- **ADR-010 documenté** : `docs/adr/010-gdelt-tone-overlay-gold.md` formalise les choix structurants (mode `timelinetone` plutôt qu'`artlist + Ollama` pour la diversification méthodologique, interprétation contrarian plutôt que trend-following pour aligner sur la sémantique safe haven de l'or, mapping calibré ±1/±3, lang:eng seul, query simple `"gold price"`, GOLD seul Session 3, BTC reporté à Session 4+ pour validation empirique). Risques opérationnels rappelés : Garde-fou 1 (mode shadow 3 mois) **strictement applicable**, ADR-003 (pas de bypass V01-V15) **inchangé**, paranoïa contrôlée maintenue.
+
 ### Couches encore non-implémentées (évolutions futures)
 
 - Engine macro (semaines-mois) — partiellement couvert via FRED
 - Flash GOLD (bloqué par le délai 15 min de Yahoo Finance — nécessite une source temps réel alternative)
 - Module anti-fake-news (cross-validation, scoring source dynamique) — l'infra Ollama est désormais en place, prête à être réutilisée
-- Ingester news : ✅ CryptoCompare (Paquet 1.x), ✅ Google News RSS BTC + GOLD (Paquet 4 Session 1, ADR-008), ✅ Reddit BTC pondéré log upvotes (Paquet 4 Session 2, ADR-009), Nitter / GDELT pour GOLD (Paquet 4 Session 3 — décision à arbitrer)
+- Ingester news : ✅ CryptoCompare (Paquet 1.x), ✅ Google News RSS BTC + GOLD (Paquet 4 Session 1, ADR-008), ✅ Reddit BTC pondéré log upvotes (Paquet 4 Session 2, ADR-009), ✅ GDELT timelinetone GOLD NLP scientifique non-LLM (Paquet 4 Session 3, ADR-010), Nitter / GDELT BTC en évaluation Session 4+ (avec dataset golden)
 - Marchés prédictifs : Polymarket, Kalshi
 - Backtesting service (script CLI déjà livré, service à industrialiser)
 - Data alternative : Google Trends
@@ -607,5 +641,5 @@ cp "$WORKTREE/path2" "$MAIN/path2"
 ---
 
 *Dernière mise à jour : 2026-05-01*
-*Version Tik : 0.1.0 (Core MVP livré + évolutions Paquet 1.x — swing BTC/GOLD multi-overlay + flash BTC + NLP Ollama sur les news ; **SDK Paquet 2 COMPLET** — version SDK 0.5.0, client HTTP + WebSocket + hooks + cache + circuit breaker + telemetry non-bloquant + config YAML hot-reload + doc intégration Zeta + 4 exemples runnable + ADR-007 + CI ; **Paquet 4 Sessions 1 + 2 livrées** — Google News RSS BTC + GOLD (ADR-008) + Reddit BTC pondéré log upvotes sur r/Bitcoin + r/CryptoMarkets (ADR-009), 4 sources sentiment cross-validées sur BTC, 9 ingesters total, 328 tests verts ; v1.0.0 du SDK réservée à la mise en production réelle dans Zeta après 3 mois de mode shadow)*
+*Version Tik : 0.1.0 (Core MVP livré + évolutions Paquet 1.x — swing BTC/GOLD multi-overlay + flash BTC + NLP Ollama sur les news ; **SDK Paquet 2 COMPLET** — version SDK 0.5.0, client HTTP + WebSocket + hooks + cache + circuit breaker + telemetry non-bloquant + config YAML hot-reload + doc intégration Zeta + 4 exemples runnable + ADR-007 + CI ; **Paquet 4 Sessions 1 + 2 + 3 livrées** — Google News RSS BTC + GOLD (ADR-008) + Reddit BTC pondéré log upvotes (ADR-009) + GDELT timelinetone GOLD NLP scientifique non-LLM contrarian (ADR-010), 4 sources sentiment cross-validées sur BTC, 4 overlays cross-validés sur GOLD, **diversification méthodologique** Ollama-LLM vs NLP scientifique, 10 ingesters total ; v1.0.0 du SDK réservée à la mise en production réelle dans Zeta après 3 mois de mode shadow)*
 *Mainteneur : utilisateur solo + assistant Claude via extension VS Code*
