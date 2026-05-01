@@ -17,11 +17,13 @@ from tik_core.scoring.swing_engine import (
     _compute_dxy_bias,
     _compute_fg_bias,
     _compute_google_news_bias,
+    _compute_reddit_bias,
     _enrich_with_cot,
     _enrich_with_cryptocompare,
     _enrich_with_dxy,
     _enrich_with_fear_greed,
     _enrich_with_google_news,
+    _enrich_with_reddit,
     _veracity_from_concordance,
 )
 
@@ -628,3 +630,162 @@ def test_enrich_with_google_news_malformed_publisher_entry():
     fact = decision.evidence[0]["fact"]
     assert "Reuters" in fact
     assert "Bloomberg" in fact
+
+
+# ----- _compute_reddit_bias (ADR-009) -----
+
+@pytest.mark.parametrize(
+    "score, expected_bias, expected_zone",
+    [
+        # Coeur des 5 zones
+        (0.5, 1.0, "reddit_strong_bullish"),
+        (0.2, 0.5, "reddit_bullish"),
+        (0.0, 0.0, "reddit_neutral"),
+        (-0.2, -0.5, "reddit_bearish"),
+        (-0.5, -1.0, "reddit_strong_bearish"),
+        # Bornes (palier inclusif côté fort, identiques aux autres news)
+        (0.4, 1.0, "reddit_strong_bullish"),
+        (0.39, 0.5, "reddit_bullish"),
+        (0.1, 0.5, "reddit_bullish"),
+        (0.09, 0.0, "reddit_neutral"),
+        (-0.09, 0.0, "reddit_neutral"),
+        (-0.1, -0.5, "reddit_bearish"),
+        (-0.4, -1.0, "reddit_strong_bearish"),
+        # Extrêmes
+        (1.0, 1.0, "reddit_strong_bullish"),
+        (-1.0, -1.0, "reddit_strong_bearish"),
+    ],
+)
+def test_compute_reddit_bias(score, expected_bias, expected_zone):
+    bias, zone = _compute_reddit_bias(score)
+    assert bias == expected_bias
+    assert zone == expected_zone
+
+
+# ----- _enrich_with_reddit -----
+
+def test_enrich_with_reddit_valid_btc():
+    decision = _make_decision("long")
+    decision.entity_id = "BTC"
+    rd = {
+        "score": 0.3,
+        "n_articles": 60,
+        "n_bullish": 25,
+        "n_bearish": 15,
+        "top_subreddits": [
+            {"name": "Bitcoin", "count": 40},
+            {"name": "CryptoMarkets", "count": 20},
+        ],
+    }
+    bias = _enrich_with_reddit(decision, rd)
+
+    assert bias == 0.5  # zone reddit_bullish
+    assert len(decision.evidence) == 1
+    assert decision.evidence[0]["source"] == "reddit_btc"
+    assert decision.evidence[0]["score"] == SOURCE_SCORES["reddit_btc"]
+    fact = decision.evidence[0]["fact"]
+    assert "+0.30" in fact
+    assert "bull=25" in fact
+    assert "bear=15" in fact
+    # Les sub names doivent apparaître préfixés "r/" (cf. _enrich_with_reddit)
+    assert "r/Bitcoin" in fact
+    assert "r/CryptoMarkets" in fact
+    assert len(decision.triggers) == 1
+    assert decision.triggers[0]["type"] == "news_sentiment_reddit"
+    assert "Reddit" in decision.triggers[0]["value"]
+
+
+def test_enrich_with_reddit_strong_bearish():
+    decision = _make_decision("short")
+    decision.entity_id = "BTC"
+    rd = {
+        "score": -0.6,
+        "n_articles": 50,
+        "n_bullish": 5,
+        "n_bearish": 30,
+        "top_subreddits": [{"name": "Bitcoin", "count": 35}],
+    }
+    bias = _enrich_with_reddit(decision, rd)
+    assert bias == -1.0  # zone reddit_strong_bearish
+
+
+def test_enrich_with_reddit_no_subs_in_fact():
+    """Sans top_subreddits, le fact reste valide (pas de bloc 'top: ...')."""
+    decision = _make_decision("long")
+    decision.entity_id = "BTC"
+    rd = {
+        "score": 0.2,
+        "n_articles": 40,
+        "n_bullish": 15,
+        "n_bearish": 10,
+        "top_subreddits": [],
+    }
+    _enrich_with_reddit(decision, rd)
+    fact = decision.evidence[0]["fact"]
+    assert "+0.20" in fact
+    assert "top:" not in fact
+
+
+def test_enrich_with_reddit_missing_score():
+    decision = _make_decision()
+    rd = {"n_articles": 50}  # pas de score
+    bias = _enrich_with_reddit(decision, rd)
+    assert bias is None
+    assert decision.evidence == []
+    assert decision.triggers == []
+
+
+def test_enrich_with_reddit_invalid_score_type():
+    decision = _make_decision()
+    rd = {"score": "not-a-number", "n_articles": 50, "n_bullish": 10, "n_bearish": 5}
+    bias = _enrich_with_reddit(decision, rd)
+    assert bias is None
+    assert decision.evidence == []
+
+
+def test_enrich_with_reddit_subs_truncated_to_3():
+    """Plus de 3 subs fournis → seulement les 3 premiers dans le fact."""
+    decision = _make_decision("long")
+    decision.entity_id = "BTC"
+    rd = {
+        "score": 0.0,
+        "n_articles": 100,
+        "n_bullish": 0,
+        "n_bearish": 0,
+        "top_subreddits": [
+            {"name": "Bitcoin", "count": 40},
+            {"name": "CryptoMarkets", "count": 30},
+            {"name": "BitcoinBeginners", "count": 20},
+            {"name": "BitcoinTalk", "count": 5},  # 4e
+            {"name": "BitcoinMining", "count": 5},  # 5e
+        ],
+    }
+    _enrich_with_reddit(decision, rd)
+    fact = decision.evidence[0]["fact"]
+    assert "r/Bitcoin" in fact
+    assert "r/CryptoMarkets" in fact
+    assert "r/BitcoinBeginners" in fact
+    # Les 4e et 5e ne doivent pas apparaître
+    assert "r/BitcoinTalk" not in fact
+    assert "r/BitcoinMining" not in fact
+
+
+def test_enrich_with_reddit_malformed_sub_entry():
+    """Un sub non-dict est ignoré sans crasher."""
+    decision = _make_decision("long")
+    decision.entity_id = "BTC"
+    rd = {
+        "score": 0.0,
+        "n_articles": 50,
+        "n_bullish": 0,
+        "n_bearish": 0,
+        "top_subreddits": [
+            {"name": "Bitcoin", "count": 40},
+            "not-a-dict",  # malformé, doit être skip
+            {"name": "CryptoMarkets", "count": 10},
+        ],
+    }
+    _enrich_with_reddit(decision, rd)
+    fact = decision.evidence[0]["fact"]
+    assert "r/Bitcoin" in fact
+    assert "r/CryptoMarkets" in fact

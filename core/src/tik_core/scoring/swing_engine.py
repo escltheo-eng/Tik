@@ -36,6 +36,9 @@ UA = "Mozilla/5.0 (compatible; TikBot/0.1)"
 # CryptoCompare news = signal direct des news mais peut être manipulé/biaisé ;
 # google_news_rss = agrégateur news mainstream (Reuters, Bloomberg, FT…), score
 #   provisoire à 0.70 tant que dataset golden non mesuré (cf. ADR-008) ;
+# reddit_btc = sentiment retail communautaire pondéré par log(upvotes), score
+#   provisoire 0.65 — un cran sous mainstream pour refléter la nature retail
+#   amateur, mais pas trop pénalisant (cf. ADR-009) ;
 # cftc_cot = source officielle US gov mais lag 3-4j (publié vendredi pour le mardi).
 SOURCE_SCORES: dict[str, float] = {
     "binance_klines": 0.90,
@@ -44,12 +47,14 @@ SOURCE_SCORES: dict[str, float] = {
     "fred_dtwexbgs": 0.85,
     "cryptocompare_news": 0.70,
     "google_news_rss": 0.70,
+    "reddit_btc": 0.65,
     "cftc_cot": 0.80,
 }
 
 FG_REDIS_KEY = "tik.sentiment.fear_greed"
 CC_REDIS_KEY_TPL = "tik.sentiment.cryptocompare.{currency}"
 GN_REDIS_KEY_TPL = "tik.sentiment.google_news.{entity}"
+RED_REDIS_KEY_TPL = "tik.sentiment.reddit.{entity}"
 COT_REDIS_KEY = "tik.macro.cftc_cot.gold"
 FRED_OBS_URL = "https://api.stlouisfed.org/fred/series/observations"
 DXY_SERIES_ID = "DTWEXBGS"
@@ -486,13 +491,91 @@ def _enrich_with_google_news(decision: SwingDecision, gn: dict) -> float | None:
     return bias
 
 
+async def _read_reddit(redis: Redis, entity_id: str) -> dict | None:
+    raw = await redis.get(RED_REDIS_KEY_TPL.format(entity=entity_id.lower()))
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _compute_reddit_bias(score: float) -> tuple[float, str]:
+    """Mappe un score net Reddit pondéré par log(upvotes+1) à un bias trend-following.
+
+    Paliers identiques aux autres sources news textuelles (cohérence ADR-004).
+    Le score reçu est déjà pondéré côté ingester (cf. ADR-009) — la
+    pondération log(upvotes) reflète le poids communautaire de chaque post.
+    """
+    if score >= 0.4:
+        return 1.0, "reddit_strong_bullish"
+    if score >= 0.1:
+        return 0.5, "reddit_bullish"
+    if score <= -0.4:
+        return -1.0, "reddit_strong_bearish"
+    if score <= -0.1:
+        return -0.5, "reddit_bearish"
+    return 0.0, "reddit_neutral"
+
+
+def _enrich_with_reddit(decision: SwingDecision, rd: dict) -> float | None:
+    """Ajoute evidence + trigger Reddit (sentiment retail), retourne le bias.
+
+    NE set PAS la veracity — responsabilité du caller pour combiner plusieurs sources.
+    Retourne None si la donnée Reddit est invalide ou incomplète.
+    """
+    try:
+        score = float(rd["score"])
+        n_articles = int(rd.get("n_articles", 0))
+        n_bull = int(rd.get("n_bullish", 0))
+        n_bear = int(rd.get("n_bearish", 0))
+        top_subs = rd.get("top_subreddits") or []
+    except (KeyError, TypeError, ValueError):
+        return None
+
+    bias, zone = _compute_reddit_bias(score)
+    bias_label = (
+        "bull" if bias > 0
+        else "bear" if bias < 0
+        else "neutral"
+    )
+
+    top_names = [
+        f"r/{s.get('name', '?')}"
+        for s in top_subs[:3]
+        if isinstance(s, dict)
+    ]
+    subs_str = f", top: {', '.join(top_names)}" if top_names else ""
+
+    decision.evidence.append(
+        {
+            "source": "reddit_btc",
+            "score": SOURCE_SCORES.get("reddit_btc", 0.5),
+            "fact": (
+                f"Reddit retail score={score:+.2f} "
+                f"(bull={n_bull}, bear={n_bear} on {n_articles} weighted posts{subs_str})"
+            ),
+        }
+    )
+    decision.triggers.append(
+        {
+            "type": "news_sentiment_reddit",
+            "value": f"Reddit {zone} (score={score:+.2f}) → {bias_label}",
+            "weight": 0.10,
+        }
+    )
+    return bias
+
+
 async def analyze_swing_btc(redis: Redis | None = None) -> SwingDecision:
     """Analyse swing BTC/USDT sur 4h avec overlays multi-sources.
 
-    Overlays actifs (cf. ADR-004 / ADR-008) :
+    Overlays actifs (cf. ADR-004 / ADR-008 / ADR-009) :
     - Fear & Greed (Redis, contrarian)
-    - CryptoCompare news (Redis, trend-following)
-    - Google News BTC (Redis, trend-following) — diversification news mainstream
+    - CryptoCompare news (Redis, trend-following, crypto-éditorial)
+    - Google News BTC (Redis, trend-following, mainstream-éditorial)
+    - Reddit BTC (Redis, trend-following, retail-communautaire pondéré log)
 
     La veracity finale est calculée sur la concordance moyenne des biais
     des sources de sentiment disponibles. Permet d'ajouter facilement de
@@ -532,6 +615,14 @@ async def analyze_swing_btc(redis: Redis | None = None) -> SwingDecision:
             bias_signals.append(bias)
     else:
         log.info("swing.btc.google_news_unavailable")
+
+    rd = await _read_reddit(redis, entity_id="BTC")
+    if rd is not None:
+        bias = _enrich_with_reddit(decision, rd)
+        if bias is not None:
+            bias_signals.append(bias)
+    else:
+        log.info("swing.btc.reddit_unavailable")
 
     if bias_signals:
         combined_bias = sum(bias_signals) / len(bias_signals)

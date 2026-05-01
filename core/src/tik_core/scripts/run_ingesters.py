@@ -15,6 +15,7 @@ from tik_core.aggregator.fear_greed_ingester import FearGreedIngester
 from tik_core.aggregator.fred_ingester import FredIngester
 from tik_core.aggregator.google_news_ingester import GoogleNewsIngester
 from tik_core.aggregator.news_classifier import build_news_classifier
+from tik_core.aggregator.reddit_ingester import RedditIngester
 from tik_core.aggregator.yahoo_ingester import YahooPoller
 from tik_core.config import get_settings
 
@@ -25,10 +26,15 @@ async def main() -> None:
     settings = get_settings()
     redis = aioredis.from_url(settings.redis_url, decode_responses=True)
 
-    # ADR-008 — un classifier par ingester pour isoler les circuit breakers
-    # Ollama. Construits en parallèle (3 pings simultanés) pour économiser
-    # ~2 s au boot vs construction séquentielle.
-    cc_btc_classifier, gn_btc_classifier, gn_gold_classifier = await asyncio.gather(
+    # ADR-008/009 — un classifier par ingester pour isoler les circuit breakers
+    # Ollama. Construits en parallèle (4 pings simultanés) pour économiser
+    # ~3 s au boot vs construction séquentielle.
+    (
+        cc_btc_classifier,
+        gn_btc_classifier,
+        gn_gold_classifier,
+        red_btc_classifier,
+    ) = await asyncio.gather(
         build_news_classifier(
             classifier_type=settings.news_classifier,
             ollama_url=settings.ollama_url,
@@ -46,6 +52,12 @@ async def main() -> None:
             ollama_url=settings.ollama_url,
             ollama_model=settings.ollama_model,
             asset_name="Gold",
+        ),
+        build_news_classifier(
+            classifier_type=settings.news_classifier,
+            ollama_url=settings.ollama_url,
+            ollama_model=settings.ollama_model,
+            asset_name="Bitcoin",
         ),
     )
 
@@ -76,6 +88,14 @@ async def main() -> None:
             query='"gold price"',
             interval_s=1800,
             limit=50,
+        ),
+        RedditIngester(
+            redis,
+            classifier=red_btc_classifier,
+            entity_id="BTC",
+            subreddits=["Bitcoin", "CryptoMarkets"],
+            interval_s=1800,
+            limit_per_sub=50,
         ),
         CftcCotIngester(redis, interval_s=24 * 3600),
     ]

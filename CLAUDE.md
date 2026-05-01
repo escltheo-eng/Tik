@@ -387,7 +387,7 @@ Enrichir le sentiment textuel multi-source (jusqu'ici limité à CryptoCompare B
 | # | Session | Statut |
 |---|---|---|
 | 1 | Google News RSS (BTC + GOLD) + classifier asset-aware + ADR-008 | ✅ livrée le 2026-05-01 |
-| 2 | Reddit JSON (subreddits crypto pour BTC) | ⏳ à venir |
+| 2 | Reddit JSON (r/Bitcoin + r/CryptoMarkets, pondération log upvotes) + ADR-009 | ✅ livrée le 2026-05-01 |
 | 3 | Décision Twitter/Nitter vs GDELT vs consolidation (dataset golden + extension backtest) | ⏳ à venir |
 
 **Session 1 livrée le 2026-05-01** :
@@ -415,12 +415,39 @@ Enrichir le sentiment textuel multi-source (jusqu'ici limité à CryptoCompare B
 
 - **ADR-008 documenté** : `docs/adr/008-multi-asset-news-overlays.md` formalise les choix (Google News parmi les sources gratuites, parser feedparser, queries simples `Bitcoin` / `"gold price"`, polling 30 min, isolation circuit breakers, score 0.70 provisoire) et liste les conséquences positives/négatives (dépendance à un endpoint Google non officiel mitigée par feedparser tolérant + log warning + cycle suivant retentera). Risques opérationnels rappelés : Garde-fou 1 (mode shadow 3 mois) **strictement applicable**, ADR-003 (pas de bypass V01-V15) **inchangé**, paranoïa contrôlée maintenue.
 
+**Session 2 livrée le 2026-05-01** :
+
+- **Nouvel ingester Reddit JSON** dans `core/src/tik_core/aggregator/reddit_ingester.py` (couche 6 sentiment textuel, layer 6). Source publique gratuite, sans clé pour read-only, ~60 req/min anonyme. Polling toutes les **30 min** sur 2 subs agrégés (`r/Bitcoin` ~5M membres + `r/CryptoMarkets` ~1.5M membres). Endpoint `/r/<sub>/hot.json?limit=50` (algorithme Reddit `hot` = mélange popularité + récence, plus représentatif que `top:hour` stale ou `new` bruité). User-Agent obligatoire pour éviter le ban Reddit : `tik-osint-bot/0.1 (research; contact escltheo@gmail.com)`. Parsing JSON natif via `httpx.json()` — pas de nouvelle dépendance Python ajoutée.
+
+- **Pondération log(score+1) par upvotes** : **nouveauté structurante** par rapport au pattern uniforme de Google News / CryptoCompare. Pour chaque post `i` filtré, `weight_i = log(score_i + 1)` et `score_net = Σ(weight_i × verdict_i) / Σ(weight_i) ∈ [-1, +1]`. Reflète le poids communautaire réel : un post viral à 10 000 upvotes pèse `log(10001)≈9.2` vs un post à 5 upvotes pèse `log(6)≈1.8`. L'échelle log atténue les outliers sans les écraser. C'est la métrique unique de Reddit que les autres sources n'offrent pas — l'ignorer reviendrait à traiter un thread à 1 upvote comme un thread à 10 000 upvotes.
+
+- **Mitigation brigading et bots via 3 filtres conservateurs** : `stickied=False` (skip posts épinglés par mods, non représentatifs), `over_18=False` (skip NSFW), **`score >= 5`** (ignore les posts brand-new pas encore validés communautairement, facilement manipulables par 1-2 bots). Le filtre score>=5 garantit qu'un brigading nécessite **au minimum 5 votes coordonnés**. Risque résiduel d'un brigading à 50+ votes coordonnés tracké pour observation Session 3 (comparaison upvotes/comments comme détecteur d'anomalie possible).
+
+- **4e overlay sentiment BTC dans `analyze_swing_btc`** : Tik dispose désormais de 4 sources sentiment cross-validées sur BTC :
+  1. Fear & Greed (contrarian)
+  2. CryptoCompare news (trend-following, crypto-éditorial — CoinDesk)
+  3. Google News BTC (trend-following, mainstream-éditorial — Reuters/Bloomberg/FT)
+  4. **Reddit BTC** (trend-following, retail-communautaire pondéré log)
+  Chacune avec un angle indépendant pour maximiser l'apport du pipeline multi-overlay ADR-004.
+
+- **Pas de Reddit pour GOLD** : décision documentée dans ADR-009 section 5. r/Gold (~70k) et r/GoldandSilverStackers (~250k) trop petits pour produire un échantillon significatif (3-5 posts pertinents/jour). r/wallstreetbets (~16M) trop bruité : ironie + argot WSB (*"apes"*, *"tendies"*, *"stonks"*, *"🚀"*) non capté par le LLM 3B → faux positifs structurels. WSB a aussi un biais long-stocks structurel qui colore négativement le sentiment GOLD. GDELT évalué Session 3 comme alternative macro/géopol propre (flux structuré officiel, ton mesuré, multilingue, pas d'ironie).
+
+- **Score `reddit_btc = 0.65` provisoire** dans `SOURCE_SCORES` : un cran sous mainstream (CryptoCompare/Google News à 0.70) pour refléter la nature retail amateur, mais pas trop pénalisant. Réévaluation prévue Session 3 après dataset golden. Le pipeline ADR-004 absorbera de toute façon les divergences via `_veracity_from_concordance` — le score sert d'evidence (transparence dashboard), pas de pondération du bias.
+
+- **Champ `top_subreddits`** dans le payload Redis (analogue à `top_publishers` de Google News) : top 5 distribution post-filtrage par sub. Permet l'analyse a posteriori de l'équilibre r/Bitcoin vs r/CryptoMarkets sans imposer un ratio fixe a priori. Affiché préfixé `r/` dans l'evidence du signal swing pour clarté.
+
+- **4 instances `OllamaClassifier` au boot** (CryptoCompare-BTC + GoogleNews-BTC + GoogleNews-GOLD + **Reddit-BTC**), construites **en parallèle** via `asyncio.gather` (~3-4 s one-shot au lieu de ~12 s séquentiel). Bénéfice : circuit breakers Ollama isolés — un incident Ollama sur un ingester ne contamine pas les autres ingesters textuels. **9 ingesters au total** (vs 8 après Session 1, +1 Reddit).
+
+- **Résilience par sub** : si un sub fail (réseau, 503, payload invalide), `_fetch_sub` log un warning et retourne None ; la boucle agrégée continue avec les autres subs. Le ingester Reddit ne s'arrête jamais à cause d'un seul sub indisponible.
+
+- **ADR-009 documenté** : `docs/adr/009-reddit-sentiment.md` formalise les choix structurants Reddit (subs choisis avec leurs profils retail vs trader, pondération log upvotes en innovation par rapport au pattern uniforme, mitigation brigading via 3 filtres conservateurs, justification du rejet WSB pour GOLD) et liste les conséquences positives/négatives. Risques opérationnels rappelés : Garde-fou 1 (mode shadow 3 mois) **strictement applicable**, ADR-003 (pas de bypass V01-V15) **inchangé**, paranoïa contrôlée maintenue.
+
 ### Couches encore non-implémentées (évolutions futures)
 
 - Engine macro (semaines-mois) — partiellement couvert via FRED
 - Flash GOLD (bloqué par le délai 15 min de Yahoo Finance — nécessite une source temps réel alternative)
 - Module anti-fake-news (cross-validation, scoring source dynamique) — l'infra Ollama est désormais en place, prête à être réutilisée
-- Ingester news : ✅ CryptoCompare (Paquet 1.x), ✅ Google News RSS BTC + GOLD (Paquet 4 Session 1, ADR-008), Reddit (Paquet 4 Session 2), Nitter / GDELT (Paquet 4 Session 3 — décision à arbitrer)
+- Ingester news : ✅ CryptoCompare (Paquet 1.x), ✅ Google News RSS BTC + GOLD (Paquet 4 Session 1, ADR-008), ✅ Reddit BTC pondéré log upvotes (Paquet 4 Session 2, ADR-009), Nitter / GDELT pour GOLD (Paquet 4 Session 3 — décision à arbitrer)
 - Marchés prédictifs : Polymarket, Kalshi
 - Backtesting service (script CLI déjà livré, service à industrialiser)
 - Data alternative : Google Trends
@@ -580,5 +607,5 @@ cp "$WORKTREE/path2" "$MAIN/path2"
 ---
 
 *Dernière mise à jour : 2026-05-01*
-*Version Tik : 0.1.0 (Core MVP livré + évolutions Paquet 1.x — swing BTC/GOLD multi-overlay + flash BTC + NLP Ollama sur les news ; **SDK Paquet 2 COMPLET** — version SDK 0.5.0, client HTTP + WebSocket + hooks + cache + circuit breaker + telemetry non-bloquant + config YAML hot-reload + doc intégration Zeta + 4 exemples runnable + ADR-007 + CI ; **Paquet 4 Session 1 livrée** — Google News RSS multi-asset BTC + GOLD, classifier asset-aware, premier overlay news GOLD, ADR-008, 283 tests verts ; v1.0.0 du SDK réservée à la mise en production réelle dans Zeta après 3 mois de mode shadow)*
+*Version Tik : 0.1.0 (Core MVP livré + évolutions Paquet 1.x — swing BTC/GOLD multi-overlay + flash BTC + NLP Ollama sur les news ; **SDK Paquet 2 COMPLET** — version SDK 0.5.0, client HTTP + WebSocket + hooks + cache + circuit breaker + telemetry non-bloquant + config YAML hot-reload + doc intégration Zeta + 4 exemples runnable + ADR-007 + CI ; **Paquet 4 Sessions 1 + 2 livrées** — Google News RSS BTC + GOLD (ADR-008) + Reddit BTC pondéré log upvotes sur r/Bitcoin + r/CryptoMarkets (ADR-009), 4 sources sentiment cross-validées sur BTC, 9 ingesters total, 328 tests verts ; v1.0.0 du SDK réservée à la mise en production réelle dans Zeta après 3 mois de mode shadow)*
 *Mainteneur : utilisateur solo + assistant Claude via extension VS Code*
