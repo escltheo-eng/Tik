@@ -1,0 +1,414 @@
+{
+  "meta": {
+    "generated_at": "2026-05-02T15:03:48.214865+00:00",
+    "n_total": 100,
+    "n_btc": 50,
+    "n_gold": 50,
+    "n_annotated": 100,
+    "n_ollama": 100,
+    "horizons": [
+      "1h",
+      "6h",
+      "24h",
+      "5d"
+    ],
+    "threshold": 0.5
+  },
+  "distribution": {
+    "human": {
+      "counts": {
+        "bull": 27,
+        "bear": 17,
+        "neutral": 56,
+        "n/a": 0
+      },
+      "pct": {
+        "bull": 27.0,
+        "bear": 17.0,
+        "neutral": 56.00000000000001,
+        "n/a": 0.0
+      },
+      "total": 100
+    },
+    "ollama": {
+      "counts": {
+        "bull": 38,
+        "bear": 39,
+        "neutral": 23,
+        "n/a": 0
+      },
+      "pct": {
+        "bull": 38.0,
+        "bear": 39.0,
+        "neutral": 23.0,
+        "n/a": 0.0
+      },
+      "total": 100
+    },
+    "keywords": {
+      "counts": {
+        "bull": 23,
+        "bear": 12,
+        "neutral": 65,
+        "n/a": 0
+      },
+      "pct": {
+        "bull": 23.0,
+        "bear": 12.0,
+        "neutral": 65.0,
+        "n/a": 0.0
+      },
+      "total": 100
+    }
+  },
+  "concordance": {
+    "human_vs_ollama": {
+      "accuracy": 0.58,
+      "confusion": {
+        "bull": {
+          "bull": 20,
+          "bear": 0,
+          "neutral": 18,
+          "n/a": 0
+        },
+        "bear": {
+          "bull": 5,
+          "bear": 17,
+          "neutral": 17,
+          "n/a": 0
+        },
+        "neutral": {
+          "bull": 2,
+          "bear": 0,
+          "neutral": 21,
+          "n/a": 0
+        },
+        "n/a": {
+          "bull": 0,
+          "bear": 0,
+          "neutral": 0,
+          "n/a": 0
+        }
+      }
+    },
+    "human_vs_keywords": {
+      "accuracy": 0.63,
+      "confusion": {
+        "bull": {
+          "bull": 11,
+          "bear": 1,
+          "neutral": 11,
+          "n/a": 0
+        },
+        "bear": {
+          "bull": 1,
+          "bear": 9,
+          "neutral": 2,
+          "n/a": 0
+        },
+        "neutral": {
+          "bull": 15,
+          "bear": 7,
+          "neutral": 43,
+          "n/a": 0
+        },
+        "n/a": {
+          "bull": 0,
+          "bear": 0,
+          "neutral": 0,
+          "n/a": 0
+        }
+      }
+    },
+    "ollama_vs_keywords": {
+      "accuracy": 0.49,
+      "confusion": {
+        "bull": {
+          "bull": 15,
+          "bear": 0,
+          "neutral": 23,
+          "n/a": 0
+        },
+        "bear": {
+          "bull": 7,
+          "bear": 12,
+          "neutral": 20,
+          "n/a": 0
+        },
+        "neutral": {
+          "bull": 1,
+          "bear": 0,
+          "neutral": 22,
+          "n/a": 0
+        },
+        "n/a": {
+          "bull": 0,
+          "bear": 0,
+          "neutral": 0,
+          "n/a": 0
+        }
+      }
+    }
+  },
+  "market_calibration": {
+    "1h": {
+      "human": {
+        "n": 100,
+        "n_correct": 56,
+        "hit_rate": 0.56
+      },
+      "ollama": {
+        "n": 100,
+        "n_correct": 23,
+        "hit_rate": 0.23
+      },
+      "keywords": {
+        "n": 100,
+        "n_correct": 65,
+        "hit_rate": 0.65
+      },
+      "baselines": {
+        "random": {
+          "n": 100,
+          "n_correct": 34.19,
+          "hit_rate": 0.3419
+        },
+        "always_bull": {
+          "n": 100,
+          "n_correct": 0,
+          "hit_rate": 0.0
+        },
+        "always_bear": {
+          "n": 100,
+          "n_correct": 0,
+          "hit_rate": 0.0
+        },
+        "always_neutral": {
+          "n": 100,
+          "n_correct": 100,
+          "hit_rate": 1.0
+        }
+      }
+    },
+    "6h": {
+      "human": {
+        "n": 100,
+        "n_correct": 56,
+        "hit_rate": 0.56
+      },
+      "ollama": {
+        "n": 100,
+        "n_correct": 23,
+        "hit_rate": 0.23
+      },
+      "keywords": {
+        "n": 100,
+        "n_correct": 65,
+        "hit_rate": 0.65
+      },
+      "baselines": {
+        "random": {
+          "n": 100,
+          "n_correct": 34.19,
+          "hit_rate": 0.3419
+        },
+        "always_bull": {
+          "n": 100,
+          "n_correct": 0,
+          "hit_rate": 0.0
+        },
+        "always_bear": {
+          "n": 100,
+          "n_correct": 0,
+          "hit_rate": 0.0
+        },
+        "always_neutral": {
+          "n": 100,
+          "n_correct": 100,
+          "hit_rate": 1.0
+        }
+      }
+    },
+    "24h": {
+      "human": null,
+      "ollama": null,
+      "keywords": null,
+      "baselines": {
+        "random": null,
+        "always_bull": null,
+        "always_bear": null,
+        "always_neutral": null
+      }
+    },
+    "5d": {
+      "human": null,
+      "ollama": null,
+      "keywords": null,
+      "baselines": {
+        "random": null,
+        "always_bull": null,
+        "always_bear": null,
+        "always_neutral": null
+      }
+    }
+  },
+  "per_source": {
+    "google_news": {
+      "n_total": 67,
+      "by_asset": {
+        "btc": 17,
+        "gold": 50
+      },
+      "horizons": {
+        "1h": {
+          "human": {
+            "n": 67,
+            "n_correct": 32,
+            "hit_rate": 0.47761194029850745
+          },
+          "ollama": {
+            "n": 67,
+            "n_correct": 17,
+            "hit_rate": 0.2537313432835821
+          },
+          "keywords": {
+            "n": 67,
+            "n_correct": 46,
+            "hit_rate": 0.6865671641791045
+          }
+        },
+        "6h": {
+          "human": {
+            "n": 67,
+            "n_correct": 32,
+            "hit_rate": 0.47761194029850745
+          },
+          "ollama": {
+            "n": 67,
+            "n_correct": 17,
+            "hit_rate": 0.2537313432835821
+          },
+          "keywords": {
+            "n": 67,
+            "n_correct": 46,
+            "hit_rate": 0.6865671641791045
+          }
+        },
+        "24h": {
+          "human": null,
+          "ollama": null,
+          "keywords": null
+        },
+        "5d": {
+          "human": null,
+          "ollama": null,
+          "keywords": null
+        }
+      }
+    },
+    "cryptocompare": {
+      "n_total": 17,
+      "by_asset": {
+        "btc": 17
+      },
+      "horizons": {
+        "1h": {
+          "human": {
+            "n": 17,
+            "n_correct": 11,
+            "hit_rate": 0.6470588235294118
+          },
+          "ollama": {
+            "n": 17,
+            "n_correct": 2,
+            "hit_rate": 0.11764705882352941
+          },
+          "keywords": {
+            "n": 17,
+            "n_correct": 5,
+            "hit_rate": 0.29411764705882354
+          }
+        },
+        "6h": {
+          "human": {
+            "n": 17,
+            "n_correct": 11,
+            "hit_rate": 0.6470588235294118
+          },
+          "ollama": {
+            "n": 17,
+            "n_correct": 2,
+            "hit_rate": 0.11764705882352941
+          },
+          "keywords": {
+            "n": 17,
+            "n_correct": 5,
+            "hit_rate": 0.29411764705882354
+          }
+        },
+        "24h": {
+          "human": null,
+          "ollama": null,
+          "keywords": null
+        },
+        "5d": {
+          "human": null,
+          "ollama": null,
+          "keywords": null
+        }
+      }
+    },
+    "reddit": {
+      "n_total": 16,
+      "by_asset": {
+        "btc": 16
+      },
+      "horizons": {
+        "1h": {
+          "human": {
+            "n": 16,
+            "n_correct": 13,
+            "hit_rate": 0.8125
+          },
+          "ollama": {
+            "n": 16,
+            "n_correct": 4,
+            "hit_rate": 0.25
+          },
+          "keywords": {
+            "n": 16,
+            "n_correct": 14,
+            "hit_rate": 0.875
+          }
+        },
+        "6h": {
+          "human": {
+            "n": 16,
+            "n_correct": 13,
+            "hit_rate": 0.8125
+          },
+          "ollama": {
+            "n": 16,
+            "n_correct": 4,
+            "hit_rate": 0.25
+          },
+          "keywords": {
+            "n": 16,
+            "n_correct": 14,
+            "hit_rate": 0.875
+          }
+        },
+        "24h": {
+          "human": null,
+          "ollama": null,
+          "keywords": null
+        },
+        "5d": {
+          "human": null,
+          "ollama": null,
+          "keywords": null
+        }
+      }
+    }
+  }
+}

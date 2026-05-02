@@ -389,7 +389,7 @@ Enrichir le sentiment textuel multi-source (jusqu'ici limité à CryptoCompare B
 | 1 | Google News RSS (BTC + GOLD) + classifier asset-aware + ADR-008 | ✅ livrée le 2026-05-01 |
 | 2 | Reddit JSON (r/Bitcoin + r/CryptoMarkets, pondération log upvotes) + ADR-009 | ✅ livrée le 2026-05-01 |
 | 3 | GDELT timelinetone GOLD (tone brut, méthode NLP scientifique non-LLM, contrarian) + ADR-010 | ✅ livrée le 2026-05-01 |
-| 4 | Consolidation : dataset golden BTC + GOLD + extension backtest CLI pour comparer hit rate par source | ⏳ à venir |
+| 4 | Consolidation : dataset golden BTC + GOLD + extension backtest CLI pour comparer hit rate par source | 🟡 partielle (livrée 2026-05-02, re-run prévu J+5 pour deltas 5d) |
 
 **Session 1 livrée le 2026-05-01** :
 
@@ -475,6 +475,55 @@ Enrichir le sentiment textuel multi-source (jusqu'ici limité à CryptoCompare B
 - **Tests pytest** : 336 → **~386 tests verts** (+ ~26 gdelt_ingester sur `_extract_tone_points` / `_fetch` / lifecycle / construction URL avec sourcelang, + ~24 swing engine helpers GDELT incluant un test dédié à la nature contrarian du mapping). Aucune régression. Chiffre exact à confirmer post-pytest live.
 
 - **ADR-010 documenté** : `docs/adr/010-gdelt-tone-overlay-gold.md` formalise les choix structurants (mode `timelinetone` plutôt qu'`artlist + Ollama` pour la diversification méthodologique, interprétation contrarian plutôt que trend-following pour aligner sur la sémantique safe haven de l'or, mapping calibré ±1/±3, lang:eng seul, query simple `"gold price"`, GOLD seul Session 3, BTC reporté à Session 4+ pour validation empirique). Risques opérationnels rappelés : Garde-fou 1 (mode shadow 3 mois) **strictement applicable**, ADR-003 (pas de bypass V01-V15) **inchangé**, paranoïa contrôlée maintenue.
+
+**Session 4 partielle livrée le 2026-05-02** (re-run prévu le 2026-05-06+ pour les deltas 5d) :
+
+- **Pipeline de calibration livré** : 5 scripts CLI dans `core/src/tik_core/scripts/` qui s'enchaînent et se joignent par hash `id` stable :
+  1. `collect_golden.py` — refetch on-the-fly 50 BTC (mix Google News + CryptoCompare + Reddit) + 50 GOLD (Google News) → `raw_items.jsonl`
+  2. `annotate_golden.py` — CLI interactif blinded, ordre randomisé seed=42, traduction live FR via Ollama, glossaire EN→FR (~80 termes ciblés crypto/or/macro/régulation/technique) → `annotations.jsonl`
+  3. `predict_golden.py` — Ollama asset-aware (`Bitcoin` / `Gold`) + KeywordClassifier en parallèle, construits via `asyncio.gather` → `predictions.jsonl`
+  4. `backtest_golden.py` — multi-horizon (1h, 6h, 24h, 5d) via Binance klines + Yahoo, deltas marqués `available=False` quand l'horizon est dans le futur → `prices.jsonl`
+  5. `measure_calibration.py` — joint les 4 fichiers, calcule 3 familles de métriques (concordance humain↔classifier, calibration vs marché, performance par source), génère rapport JSON + Markdown
+
+- **Décisions structurantes prises** :
+  - **Refetch on-the-fly** : pas de modif schéma DB (garde-fou 1 inchangé)
+  - **Annotation 50/asset** (~17/source pour BTC) plutôt que 50/source (200 items à annoter) : effort gérable (~20 min) pour un premier cycle, à étendre si signal ambigu
+  - **Sources numériques (FG, GDELT tone, DXY, COT) exclues du textuel annotable** : leur calibration se fait via backtest sur série historique étendue (étape 7, à venir Session 4-bis)
+  - **Format JSON Lines versionné git** dans `core/data/golden_dataset/` (mount Docker `./data:/app/data:rw` ajouté à `core/docker-compose.yml`)
+  - **Multi-horizon** plutôt qu'un seul horizon 5d : permet une lecture progressive (1h dispo dès la collecte) et une re-lecture plus fine de la demi-vie de chaque source
+
+- **Aide à l'annotation** :
+  - **Traduction live FR via Ollama** dans `annotate_golden.py` (~1-2 sec par titre, prompt durci pour conserver les termes techniques en anglais — partiellement respecté par `llama3.2:3b`)
+  - **Glossaire `core/data/golden_dataset/glossaire-news-fr.md`** : ~80 termes EN→FR avec tendance bull/bear/contextuelle, organisé en 5 sections (crypto, or, macro, régulation, technique)
+  - **Limite documentée** : la traduction Ollama 3B inverse parfois la sémantique sur le jargon précis (ex. `supply` ↔ `demand`). Le glossaire reste la référence absolue en cas de divergence ; règle "dans le doute → neutral".
+
+- **Premier cycle de mesure (2026-05-02)** :
+  - **100 items annotés à la main** par l'utilisatrice (distribution : 27 bull / 17 bear / 56 neutral — ratio neutral élevé cohérent avec règle "dans le doute → neutral", appliquée par une débutante en trading mais sur lecture sémantique de titres)
+  - **100 predictions Ollama** sans aucun fail (38 bull / 39 bear / 23 neutral — Ollama très directionnel)
+  - **100 predictions Keywords** (23 bull / 12 bear / 65 neutral — très conservateur)
+  - **Deltas 1h et 6h disponibles** ; deltas 24h et 5d à venir (collecte 1er mai 18h09 UTC, deltas 5d dispo le 6 mai 18h09 UTC)
+
+- **Insights provisoires (à confirmer avec deltas 5d)** :
+  - **Accuracy Humain ↔ Ollama** = 58 % ; **Humain ↔ Keywords** = 63 % ; **Ollama ↔ Keywords** = 49 %. Les deux classifiers internes prennent des décisions structurellement différentes sur 51 % des items — confirmation que le choix Ollama vs keywords change radicalement le signal en sortie de chaque ingester news.
+  - **Confusion matrix Humain ↔ Ollama** : 35 cas où Ollama tranche bull/bear (18+17) quand l'humain dit neutral (Ollama agressif), seulement 5 cas de vraie divergence sémantique (Ollama bear ↔ humain bull). Ollama capte des signaux ténus que l'humain juge trop ambigus — peut être une force ou une faiblesse selon le marché.
+  - **Hit rate vs marché à 1h et 6h biaisé par le seuil** : `always_neutral` atteint 100 % (tous les deltas BTC+GOLD < 0.5 % à ces horizons sur 100 items). Mesure non-informative à court terme — confirmera ce qu'on attendait : le sentiment news a une demi-vie >24h, les vraies conclusions ne sortiront qu'à 5d.
+
+- **Tests pytest** : 386 → **451 tests verts** (+65 sur `core/tests/test_golden_pipeline.py` couvrant `_make_id`, `_load_existing_ids`, `quotas_for`, `pick_new`, `_verdict_from_counts`, `_parse_horizon`, `_parse_dt`, `_compute_deltas_for_item`, `_verdict_correct_vs_market`, `_accuracy`, `_confusion_matrix`, `_hit_rate_vs_market`, `_baseline_random/constant`, `_build_combined`, `_section_distribution/concordance`, `_render_markdown`, `_index_by_id`). 1 bug latent corrigé pendant le run : `pick_new(quota=0)` retournait incorrectement 1 item au lieu de 0 (early return ajouté).
+
+- **Documentation** :
+  - **`docs/methodology/calibration.md`** créé : protocole en 6 étapes, architecture des fichiers, métriques calculées, limites assumées (échantillon 100 items, 1 cycle de marché, annotateur unique débutant trader, traduction LLM 3B imparfaite), commandes de relance, décisions à valider après chaque cycle.
+  - **`docs/backlog.md`** enrichi (entrée n°2) : traduction native française des signaux Tik (param `?lang=fr` API + cache Redis + 3 endpoints + ADR-011) — 3 options évaluées pour/contre/verdict, Option A retenue, à attaquer en Session 5 dédiée si la calibration ne fait pas remonter d'ajustement structurant urgent.
+
+- **Volontairement reporté à Session 4-bis (re-run J+5 le 2026-05-06)** :
+  - Lecture des hit rates 5d humain / Ollama / keywords (la vraie mesure)
+  - Comparaison vs baselines (random, always X) sur 5d
+  - Performance par source à 5d (Google News BTC vs CryptoCompare vs Reddit vs Google News GOLD)
+  - **Étape 7 — Backtest sources numériques** (FG, GDELT tone, DXY, COT) sur série historique étendue (6-12 mois) plutôt que sur 100 items récents
+  - **Étape 9 — Ajustements `SOURCE_SCORES`** dans `swing_engine.py` selon mesures
+  - **Étape 10 — Décision GDELT BTC** (déployer ou archiver selon corrélation tone↔delta BTC mesurée)
+  - **Pas d'ADR-011 en Session 4** (l'utilisatrice a explicitement demandé `docs/methodology/calibration.md` en alternative). ADR-011 reste réservé pour la traduction native FR signaux Session 5 future.
+
+- **Risques opérationnels rappelés** : Garde-fou 1 (mode shadow 3 mois) **strictement applicable** — la calibration ne touche pas la logique d'exécution Zeta, on est en pure observation. ADR-003 (pas de bypass V01-V15) **inchangé**. Paranoïa contrôlée maintenue. Le commit 2026-05-02 ne modifie aucun engine ni ingester ni endpoint API — uniquement scripts CLI + tests + docs + 1 ligne dans `core/docker-compose.yml`.
 
 ### Couches encore non-implémentées (évolutions futures)
 
@@ -640,6 +689,6 @@ cp "$WORKTREE/path2" "$MAIN/path2"
 
 ---
 
-*Dernière mise à jour : 2026-05-01*
-*Version Tik : 0.1.0 (Core MVP livré + évolutions Paquet 1.x — swing BTC/GOLD multi-overlay + flash BTC + NLP Ollama sur les news ; **SDK Paquet 2 COMPLET** — version SDK 0.5.0, client HTTP + WebSocket + hooks + cache + circuit breaker + telemetry non-bloquant + config YAML hot-reload + doc intégration Zeta + 4 exemples runnable + ADR-007 + CI ; **Paquet 4 Sessions 1 + 2 + 3 livrées** — Google News RSS BTC + GOLD (ADR-008) + Reddit BTC pondéré log upvotes (ADR-009) + GDELT timelinetone GOLD NLP scientifique non-LLM contrarian (ADR-010), 4 sources sentiment cross-validées sur BTC, 4 overlays cross-validés sur GOLD, **diversification méthodologique** Ollama-LLM vs NLP scientifique, 10 ingesters total ; v1.0.0 du SDK réservée à la mise en production réelle dans Zeta après 3 mois de mode shadow)*
+*Dernière mise à jour : 2026-05-02*
+*Version Tik : 0.1.0 (Core MVP livré + évolutions Paquet 1.x — swing BTC/GOLD multi-overlay + flash BTC + NLP Ollama sur les news ; **SDK Paquet 2 COMPLET** — version SDK 0.5.0, client HTTP + WebSocket + hooks + cache + circuit breaker + telemetry non-bloquant + config YAML hot-reload + doc intégration Zeta + 4 exemples runnable + ADR-007 + CI ; **Paquet 4 Sessions 1 + 2 + 3 livrées + Session 4 partielle** — Google News RSS BTC + GOLD (ADR-008) + Reddit BTC pondéré log upvotes (ADR-009) + GDELT timelinetone GOLD NLP scientifique non-LLM contrarian (ADR-010), 4 sources sentiment cross-validées sur BTC, 4 overlays cross-validés sur GOLD, **diversification méthodologique** Ollama-LLM vs NLP scientifique, 10 ingesters total ; **pipeline de calibration livré** (Session 4 — 5 scripts CLI collect/annotate/predict/backtest/measure + 65 tests pytest + `docs/methodology/calibration.md` + glossaire EN→FR ~80 termes) avec premier cycle 100 items annotés à la main, predictions Ollama+keywords générées, deltas 1h/6h mesurés ; **deltas 24h+5d et conclusions structurelles à venir le 2026-05-06+** ; v1.0.0 du SDK réservée à la mise en production réelle dans Zeta après 3 mois de mode shadow)*
 *Mainteneur : utilisateur solo + assistant Claude via extension VS Code*

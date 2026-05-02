@@ -54,6 +54,7 @@ services:
       - ./src:/app/src:ro
       - ./migrations:/app/migrations:ro
       - ./tests:/app/tests:ro
+      - ./data:/app/data:rw
     command: >
       sh -c "
         alembic upgrade head &&
