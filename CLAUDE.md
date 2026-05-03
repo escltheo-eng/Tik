@@ -369,16 +369,37 @@ Implémenté dans `Tik/sdk/`. Découpage final en 5 sessions :
 
 **Garde-fou ADR-003** verrouillé par test runtime ET vérifié explicitement en CI (`pytest tests/test_client.py::test_client_does_not_expose_execution_methods` dans le job `sdk-test`). Aucune méthode `place_order`, `execute`, `trade`, `buy`, `sell`, `bypass_guard` exposée.
 
-### Paquet 3 — Dashboard Expo : ⏳ À FAIRE
+### Paquet 3 — Dashboard Expo : ✅ LIVRÉ (5 sessions, version 0.5.0)
 
-À implémenter dans `Tik/dashboard/` :
-- App Expo SDK 54+ avec Expo Router
-- Auth (login + storage push token Expo)
-- Écrans : home (KPIs live), signals feed (WebSocket), alerts, bots Zeta/Totem, config
-- Charts via Victory Native XL ou Skia
-- Notifications push (Expo Push) avec deep links
-- Connexion API + WebSocket vers Tik core local
-- Future : connexion API Zeta existante pour afficher état trading
+App Expo SDK 54 livrée dans `Tik/dashboard/`. 5 sessions livrées et pushées entre les commits `5ba28cb` et `b438f29` :
+
+| # | Session | Commit | Statut |
+|---|---|---|---|
+| 1 | Bootstrap Expo SDK 54 + écrans Home/About | `5ba28cb` | ✅ |
+| 2 | Auth pluggable + client HTTP + écran login | `b37401d` | ✅ |
+| 3 | WebSocket live + Signals Feed + écran détail signal | `5ab5b72` | ✅ |
+| 4 | KPIs Home + sparkline veracity | `8ec8362` | ✅ |
+| 5 | Alerts + bots Zeta/Totem + config + push notifications | `b438f29` | ✅ |
+
+**Périmètre couvert** :
+- App Expo SDK 54+ avec Expo Router (file-based routing)
+- Auth (login + storage local sécurisé `expo-secure-store` du baseUrl + apiKey)
+- Écrans : `Home` (KPIs live + sparkline), `Signals` (flux WS temps réel + filtres entity/horizon), détail signal (`/signal/[id]`), `Alerts`, `Bots`, `Config`
+- Connexion REST + WebSocket vers Tik core via `192.168.1.34:8200` (IP locale du Mac sur WiFi maison)
+- Notifications push (Expo Push) avec storage du push token
+- Compatible iPhone (testé via Expo Go le 2026-05-03) ET mode web (Safari)
+
+**Mise en service réelle (2026-05-03)** :
+- Installation Expo Go sur iPhone de l'utilisatrice
+- `npm install` (~600 Mo de deps) dans `dashboard/`
+- `npx expo start` côté Mac → QR code → scan iPhone via app Caméra native iOS → ouvre dans Expo Go
+- Login dans l'app : Base URL `http://192.168.1.34:8200` + clé API existante
+- Validation runtime : KPIs Home OK, flux Signals "Live" via WebSocket OK
+- 2 bugs découverts pendant la mise en service : logo "Tik" tronqué sur iPhone (fontSize 96 → 72) + WebSocket auth refused systématique (import statique `_session_maker`). Fixés et commit le 2026-05-03 (cf. section 9 bug 7).
+
+**Limites connues à ce stade** :
+- Les hypothèses de signaux affichées dans le détail sont **minimalistes** (juste `"Swing long on BTC based on EMA/RSI/MACD confluence (bull=0.65, bear=0.18)"`). Les sections Evidence et Triggers contiennent l'info riche, mais l'hypothèse en haut n'est pas générée par NLP. Amélioration possible en ré-utilisant Ollama pour synthétiser un texte plus contextuel — à mettre en backlog si intérêt.
+- Mode 4G hors WiFi maison non fonctionnel (l'iPhone ne peut pas atteindre `192.168.1.34` depuis l'extérieur). Pour mobilité 4G, prévoir un setup ngrok/Tailscale ou un hébergement cloud — à voir si besoin réel.
 
 ### Paquet 4 — Diversification des sources OSINT news : 🟡 EN COURS
 
@@ -539,7 +560,7 @@ Enrichir le sentiment textuel multi-source (jusqu'ici limité à CryptoCompare B
 
 ## 9. Bugs connus et résolus
 
-6 bugs identifiés et corrigés depuis le démarrage du projet (les 3 premiers pendant le déploiement initial du Paquet 1, les 3 suivants pendant les évolutions post-livraison du 2026-04-28) :
+7 bugs identifiés et corrigés depuis le démarrage du projet (les 3 premiers pendant le déploiement initial du Paquet 1, les 3 suivants pendant les évolutions post-livraison du 2026-04-28, le 7e découvert le 2026-05-03 lors de la mise en service du dashboard sur iPhone) :
 
 ### Bug 1 — Hypertable TimescaleDB avec primary key incompatible
 
@@ -577,7 +598,24 @@ Enrichir le sentiment textuel multi-source (jusqu'ici limité à CryptoCompare B
 **Cause** : ils héritaient du `HEALTHCHECK` du Dockerfile commun (`curl http://localhost:8200/api/v1/health`), mais n'exposent pas l'API → curl échoue toujours.
 **Fix** : override du healthcheck dans `core/docker-compose.yml` pour ces deux services. Test via `python -c "import redis; redis.Redis(host='redis').ping()"` (Python est déjà installé, Redis est nécessaire au fonctionnement). Pas un heartbeat fin du process business mais suffisant pour le MVP.
 
-**Ces 6 fixes sont déjà appliqués dans le code actuel** (et poussés sur GitHub).
+### Bug 7 — WebSocket auth refusée systématiquement (import statique `_session_maker`)
+
+**Symptôme** : tous les clients WebSocket (dashboard iPhone, dashboard Mac, curl) reçoivent un HTTP 403 sur `/api/v1/ws/signals?api_key=...`. Côté dashboard, l'indicateur reste bloqué sur "Reconnexion…" en boucle. Côté logs Tik core, on observe : `"WebSocket /api/v1/ws/signals?api_key=tik_..." 403` répété à chaque tentative. Aucun signal temps réel ne remonte au dashboard, qui reste en mode "preload REST seul".
+
+**Cause** : dans `core/src/tik_core/api/ws.py`, l'import était écrit comme `from tik_core.storage.database import _session_maker`. Cet import lit la **valeur** de la variable globale `_session_maker` au moment de l'import du module (= `None`, parce que le lifespan FastAPI n'a pas encore appelé `init_engine()` à ce moment-là). Cette référence reste `None` pour toujours dans `ws.py`, même quand `init_engine()` met à jour la variable globale dans `database.py`. Conséquence : à chaque connexion WS, le check `if _session_maker is None: await websocket.close(code=1011)` se déclenche → close → 403 HTTP côté client.
+
+Bug invisible côté REST parce que les routes REST utilisent la **fonction** `get_session()` qui résout `_session_maker` dynamiquement à chaque requête (au runtime, après que l'engine soit initialisé). Bug invisible en CI parce que la fixture pytest `db_engine` initialise le session_maker **avant** l'import du module testé.
+
+**Fix** : remplacer `from tik_core.storage.database import _session_maker` par `from tik_core.storage import database`, et accéder dynamiquement à `database._session_maker` au moment de la requête WS (pattern identique à `get_session()`).
+
+**Validation runtime** (2026-05-03) :
+- Logs core : `ws.connected client_id=dashboard entity=None horizon=None` ✓
+- Indicateur Signals dashboard : "Live" ✓
+- Flux temps réel : signaux apparaissent en haut de la liste
+
+**À ajouter en futur** : un test pytest qui démarre l'app FastAPI complète (lifespan inclus) puis tente une connexion WS, pour attraper ce genre de bug en CI plutôt qu'en production. Reporté Session future.
+
+**Ces 7 fixes sont déjà appliqués dans le code actuel** (et poussés sur GitHub).
 
 ---
 
@@ -594,17 +632,19 @@ Cette section sera repeuplée si de nouveaux bugs sont identifiés. Pour les év
 L'utilisateur est sur **macOS Tahoe 26.0** (Mac M1 Apple Silicon).
 
 **Outils installés et fonctionnels** :
-- VS Code avec extension Claude Code (Anthropic) — outil principal
-- Docker Desktop — fait tourner Tik
-- GitHub Desktop — gestion Git visuelle (l'utilisateur ne maîtrise PAS les commandes Git en ligne de commande)
+- **Claude Desktop** (app native macOS) — outil principal de l'utilisatrice pour interagir avec Claude. **Important** : ce n'est pas l'extension Claude Code de VS Code.
+- VS Code — éditeur de code, sans extension Claude (l'IA est ailleurs, dans Claude Desktop). Utilisé pour lire/éditer manuellement quand besoin.
+- Docker Desktop — fait tourner Tik (5 services : core, ingesters, scheduler, postgres, redis)
+- GitHub Desktop — gestion Git visuelle (l'utilisatrice ne maîtrise PAS les commandes Git en ligne de commande)
 - Ollama (app native macOS, installée le 2026-04-30 via le .dmg officiel sans Homebrew) avec le modèle `llama3.2:3b` téléchargé localement (~2 GB). Utilisé par le `OllamaClassifier` du ingester CryptoCompare (cf. ADR-006). L'app tourne en service au démarrage, l'icône lama est visible dans la barre de menus Mac. Les conteneurs Docker l'atteignent via `http://host.docker.internal:11434`. **Réutilisable pour tout futur besoin NLP** (module anti-fake-news, génération d'hypothèses, etc.).
+- **Expo Go** (app iOS sur iPhone) — installée le 2026-05-03 pour tester le dashboard Tik (Paquet 3) en mode dev. Le téléphone scanne le QR code affiché par `npx expo start` côté Mac et charge l'app Tik via WiFi local. Le dev server Expo (port 8081) doit tourner côté Mac en parallèle de Tik core (port 8200).
+- Node.js v24 + npm 11 — installés sur le Mac (probablement via le .pkg officiel nodejs.org). Nécessaires pour `npx expo start` côté dashboard.
 - Le repo GitHub Tik est privé
 
 **Outils NON installés** (et qui ont posé problème) :
 - Homebrew — abandonné car nécessite Xcode Command Line Tools
 - Xcode Command Line Tools — bloqué (la version dispo Apple Developer 26.4.1 exige macOS 26.2)
 - jq — abandonné, on utilise `plutil -convert json -r -o - -` à la place pour formater le JSON
-- Claude Desktop — bloqué par un bug d'auth email
 
 **Workflow Git** : passe par GitHub Desktop pour `commit` + `push`, jamais par la ligne de commande.
 
@@ -689,6 +729,6 @@ cp "$WORKTREE/path2" "$MAIN/path2"
 
 ---
 
-*Dernière mise à jour : 2026-05-02*
-*Version Tik : 0.1.0 (Core MVP livré + évolutions Paquet 1.x — swing BTC/GOLD multi-overlay + flash BTC + NLP Ollama sur les news ; **SDK Paquet 2 COMPLET** — version SDK 0.5.0, client HTTP + WebSocket + hooks + cache + circuit breaker + telemetry non-bloquant + config YAML hot-reload + doc intégration Zeta + 4 exemples runnable + ADR-007 + CI ; **Paquet 4 Sessions 1 + 2 + 3 livrées + Session 4 partielle** — Google News RSS BTC + GOLD (ADR-008) + Reddit BTC pondéré log upvotes (ADR-009) + GDELT timelinetone GOLD NLP scientifique non-LLM contrarian (ADR-010), 4 sources sentiment cross-validées sur BTC, 4 overlays cross-validés sur GOLD, **diversification méthodologique** Ollama-LLM vs NLP scientifique, 10 ingesters total ; **pipeline de calibration livré** (Session 4 — 5 scripts CLI collect/annotate/predict/backtest/measure + 65 tests pytest + `docs/methodology/calibration.md` + glossaire EN→FR ~80 termes) avec premier cycle 100 items annotés à la main, predictions Ollama+keywords générées, deltas 1h/6h mesurés ; **deltas 24h+5d et conclusions structurelles à venir le 2026-05-06+** ; v1.0.0 du SDK réservée à la mise en production réelle dans Zeta après 3 mois de mode shadow)*
-*Mainteneur : utilisateur solo + assistant Claude via extension VS Code*
+*Dernière mise à jour : 2026-05-03*
+*Version Tik : 0.1.0 (Core MVP livré + évolutions Paquet 1.x — swing BTC/GOLD multi-overlay + flash BTC + NLP Ollama sur les news ; **SDK Paquet 2 COMPLET** — version SDK 0.5.0, client HTTP + WebSocket + hooks + cache + circuit breaker + telemetry non-bloquant + config YAML hot-reload + doc intégration Zeta + 4 exemples runnable + ADR-007 + CI ; **Dashboard Paquet 3 COMPLET** — version dashboard 0.5.0, app Expo SDK 54 avec auth + Home KPIs + Signals feed WebSocket + détail signal + Alerts + Bots + Config + push notifications, mise en service réelle sur iPhone via Expo Go le 2026-05-03 avec 2 bugs visibles fixés dans la foulée (logo iPhone tronqué + WS auth `_session_maker` import statique = bug 7 section 9) ; **Paquet 4 Sessions 1 + 2 + 3 livrées + Session 4 partielle** — Google News RSS BTC + GOLD (ADR-008) + Reddit BTC pondéré log upvotes (ADR-009) + GDELT timelinetone GOLD NLP scientifique non-LLM contrarian (ADR-010), 4 sources sentiment cross-validées sur BTC, 4 overlays cross-validés sur GOLD, **diversification méthodologique** Ollama-LLM vs NLP scientifique, 10 ingesters total ; **pipeline de calibration livré** (Session 4 — 5 scripts CLI collect/annotate/predict/backtest/measure + 65 tests pytest + `docs/methodology/calibration.md` + glossaire EN→FR ~80 termes) avec premier cycle 100 items annotés à la main, predictions Ollama+keywords générées, deltas 1h/6h mesurés ; **deltas 24h+5d et conclusions structurelles à venir le 2026-05-06+** ; v1.0.0 du SDK réservée à la mise en production réelle dans Zeta après 3 mois de mode shadow)*
+*Mainteneur : utilisatrice solo + assistant Claude via Claude Desktop (app native macOS)*
