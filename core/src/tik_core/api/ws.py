@@ -16,7 +16,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from tik_core.auth.api_key import hash_key
 from tik_core.config import get_settings
-from tik_core.storage.database import _session_maker
+# IMPORTANT: import the module, NOT the variable. The module attribute
+# `_session_maker` is set asynchronously by `init_engine()` during the
+# FastAPI lifespan startup. Importing the variable directly (i.e.
+# `from ...database import _session_maker`) freezes it to its value at
+# import time (which is `None`), so every WS would close with 1011 and
+# the client would see a 403 forever. Accessing `database._session_maker`
+# at runtime ensures we read the live value.
+from tik_core.storage import database
 from tik_core.storage.models import ApiKey
 
 log = structlog.get_logger()
@@ -46,12 +53,14 @@ async def ws_signals(
     Filtre optionnel par entity et/ou horizon.
     Écoute le canal Redis `tik.signal.*` et relaie les messages correspondants.
     """
-    # Auth
-    if _session_maker is None:
+    # Auth — read session_maker dynamically from the database module
+    # (cf. import comment above for why we don't bind it at import time).
+    session_maker = database._session_maker
+    if session_maker is None:
         await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
         return
 
-    async with _session_maker() as session:
+    async with session_maker() as session:
         key = await _authenticate_ws(api_key, session)
         if key is None:
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
