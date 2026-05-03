@@ -169,8 +169,10 @@ const styles = StyleSheet.create({
   },
   brand: {
     fontSize: 64,
+    lineHeight: 72,
     fontWeight: 'bold',
     marginBottom: 4,
+    includeFontPadding: false,
   },
   muted: {
     opacity: 0.7,
