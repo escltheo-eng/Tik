@@ -258,11 +258,13 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   headerLogo: {
     color: '#ffffff',
-    fontSize: 96,
+    fontSize: 72,
+    lineHeight: 76,
     fontWeight: 'bold',
-    bottom: 16,
+    bottom: 24,
     left: 24,
     position: 'absolute',
+    includeFontPadding: false,
   },
   titleContainer: {
     flexDirection: 'row',
