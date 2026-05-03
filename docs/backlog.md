@@ -75,10 +75,16 @@ sur les vrais signaux Tik.
 
 ---
 
-## 2. Traduction native française des signaux Tik
+## 2. Traduction native française des signaux Tik (réservé ADR-013)
 
 **Date d'identification** : 2026-05-02 (Paquet 4 Session 4, en cours d'annotation
 manuelle du golden dataset)
+
+> **MAJ 2026-05-03** : ADR-011 a finalement été utilisé pour l'anti fake-news,
+> ADR-012 pour le LLM hypothesis generator (Paquet 6). **L'ADR de la traduction
+> FR sera donc ADR-013** au moment de l'attaquer. Le périmètre s'élargit
+> légèrement : depuis ADR-012, l'hypothèse devient un texte structuré ~150 mots
+> qui rejoint la liste des champs à traduire.
 
 **Contexte** : tous les champs textuels produits par Tik aujourd'hui sont en
 anglais (cohérent : les sources Google News, CryptoCompare, GDELT, Reddit
@@ -90,9 +96,12 @@ filtrent toutes `lang=EN`). Concrètement :
 
 L'utilisatrice principale du projet (lectrice francophone, débutante en
 trading) doit aujourd'hui lire ces signaux en anglais via curl ou via le
-SDK. Le futur dashboard Expo (Paquet 3) aura le même problème. Pour les
-bots clients (Zeta, Totem), c'est sans importance — ils consomment du
-JSON structuré pas du texte humain.
+SDK. Le dashboard Expo (Paquet 3, livré 2026-05-03) a confirmé le besoin
+en pratique. Depuis ADR-012 (Paquet 6, LLM hypothesis generator), un
+nouveau champ textuel ~150 mots s'ajoute à la liste : `Signal.hypothesis`
+contextualisée + son candidate `Signal.advisory.llm_hypothesis_candidate`
+en mode shadow. Pour les bots clients (Zeta, Totem), c'est sans importance
+— ils consomment du JSON structuré pas du texte humain.
 
 ### Options évaluées
 

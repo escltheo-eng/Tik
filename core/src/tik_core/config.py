@@ -63,6 +63,20 @@ class Settings(BaseSettings):
     # shadow : cross-validation calcule mais n'affecte pas la décision (logs uniquement)
     antifakenews_mode: Literal["active", "shadow"] = "active"
 
+    # --- LLM hypothesis generator (ADR-012) ---
+    # Implémentation utilisée pour synthétiser l'hypothèse contextuelle.
+    # ollama   : appel LLM local (llama3.2:3b par défaut, partage la même
+    #            infra Ollama que le news_classifier — cf. ADR-006).
+    # template : f-string déterministe historique (pas d'appel LLM).
+    llm_hypothesis: Literal["ollama", "template"] = "template"
+    # disabled : aucun appel LLM, hypothèse template seule
+    # shadow   : LLM exécuté, sortie stockée dans Signal.advisory
+    #            ["llm_hypothesis_candidate"] pour validation passive ;
+    #            Signal.hypothesis garde le texte template (sécurisé)
+    # active   : LLM remplace Signal.hypothesis ; le template est conservé
+    #            dans Signal.advisory["template_hypothesis"] pour audit
+    llm_hypothesis_mode: Literal["disabled", "shadow", "active"] = "shadow"
+
     # --- CORS ---
     cors_origins: str = "http://localhost:3000"
 

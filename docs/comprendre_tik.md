@@ -432,7 +432,55 @@ Une nouvelle table `source_credibility_history` enregistre chaque ajustement (1 
 
 ---
 
-## 13. Pour résumer
+## 13. Comment Tik rédige ses hypothèses (depuis 2026-05-03)
+
+Avant cette date, l'hypothèse affichée en haut du signal était une simple phrase générée mécaniquement :
+
+> *« Swing long on BTC based on EMA/RSI/MACD confluence (bull=0.65, bear=0.18) »*
+
+C'était utile mais sec. Toute la richesse du signal (les sources qui convergent ou divergent, les contre-scénarios, le statut anti fake-news, le niveau à surveiller) restait cachée dans les sections du dessous.
+
+Depuis le 2026-05-03, **Tik utilise le même modèle d'IA local que pour le sentiment news** (`llama3.2:3b` qui tourne sur ton Mac via Ollama, sans rien envoyer à internet) pour **rédiger une synthèse contextuelle** en 6 sections fixes :
+
+1. **Verdict + qualité** — direction, asset, confidence, veracity
+2. **Lecture technique** — quels indicateurs convergent
+3. **Lecture sentiment cross-validée** — chaque source nommée avec son biais
+4. **Statut anti fake-news** — quelles sources sont flaggées (s'il y en a)
+5. **Risque principal** — le contre-scénario le plus probable + sa mitigation
+6. **À surveiller** — niveau ou événement qui invaliderait la thèse
+
+**Exemple de sortie** (signal flash BTC short observé le 2026-05-03 à 21:34) :
+
+> *Verdict and quality: Short BTC with confidence 0.55 and veracity 0.95.*
+>
+> *Technical reading: The EMA cross trigger is confirmed by the RSI bearish trigger, while the MACD below signal line reinforces this trend. The orderbook imbalance and trade aggression indicators also point to a strong sell signal.*
+>
+> *Sentiment cross-validation: Binance_klines_1m credibility 0.90 confirms the RSI14=40.4 level, while binance_orderbook credibility 0.85 supports the OBI=-0.73 top-20 levels. Binance_aggtrades credibility 0.85 reinforces the taker buy_ratio=0.32.*
+>
+> *Anti fake-news status: All sources are flagged as 'ok'.*
+>
+> *Main risk: The most probable counter-scenario is a micro-whipsaw with probability 0.30, which can be mitigated by confirming direction on multiple timeframes (1h confluence).*
+>
+> *Watch: Monitor the key level of OBI=-0.73 for potential price movements.*
+
+Le LLM cite les sources nommément avec leur score de crédibilité, restitue le contre-scénario avec sa probabilité, et nomme le niveau à surveiller. **Plus besoin de lire 5 cartes pour comprendre pourquoi Tik recommande cette direction.**
+
+### Le filet de sécurité — mode `shadow` par défaut
+
+Comme pour l'anti fake-news (cf. ADR-011), il y a deux niveaux de sécurité :
+
+- **Mode `shadow` (par défaut)** : le LLM s'exécute, mais sa sortie est **stockée à part** dans un champ secondaire (`Signal.advisory.llm_hypothesis_candidate`). Le champ `Signal.hypothesis` qu'affichent l'app et l'API garde le texte template historique. C'est l'occasion de comparer pendant quelques jours, sans risque qu'un LLM qui « hallucinerait » ne donne une fausse info dans le dashboard.
+- **Mode `active`** : la sortie LLM **remplace** le texte template. L'ancien template est conservé dans `Signal.advisory.template_hypothesis` pour audit. Bascule via la variable d'env `TIK_LLM_HYPOTHESIS_MODE=active` + restart du scheduler.
+
+Si Ollama plante (Mac éteint, app fermée, etc.) ou met trop de temps à répondre (>30 sec), Tik revient automatiquement sur le texte template — **aucun signal n'est jamais perdu**. Le statut « circuit breaker batch-level » garantit que 3 erreurs successives basculent tout le batch en template, avec retour automatique au cycle suivant.
+
+### Pourquoi en anglais ?
+
+Toutes les sources de news que Tik consomme sont filtrées sur `lang=EN`, et les `evidence`/`triggers`/`counter_scenarios` sont en anglais. Faire l'hypothèse en français aurait créé un mélange de langues incohérent dans un même signal, et le LLM 3B est moins précis en français qu'en anglais sur le jargon trading. La traduction française complète du signal (tous les champs textuels d'un coup) est prévue dans une prochaine itération via un paramètre `?lang=fr` côté API.
+
+---
+
+## 14. Pour résumer
 
 ### Ce que Tik fait pour chaque signal
 
@@ -459,7 +507,7 @@ Une nouvelle table `source_credibility_history` enregistre chaque ajustement (1 
 
 ---
 
-## 14. État actuel et pistes futures
+## 15. État actuel et pistes futures
 
 ### Ce qui marche aujourd'hui
 

@@ -574,6 +574,43 @@ Cross-validation runtime + scoring source dynamique. Réveille l'infra dormante 
 
 **Documentation pédagogique** : nouvelle section 12 dans `docs/comprendre_tik.md` en français accessible (cross-validation expliquée avec un exemple concret 4 sources dont 1 aberrante, scoring dynamique expliqué avec son cycle quotidien, mode active vs shadow expliqué comme un filet de sécurité réversible).
 
+### Paquet 6 — LLM hypothesis generator : ✅ LIVRÉ (ADR-012, 2026-05-03)
+
+Synthèse contextuelle de l'hypothèse signal via LLM local (réutilise l'infra Ollama d'ADR-006). Limite "hypothèses minimalistes" identifiée dans Paquet 3 résolue.
+
+**Module `core/src/tik_core/scoring/hypothesis_generator.py`** (~370 lignes) :
+
+- Pattern Strategy ABC `HypothesisGenerator` + `TemplateHypothesisGenerator` (fallback historique f-string) + `OllamaHypothesisGenerator` (LLM local). Calque exact du pattern `news_classifier.py` (cf. ADR-006), familier et testé.
+- **Circuit breaker batch-level** : 3 erreurs successives → bascule template pour le reste du batch, `reset_batch()` réarme à chaque cycle scheduler. **Validation post-génération** : longueur 50-400 mots, doit contenir direction + entity_id, sanitize markdown (`**`, `##`, ```, `__`). Sortie invalide → fallback template **sans** incrémenter le compteur (différencie échec réseau vs loupé ponctuel du modèle).
+- Factory `build_hypothesis_generator(generator_type, ollama_url, ollama_model)` avec ping santé Ollama au démarrage (réutilise GET `/api/tags`).
+- Helper `apply_llm_hypothesis(decision, horizon, generator, mode, timeout_s=30.0)` : enveloppe `asyncio.wait_for` 30s (cohérent avec httpx interne 25s, calibré sur la latence mesurée llama3.2:3b sur Mac M1 ~13s/cycle pour ~250 mots). Ne lève **jamais** : tout échec → log warning + decision inchangée.
+
+**Prompt structuré 6 sections fixes** (~150 mots cible) : Verdict + Lecture technique + Sentiment cross-validé + Anti fake-news status + Risque principal + À surveiller. Garde-fous prompt : *"Use ONLY the data provided"*, *"No invented prices/sources"*, *"No markdown"*. `temperature=0.0`, `num_predict=350`.
+
+**Modes par variable d'env `TIK_LLM_HYPOTHESIS_MODE=disabled|shadow|active`** (défaut `shadow`) + `TIK_LLM_HYPOTHESIS=template|ollama` (défaut `template`, opt-in via env) :
+
+| Mode | Comportement |
+|---|---|
+| `disabled` | Aucun appel LLM, `Signal.hypothesis` = template historique |
+| `shadow` (défaut) | LLM s'exécute, sortie dans `Signal.advisory["llm_hypothesis_candidate"]`. `Signal.hypothesis` garde le template — validation passive |
+| `active` | LLM remplace `Signal.hypothesis`. Template conservé dans `Signal.advisory["template_hypothesis"]` pour audit |
+
+**Pourquoi `shadow` par défaut** (vs ADR-011 qui était `active`) : ici l'hypothèse est lue par un **humain** qui prend des décisions à partir d'elle. Une hypothèse hallucinée serait pire que le template. Le mode shadow permet de valider qualité sortie LLM sur 5-10 cycles avant bascule active.
+
+**Réveil champ `Signal.advisory`** (existant en DB depuis Paquet 1, jamais utilisé) : aucune modification de schéma DB nécessaire. Le payload Redis publié inclut désormais `advisory` (modification mineure dans `publisher.py:_publish_signal`).
+
+**Branchement engines** : paramètre `hypothesis_generator: HypothesisGenerator | None = None` ajouté aux signatures de `analyze_swing_btc`, `analyze_swing_gold`, `analyze_flash_btc`. Rétrocompat totale (defaut None). Préchargement du generator au démarrage `run_scheduler.main()`, partagé entre les 3 jobs, `reset_batch()` au début de chaque cycle.
+
+**Validation runtime** (2026-05-03 20:44-20:45) : premiers cycles Ollama réussis observés en prod local — GOLD swing 139 mots, BTC flash 125 mots, format 6 sections respecté, sources nommées avec credibility scores, contre-scénarios cités avec probabilités, niveaux à surveiller mentionnés. Mode shadow actif → `Signal.hypothesis` reste template, `Signal.advisory.llm_hypothesis_candidate` porte la sortie LLM.
+
+**39 nouveaux tests pytest** (`core/tests/test_hypothesis_generator.py`) : render template, formatters (triggers/evidence/CS/outliers), sanitize markdown, validation post-génération, generate success/fallback/invalid, circuit breaker open/reset, modes apply (disabled/shadow/active/timeout/exception/unknown/advisory not dict), factory (template/ollama alive/unreachable/model missing). Suite complète : 522 → **561 tests verts**, aucune régression.
+
+**ADR-012 documenté** : `docs/adr/012-llm-hypothesis-generator.md` formalise les 5 décisions structurantes (création sync vs lazy, EN seul vs FR/bilingue, shadow par défaut vs active/disabled, tous engines vs step-by-step, format 6 sections ~150 mots) avec arguments pour/contre/verdict pour chacune. Risques opérationnels rappelés : Garde-fou 1 **strictement applicable** (texte affiché à l'humain, zéro impact trade), ADR-003 **inchangé**, paranoïa contrôlée maintenue.
+
+**Documentation pédagogique** : nouvelle section 13 dans `docs/comprendre_tik.md` en français accessible (limite ancienne hypothèse expliquée + format 6 sections + exemple sortie LLM réelle + filet de sécurité shadow expliqué).
+
+**Backlog** : entry #2 (traduction FR signaux) glissée vers **ADR-013** (au lieu de ADR-012 initialement prévu) — la traduction couvrira désormais aussi le nouveau champ hypothèse contextualisée.
+
 ### Couches encore non-implémentées (évolutions futures)
 
 - Engine macro (semaines-mois) — partiellement couvert via FRED
@@ -583,7 +620,8 @@ Cross-validation runtime + scoring source dynamique. Réveille l'infra dormante 
 - Marchés prédictifs : Polymarket, Kalshi
 - Backtesting service (script CLI déjà livré, service à industrialiser)
 - Data alternative : Google Trends
-- Traduction native française des signaux Tik (ADR-012 réservé) — voir `docs/backlog.md` entry n°2
+- Traduction native française des signaux Tik (ADR-013 réservé) — voir `docs/backlog.md` entry n°2
+- Carte secondaire dashboard "Hypothèse LLM (en validation)" affichée conditionnellement sur `signal.advisory.llm_hypothesis_candidate` — ~10 lignes Tsx, à ajouter au moment de la bascule visuelle shadow → active
 
 ---
 
@@ -759,5 +797,5 @@ cp "$WORKTREE/path2" "$MAIN/path2"
 ---
 
 *Dernière mise à jour : 2026-05-03*
-*Version Tik : 0.1.1 (Core MVP livré + évolutions Paquet 1.x — swing BTC/GOLD multi-overlay + flash BTC + NLP Ollama sur les news ; **SDK Paquet 2 COMPLET** — version SDK 0.5.0, client HTTP + WebSocket + hooks + cache + circuit breaker + telemetry non-bloquant + config YAML hot-reload + doc intégration Zeta + 4 exemples runnable + ADR-007 + CI ; **Dashboard Paquet 3 COMPLET** — version dashboard 0.5.0, app Expo SDK 54 avec auth + Home KPIs + Signals feed WebSocket + détail signal + Alerts + Bots + Config + push notifications, mise en service réelle sur iPhone via Expo Go le 2026-05-03 avec 2 bugs visibles fixés dans la foulée (logo iPhone tronqué + WS auth `_session_maker` import statique = bug 7 section 9) ; **Paquet 4 Sessions 1 + 2 + 3 livrées + Session 4 partielle** — Google News RSS BTC + GOLD (ADR-008) + Reddit BTC pondéré log upvotes (ADR-009) + GDELT timelinetone GOLD NLP scientifique non-LLM contrarian (ADR-010), 4 sources sentiment cross-validées sur BTC, 4 overlays cross-validés sur GOLD, **diversification méthodologique** Ollama-LLM vs NLP scientifique, 10 ingesters total ; **pipeline de calibration livré** (Session 4 — 5 scripts CLI collect/annotate/predict/backtest/measure + 65 tests pytest + `docs/methodology/calibration.md` + glossaire EN→FR ~80 termes) avec premier cycle 100 items annotés à la main, predictions Ollama+keywords générées, deltas 1h/6h mesurés ; **deltas 24h+5d et conclusions structurelles à venir le 2026-05-06+** ; **Paquet 5 Anti fake-news LIVRÉ 2026-05-03 (ADR-011)** — cross-validation runtime via Modified Z-score d'Iglewicz-Hoaglin + dispersion globale, scoring source dynamique avec recalibration automatique daily 03:00 UTC, mode active/shadow par variable d'env `TIK_ANTIFAKENEWS_MODE`, table DB `source_credibility_history` pour audit, hook SDK `on_fake_news_detected` enfin actif, 71 nouveaux tests (39 cross_validator + 32 source_credibility), 425 → 457 tests verts ; v1.0.0 du SDK réservée à la mise en production réelle dans Zeta après 3 mois de mode shadow)*
+*Version Tik : 0.1.1 (Core MVP livré + évolutions Paquet 1.x — swing BTC/GOLD multi-overlay + flash BTC + NLP Ollama sur les news ; **SDK Paquet 2 COMPLET** — version SDK 0.5.0, client HTTP + WebSocket + hooks + cache + circuit breaker + telemetry non-bloquant + config YAML hot-reload + doc intégration Zeta + 4 exemples runnable + ADR-007 + CI ; **Dashboard Paquet 3 COMPLET** — version dashboard 0.5.0, app Expo SDK 54 avec auth + Home KPIs + Signals feed WebSocket + détail signal + Alerts + Bots + Config + push notifications, mise en service réelle sur iPhone via Expo Go le 2026-05-03 avec 2 bugs visibles fixés dans la foulée (logo iPhone tronqué + WS auth `_session_maker` import statique = bug 7 section 9) ; **Paquet 4 Sessions 1 + 2 + 3 livrées + Session 4 partielle** — Google News RSS BTC + GOLD (ADR-008) + Reddit BTC pondéré log upvotes (ADR-009) + GDELT timelinetone GOLD NLP scientifique non-LLM contrarian (ADR-010), 4 sources sentiment cross-validées sur BTC, 4 overlays cross-validés sur GOLD, **diversification méthodologique** Ollama-LLM vs NLP scientifique, 10 ingesters total ; **pipeline de calibration livré** (Session 4 — 5 scripts CLI collect/annotate/predict/backtest/measure + 65 tests pytest + `docs/methodology/calibration.md` + glossaire EN→FR ~80 termes) avec premier cycle 100 items annotés à la main, predictions Ollama+keywords générées, deltas 1h/6h mesurés ; **deltas 24h+5d et conclusions structurelles à venir le 2026-05-06+** ; **Paquet 5 Anti fake-news LIVRÉ 2026-05-03 (ADR-011)** — cross-validation runtime via Modified Z-score d'Iglewicz-Hoaglin + dispersion globale, scoring source dynamique avec recalibration automatique daily 03:00 UTC, mode active/shadow par variable d'env `TIK_ANTIFAKENEWS_MODE`, table DB `source_credibility_history` pour audit, hook SDK `on_fake_news_detected` enfin actif, 71 nouveaux tests (39 cross_validator + 32 source_credibility), 425 → 457 tests verts ; **Paquet 6 LLM hypothesis generator LIVRÉ 2026-05-03 (ADR-012)** — synthèse contextuelle des hypothèses signal via llama3.2:3b en 6 sections fixes (~150 mots EN), pattern Strategy `HypothesisGenerator` calque ADR-006, mode `disabled|shadow|active` par var env `TIK_LLM_HYPOTHESIS_MODE` (shadow par défaut → sortie LLM dans `Signal.advisory.llm_hypothesis_candidate`, hypothesis garde template), réveil champ DB `Signal.advisory` existant (zéro modif schéma), validation post-génération (longueur + mots-clés + sanitize markdown), circuit breaker batch-level identique news_classifier, timeout strict 30s, branchement swing BTC + swing GOLD + flash BTC, premiers cycles validés runtime 2026-05-03 20:44-20:45 (139 mots GOLD swing, 125 mots BTC flash), 39 nouveaux tests, 522 → 561 tests verts ; v1.0.0 du SDK réservée à la mise en production réelle dans Zeta après 3 mois de mode shadow)*
 *Mainteneur : utilisatrice solo + assistant Claude via Claude Desktop (app native macOS)*

@@ -26,6 +26,10 @@ from redis.asyncio import Redis
 
 from tik_core.config import get_settings
 from tik_core.scoring.cross_validator import apply_cross_validation_to_decision
+from tik_core.scoring.hypothesis_generator import (
+    HypothesisGenerator,
+    apply_llm_hypothesis,
+)
 from tik_core.scoring.indicators import atr, ema, macd, rsi
 from tik_core.scoring.source_credibility import (
     get_effective_score,
@@ -69,6 +73,7 @@ class FlashDecision:
     evidence: list[dict] = field(default_factory=list)
     triggers: list[dict] = field(default_factory=list)
     circuit_breaker_status: str = "ok"     # ok | degraded | tripped (cf. ADR-011)
+    advisory: dict = field(default_factory=dict)  # candidates LLM (ADR-012), etc.
 
 
 @dataclass
@@ -523,12 +528,22 @@ def should_emit(
 
 # ----- Fonction d'analyse principale -----
 
-async def analyze_flash_btc(redis: Redis | None = None) -> FlashDecision:
+async def analyze_flash_btc(
+    redis: Redis | None = None,
+    hypothesis_generator: HypothesisGenerator | None = None,
+) -> FlashDecision:
     """Analyse flash BTC sur klines 1m + overlays REST OBI + agression.
 
     Si Redis est fourni et que les données temps réel sont stale (>60s),
     retourne une décision neutre `confidence=0` avec hypothesis explicite —
     le scheduler peut alors skip l'émission.
+
+    Si `hypothesis_generator` est fourni et que la décision n'est pas
+    skippée pour cause de données stale, génère une hypothèse contextuelle
+    via LLM après la cross-validation (cf. ADR-012). Le scheduler appelle
+    quand même `should_emit()` après — la génération LLM ne se fait pas
+    "pour rien" puisque le coût est négligeable comparé au cycle complet
+    et qu'on évite de complexifier l'API en propageant should_emit ici.
     """
     if redis is not None and not await is_realtime_data_fresh(redis):
         log.warning("flash.btc.stale_data_skip")
@@ -545,6 +560,8 @@ async def analyze_flash_btc(redis: Redis | None = None) -> FlashDecision:
     df.attrs["source"] = "binance_klines_1m"
     decision = _score_flash_indicators(df)
     decision.entity_id = "BTC"
+
+    settings = get_settings()
 
     # Précharge les scores dynamiques (override Redis sur FLASH_SOURCE_SCORES) — ADR-011
     dynamic_scores = await preload_source_scores(
@@ -572,7 +589,6 @@ async def analyze_flash_btc(redis: Redis | None = None) -> FlashDecision:
             log.info("flash.btc.aggtrades_unavailable", error=str(exc))
 
         if biases_by_source:
-            settings = get_settings()
             cv = apply_cross_validation_to_decision(
                 decision, biases_by_source, mode=settings.antifakenews_mode
             )
@@ -587,6 +603,16 @@ async def analyze_flash_btc(redis: Redis | None = None) -> FlashDecision:
                     method=cv.method,
                     mode=settings.antifakenews_mode,
                 )
+
+        # Génération hypothèse contextuelle LLM (post-enrichissements + post-CV).
+        # Le scheduler peut ensuite skip via should_emit() — l'hypothèse LLM
+        # est alors perdue, mais le coût est négligeable (~2s/cycle skippé,
+        # ~10 min/jour cumulé) face à la simplicité d'avoir une fonction
+        # analyze_flash_btc self-contained pour tests / backtests directs.
+        await apply_llm_hypothesis(
+            decision, "flash", hypothesis_generator,
+            settings.llm_hypothesis_mode,
+        )
 
         return decision
     finally:

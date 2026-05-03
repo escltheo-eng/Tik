@@ -22,6 +22,10 @@ from tik_core.scoring.flash_engine import (
     record_emission,
     should_emit,
 )
+from tik_core.scoring.hypothesis_generator import (
+    HypothesisGenerator,
+    build_hypothesis_generator,
+)
 from tik_core.scoring.publisher import publish_flash_signal, publish_swing_signal
 from tik_core.scoring.source_credibility import recalibrate_sources
 from tik_core.scoring.swing_engine import analyze_swing_btc, analyze_swing_gold
@@ -29,9 +33,15 @@ from tik_core.scoring.swing_engine import analyze_swing_btc, analyze_swing_gold
 log = structlog.get_logger()
 
 
-async def _run_swing_btc(session_maker, redis) -> None:
+async def _run_swing_btc(
+    session_maker, redis, hypothesis_generator: HypothesisGenerator | None
+) -> None:
     try:
-        decision = await analyze_swing_btc(redis=redis)
+        if hypothesis_generator is not None:
+            hypothesis_generator.reset_batch()
+        decision = await analyze_swing_btc(
+            redis=redis, hypothesis_generator=hypothesis_generator
+        )
         async with session_maker() as session:
             await publish_swing_signal(session, redis, decision)
             await session.commit()
@@ -39,9 +49,17 @@ async def _run_swing_btc(session_maker, redis) -> None:
         log.error("scheduler.swing_btc.error", error=str(exc))
 
 
-async def _run_swing_gold(session_maker, redis, fred_api_key) -> None:
+async def _run_swing_gold(
+    session_maker, redis, fred_api_key,
+    hypothesis_generator: HypothesisGenerator | None,
+) -> None:
     try:
-        decision = await analyze_swing_gold(fred_api_key=fred_api_key, redis=redis)
+        if hypothesis_generator is not None:
+            hypothesis_generator.reset_batch()
+        decision = await analyze_swing_gold(
+            fred_api_key=fred_api_key, redis=redis,
+            hypothesis_generator=hypothesis_generator,
+        )
         async with session_maker() as session:
             await publish_swing_signal(session, redis, decision)
             await session.commit()
@@ -58,9 +76,15 @@ async def _run_recalibrate_sources(session_maker, redis) -> None:
         log.error("scheduler.recalibrate_sources.error", error=str(exc))
 
 
-async def _run_flash_btc(session_maker, redis) -> None:
+async def _run_flash_btc(
+    session_maker, redis, hypothesis_generator: HypothesisGenerator | None
+) -> None:
     try:
-        decision = await analyze_flash_btc(redis=redis)
+        if hypothesis_generator is not None:
+            hypothesis_generator.reset_batch()
+        decision = await analyze_flash_btc(
+            redis=redis, hypothesis_generator=hypothesis_generator
+        )
 
         # Skip si données stale (l'engine a renvoyé confidence=0 + hypothesis explicite)
         if decision.confidence == 0.0 and "stale" in decision.hypothesis.lower():
@@ -89,6 +113,20 @@ async def main() -> None:
     session_maker = async_sessionmaker(engine, expire_on_commit=False)
     redis = aioredis.from_url(settings.redis_url, decode_responses=True)
 
+    # Construit le hypothesis_generator au démarrage (cf. ADR-012). Si
+    # llm_hypothesis="template" ou Ollama indisponible, fallback sur
+    # TemplateHypothesisGenerator — l'appel reste cheap et inoffensif.
+    hypothesis_generator = await build_hypothesis_generator(
+        generator_type=settings.llm_hypothesis,
+        ollama_url=settings.ollama_url,
+        ollama_model=settings.ollama_model,
+    )
+    log.info(
+        "scheduler.hypothesis_generator_ready",
+        method=getattr(hypothesis_generator, "method_name", "unknown"),
+        mode=settings.llm_hypothesis_mode,
+    )
+
     scheduler = AsyncIOScheduler()
 
     # Swing BTC : toutes les 15 min
@@ -96,7 +134,7 @@ async def main() -> None:
         _run_swing_btc,
         "interval",
         minutes=15,
-        args=[session_maker, redis],
+        args=[session_maker, redis, hypothesis_generator],
         id="swing_btc",
         max_instances=1,
         coalesce=True,
@@ -106,7 +144,7 @@ async def main() -> None:
         _run_swing_gold,
         "interval",
         minutes=30,
-        args=[session_maker, redis, settings.fred_api_key],
+        args=[session_maker, redis, settings.fred_api_key, hypothesis_generator],
         id="swing_gold",
         max_instances=1,
         coalesce=True,
@@ -116,7 +154,7 @@ async def main() -> None:
         _run_flash_btc,
         "interval",
         minutes=5,
-        args=[session_maker, redis],
+        args=[session_maker, redis, hypothesis_generator],
         id="flash_btc",
         max_instances=1,
         coalesce=True,
@@ -137,9 +175,9 @@ async def main() -> None:
     log.info("scheduler.started", jobs=[j.id for j in scheduler.get_jobs()])
 
     # Premier run immédiat
-    await _run_swing_btc(session_maker, redis)
-    await _run_swing_gold(session_maker, redis, settings.fred_api_key)
-    await _run_flash_btc(session_maker, redis)
+    await _run_swing_btc(session_maker, redis, hypothesis_generator)
+    await _run_swing_gold(session_maker, redis, settings.fred_api_key, hypothesis_generator)
+    await _run_flash_btc(session_maker, redis, hypothesis_generator)
 
     try:
         while True:
@@ -147,6 +185,7 @@ async def main() -> None:
     except (KeyboardInterrupt, SystemExit):
         log.info("scheduler.stopping")
         scheduler.shutdown()
+        await hypothesis_generator.aclose()
         await redis.close()
         await engine.dispose()
 

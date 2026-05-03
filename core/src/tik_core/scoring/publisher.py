@@ -47,6 +47,10 @@ async def _publish_signal(
     expiry = datetime.utcnow() + EXPIRY_BY_HORIZON[horizon]
     final_veracity = veracity if veracity is not None else decision.veracity
 
+    decision_advisory = getattr(decision, "advisory", None)
+    if not isinstance(decision_advisory, dict):
+        decision_advisory = {}
+
     signal = Signal(
         id=signal_id,
         timestamp=decision.timestamp,
@@ -61,7 +65,7 @@ async def _publish_signal(
         triggers=decision.triggers,
         sources_count=len({e["source"] for e in decision.evidence}),
         expiry=expiry,
-        advisory={},
+        advisory=decision_advisory,
         circuit_breaker_status=getattr(decision, "circuit_breaker_status", "ok"),
     )
     session.add(signal)
@@ -81,6 +85,7 @@ async def _publish_signal(
         "triggers": signal.triggers,
         "sources_count": signal.sources_count,
         "expiry": signal.expiry.isoformat() if signal.expiry else None,
+        "advisory": signal.advisory,
         "circuit_breaker_status": signal.circuit_breaker_status,
     }
     channel = f"tik.signal.{signal.entity_id}.{signal.horizon}"

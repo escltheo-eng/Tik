@@ -25,6 +25,10 @@ from redis.asyncio import Redis
 
 from tik_core.config import get_settings
 from tik_core.scoring.cross_validator import apply_cross_validation_to_decision
+from tik_core.scoring.hypothesis_generator import (
+    HypothesisGenerator,
+    apply_llm_hypothesis,
+)
 from tik_core.scoring.indicators import ema, macd, rsi
 from tik_core.scoring.source_credibility import (
     get_effective_score,
@@ -87,6 +91,7 @@ class SwingDecision:
     evidence: list[dict] = field(default_factory=list)
     triggers: list[dict] = field(default_factory=list)
     circuit_breaker_status: str = "ok"     # ok | degraded | tripped (cf. ADR-011)
+    advisory: dict = field(default_factory=dict)  # candidates LLM (ADR-012), etc.
 
 
 async def _fetch_binance_klines(symbol: str = "BTCUSDT", interval: str = "4h", limit: int = 200) -> pd.DataFrame:
@@ -582,7 +587,10 @@ def _enrich_with_reddit(decision: SwingDecision, rd: dict) -> float | None:
     return bias
 
 
-async def analyze_swing_btc(redis: Redis | None = None) -> SwingDecision:
+async def analyze_swing_btc(
+    redis: Redis | None = None,
+    hypothesis_generator: HypothesisGenerator | None = None,
+) -> SwingDecision:
     """Analyse swing BTC/USDT sur 4h avec overlays multi-sources.
 
     Overlays actifs (cf. ADR-004 / ADR-008 / ADR-009) :
@@ -594,6 +602,10 @@ async def analyze_swing_btc(redis: Redis | None = None) -> SwingDecision:
     La veracity finale est calculée sur la concordance moyenne des biais
     des sources de sentiment disponibles. Permet d'ajouter facilement de
     nouvelles sources via le pattern `_enrich_with_<source>`.
+
+    Si `hypothesis_generator` est fourni, génère une hypothèse contextuelle
+    via LLM après la cross-validation (cf. ADR-012). Le mode (disabled /
+    shadow / active) est lu depuis `settings.llm_hypothesis_mode`.
     """
     df = await _fetch_binance_klines("BTCUSDT", "4h", 200)
     df.attrs["entity_id"] = "BTC"
@@ -601,7 +613,13 @@ async def analyze_swing_btc(redis: Redis | None = None) -> SwingDecision:
     decision = _score_indicators(df)
     decision.entity_id = "BTC"
 
+    settings = get_settings()
+
     if redis is None:
+        await apply_llm_hypothesis(
+            decision, "swing", hypothesis_generator,
+            settings.llm_hypothesis_mode,
+        )
         return decision
 
     # Précharge les scores dynamiques (override Redis sur SOURCE_SCORES) — ADR-011
@@ -646,7 +664,6 @@ async def analyze_swing_btc(redis: Redis | None = None) -> SwingDecision:
             log.info("swing.btc.reddit_unavailable")
 
         if biases_by_source:
-            settings = get_settings()
             cv = apply_cross_validation_to_decision(
                 decision, biases_by_source, mode=settings.antifakenews_mode
             )
@@ -661,6 +678,12 @@ async def analyze_swing_btc(redis: Redis | None = None) -> SwingDecision:
                     method=cv.method,
                     mode=settings.antifakenews_mode,
                 )
+
+        # Génération hypothèse contextuelle LLM (post-enrichissements + post-CV)
+        await apply_llm_hypothesis(
+            decision, "swing", hypothesis_generator,
+            settings.llm_hypothesis_mode,
+        )
 
         return decision
     finally:
@@ -909,6 +932,7 @@ def _enrich_with_gdelt(decision: SwingDecision, gd: dict) -> float | None:
 async def analyze_swing_gold(
     fred_api_key: str | None = None,
     redis: Redis | None = None,
+    hypothesis_generator: HypothesisGenerator | None = None,
 ) -> SwingDecision:
     """Analyse swing Gold (GC=F) sur 1h/60d, avec overlays multi-sources.
 
@@ -926,12 +950,17 @@ async def analyze_swing_gold(
     sources GOLD plus tard (on-chain miners, ETF flows, etc.).
 
     Pas d'overlay Fear & Greed : l'index FG est crypto-spécifique.
+
+    Si `hypothesis_generator` est fourni, génère une hypothèse contextuelle
+    via LLM après la cross-validation (cf. ADR-012).
     """
     df = await _fetch_yahoo_klines("GC=F", "1h", "60d")
     df.attrs["entity_id"] = "GOLD"
     df.attrs["source"] = "yahoo_finance"
     decision = _score_indicators(df)
     decision.entity_id = "GOLD"
+
+    settings = get_settings()
 
     # Précharge les scores dynamiques (override Redis sur SOURCE_SCORES) — ADR-011
     dynamic_scores = await preload_source_scores(
@@ -977,7 +1006,6 @@ async def analyze_swing_gold(
                 log.info("swing.gold.gdelt_unavailable")
 
         if biases_by_source:
-            settings = get_settings()
             cv = apply_cross_validation_to_decision(
                 decision, biases_by_source, mode=settings.antifakenews_mode
             )
@@ -992,6 +1020,12 @@ async def analyze_swing_gold(
                     method=cv.method,
                     mode=settings.antifakenews_mode,
                 )
+
+        # Génération hypothèse contextuelle LLM (post-enrichissements + post-CV)
+        await apply_llm_hypothesis(
+            decision, "swing", hypothesis_generator,
+            settings.llm_hypothesis_mode,
+        )
 
         return decision
     finally:
