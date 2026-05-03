@@ -36,6 +36,7 @@ class Evidence(BaseModel):
     source: str
     score: float = Field(ge=0, le=1)
     fact: str
+    is_outlier: bool | None = None  # set par cross_validator (cf. ADR-011)
 
 
 class Trigger(BaseModel):

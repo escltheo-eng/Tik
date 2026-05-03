@@ -62,7 +62,7 @@ async def _publish_signal(
         sources_count=len({e["source"] for e in decision.evidence}),
         expiry=expiry,
         advisory={},
-        circuit_breaker_status="ok",
+        circuit_breaker_status=getattr(decision, "circuit_breaker_status", "ok"),
     )
     session.add(signal)
     await session.flush()

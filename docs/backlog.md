@@ -135,7 +135,7 @@ le signal limite proprement la charge Ollama.
 - Cache Redis `tik.translation.{signal_id}.{lang}`, TTL = TTL signal
 - Tests pytest (~10 tests : cache hit/miss, fallback Ollama down, lang
   inconnue → 400, EN par défaut inchangé)
-- ADR-011 documente le choix Option A vs B/C
+- ADR-012 documente le choix Option A vs B/C *(ADR-011 est désormais réservé à l'anti fake-news, livré le 2026-05-03)*
 
 **Bénéfice** :
 - L'utilisatrice lit ses signaux en FR sans avoir besoin d'apprendre le
@@ -151,7 +151,7 @@ Pas avant la fin de la Session 4 (calibration en cours). Idéalement :
 - **Si la calibration de Session 4 fait remonter des ajustements
   structurants** sur `SOURCE_SCORES` ou les engines → enchaîner Session 5
   sur ces ajustements d'abord, puis Session 6 sur la traduction.
-- **Sinon** → Session 5 dédiée à la traduction native FR (avec ADR-011).
+- **Sinon** → Session 5 dédiée à la traduction native FR (avec ADR-012).
 
 **Risque rappelé** : Garde-fou 1 (mode shadow 3 mois) **strictement applicable**
 à ce nouveau code de traduction (pas de risque trading mais le contrat ADR-003

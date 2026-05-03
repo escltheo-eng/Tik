@@ -24,7 +24,15 @@ import pandas as pd
 import structlog
 from redis.asyncio import Redis
 
+from tik_core.config import get_settings
+from tik_core.scoring.cross_validator import apply_cross_validation_to_decision
 from tik_core.scoring.indicators import atr, ema, macd, rsi
+from tik_core.scoring.source_credibility import (
+    get_effective_score,
+    preload_source_scores,
+    reset_dynamic_scores,
+    set_dynamic_scores,
+)
 
 log = structlog.get_logger()
 
@@ -60,6 +68,7 @@ class FlashDecision:
     counter_scenarios: list[dict] = field(default_factory=list)
     evidence: list[dict] = field(default_factory=list)
     triggers: list[dict] = field(default_factory=list)
+    circuit_breaker_status: str = "ok"     # ok | degraded | tripped (cf. ADR-011)
 
 
 @dataclass
@@ -381,7 +390,7 @@ def _enrich_with_orderbook(decision: FlashDecision, orderbook: dict) -> float | 
     decision.evidence.append(
         {
             "source": "binance_orderbook",
-            "score": FLASH_SOURCE_SCORES.get("binance_orderbook", 0.5),
+            "score": get_effective_score("binance_orderbook", FLASH_SOURCE_SCORES),
             "fact": f"OBI={obi:+.2f} (top-20 levels)",
         }
     )
@@ -450,7 +459,7 @@ def _enrich_with_aggression(decision: FlashDecision, trades: list[dict]) -> floa
     decision.evidence.append(
         {
             "source": "binance_aggtrades",
-            "score": FLASH_SOURCE_SCORES.get("binance_aggtrades", 0.5),
+            "score": get_effective_score("binance_aggtrades", FLASH_SOURCE_SCORES),
             "fact": f"Taker buy_ratio={buy_ratio:.2f} (n={len(trades)} aggTrades)",
         }
     )
@@ -537,26 +546,48 @@ async def analyze_flash_btc(redis: Redis | None = None) -> FlashDecision:
     decision = _score_flash_indicators(df)
     decision.entity_id = "BTC"
 
-    bias_signals: list[float] = []
-
+    # Précharge les scores dynamiques (override Redis sur FLASH_SOURCE_SCORES) — ADR-011
+    dynamic_scores = await preload_source_scores(
+        redis,
+        ["binance_orderbook", "binance_aggtrades"],
+    )
+    token = set_dynamic_scores(dynamic_scores)
     try:
-        orderbook = await _fetch_orderbook("BTCUSDT", 20)
-        bias = _enrich_with_orderbook(decision, orderbook)
-        if bias is not None:
-            bias_signals.append(bias)
-    except Exception as exc:  # noqa: BLE001
-        log.info("flash.btc.orderbook_unavailable", error=str(exc))
+        biases_by_source: dict[str, float] = {}
 
-    try:
-        trades = await _fetch_agg_trades("BTCUSDT", 1000)
-        bias = _enrich_with_aggression(decision, trades)
-        if bias is not None:
-            bias_signals.append(bias)
-    except Exception as exc:  # noqa: BLE001
-        log.info("flash.btc.aggtrades_unavailable", error=str(exc))
+        try:
+            orderbook = await _fetch_orderbook("BTCUSDT", 20)
+            bias = _enrich_with_orderbook(decision, orderbook)
+            if bias is not None:
+                biases_by_source["binance_orderbook"] = bias
+        except Exception as exc:  # noqa: BLE001
+            log.info("flash.btc.orderbook_unavailable", error=str(exc))
 
-    if bias_signals:
-        combined_bias = sum(bias_signals) / len(bias_signals)
-        decision.veracity = _veracity_from_concordance(decision.direction, combined_bias)
+        try:
+            trades = await _fetch_agg_trades("BTCUSDT", 1000)
+            bias = _enrich_with_aggression(decision, trades)
+            if bias is not None:
+                biases_by_source["binance_aggtrades"] = bias
+        except Exception as exc:  # noqa: BLE001
+            log.info("flash.btc.aggtrades_unavailable", error=str(exc))
 
-    return decision
+        if biases_by_source:
+            settings = get_settings()
+            cv = apply_cross_validation_to_decision(
+                decision, biases_by_source, mode=settings.antifakenews_mode
+            )
+            decision.veracity = _veracity_from_concordance(decision.direction, cv.combined_bias)
+            if cv.circuit_breaker_status != "ok":
+                log.info(
+                    "anti_fake_news.flagged",
+                    entity_id=decision.entity_id,
+                    horizon="flash",
+                    status=cv.circuit_breaker_status,
+                    outliers=list(cv.outlier_sources),
+                    method=cv.method,
+                    mode=settings.antifakenews_mode,
+                )
+
+        return decision
+    finally:
+        reset_dynamic_scores(token)

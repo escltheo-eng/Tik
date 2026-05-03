@@ -58,6 +58,11 @@ class Settings(BaseSettings):
     default_min_veracity: float = 0.70
     default_min_sources: int = 2
 
+    # --- Anti fake-news (ADR-011) ---
+    # active : cross-validation modifie circuit_breaker_status + direction si tripped
+    # shadow : cross-validation calcule mais n'affecte pas la décision (logs uniquement)
+    antifakenews_mode: Literal["active", "shadow"] = "active"
+
     # --- CORS ---
     cors_origins: str = "http://localhost:3000"
 

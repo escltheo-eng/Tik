@@ -365,9 +365,74 @@ Toutes les sources ne se valent pas. Tik leur attribue un **score de crédibilit
 
 Plus une source est **directe et neutre**, plus son score est élevé. Une source qui interprète déjà des données (comme un indice de sentiment) a un score plus modéré.
 
+**Note : depuis la livraison de l'anti fake-news (cf. section suivante), ces scores ne sont plus figés**. Ils sont **ajustés automatiquement** chaque nuit selon la performance réelle de chaque source mesurée sur les signaux Tik des 30 derniers jours. Une source qui prédit mal voit son score baisser ; une source qui prédit bien voit le sien remonter (mais plus lentement — paranoïa contrôlée).
+
 ---
 
-## 12. Pour résumer
+## 12. Anti fake-news : surveiller que les sources ne se contredisent pas trop
+
+C'est l'évolution la plus structurante depuis la livraison initiale du Core. Deux mécanismes complémentaires.
+
+### A. La cross-validation au moment de l'émission du signal
+
+Imagine que Tik prépare un signal *long* sur BTC, et qu'au moment de combiner les biais des 4 sources sentiment, on observe :
+
+- Fear & Greed dit **bull** (+0.5)
+- CryptoCompare dit **bull** (+0.5)
+- Google News dit **bull** (+0.5)
+- Reddit dit **bear extrême** (-0.95)
+
+Reddit est en désaccord total avec les 3 autres. Sans rien faire, Tik calculait juste la moyenne (≈ +0.14) et émettait le signal avec une veracity adoucie. Mais **Reddit ressort très clairement comme aberrant**. Et c'est précisément le genre de cas qui pourrait être une fake news, un brigading, ou un bug d'ingester.
+
+Tik fait désormais deux choses :
+
+1. **Détection statistique** des sources aberrantes via une méthode académique (Modified Z-score d'Iglewicz-Hoaglin, 1993) qui isole une valeur très éloignée de la médiane des autres. Sur l'exemple : Reddit est marqué `is_outlier: true` dans l'evidence, son biais est neutralisé dans la moyenne combinée (Tik n'utilise plus Reddit pour cette décision).
+
+2. **Détection de dispersion globale** quand toutes les sources s'éclatent à 50/50 (ex: 2 disent bull, 2 disent bear avec la même intensité). Aucune source individuelle n'est aberrante mais c'est exactement le cas dangereux d'un désaccord majeur. Tik mesure la dispersion par écart-type, et si elle dépasse un seuil, le signal est marqué comme dégradé.
+
+### Le `circuit_breaker_status` du signal
+
+Chaque signal Tik porte désormais un drapeau :
+
+- `"ok"` : sources concordantes, signal fiable
+- `"degraded"` : disagreement notable, le signal est émis mais avec un drapeau visible côté dashboard et bot
+- `"tripped"` : disagreement majeur, **direction forcée à `neutral`** et l'hypothèse est préfixée *"Anti fake-news : X/Y sources ont été marquées comme outliers — direction forcée à neutral"*. Le signal est émis pour traçabilité, mais il dit clairement *"je ne sais pas ce qu'il se passe"* plutôt que d'inventer une direction.
+
+C'est ce drapeau qui réveille le hook `on_fake_news_detected` côté SDK (le code SDK qui écoutait ce signal était déjà prêt depuis la version 0.2.0, il dormait juste en attente).
+
+### B. Le scoring source dynamique
+
+Les scores de crédibilité du tableau ci-dessus (section 11) sont des **points de départ raisonnables**, pas des vérités. Tik les ajuste désormais automatiquement chaque nuit (03:00 UTC) selon la performance réelle de chaque source.
+
+Le mécanisme :
+
+1. Tik regarde les signaux des **30 derniers jours**
+2. Pour chaque signal, il regarde si la prédiction (long/short/neutral) a été correcte par rapport au mouvement de prix réel à 5 jours
+3. Il agrège par source : Reddit a-t-il contribué à des signaux gagnants ou perdants ?
+4. Si une source a un **hit rate < 40 %** sur au moins 30 signaux, son score est **divisé par 1.2** (pénalité)
+5. Si elle a un **hit rate > 70 %** sur au moins 30 signaux, son score est **multiplié par 1.1** (récompense)
+6. Entre 40 % et 70 %, le score reste inchangé
+
+**Pourquoi pénaliser plus rapidement qu'on récompense ?** Philosophie « paranoïa contrôlée ». Une mauvaise source peut faire perdre de l'argent dès qu'elle est sur-pondérée. Une bonne source qui a juste eu de la chance pendant 30 jours peut décevoir ensuite. Donc on pénalise vite, on récompense lentement.
+
+**Bornes de sécurité** : aucun score ne descend sous 0.30 (on garde toujours un peu de poids — une source temporairement maladroite peut redevenir bonne) ni ne monte au-dessus de 0.95 (on évite la sur-confiance qui masquerait une dérive future).
+
+### Mode actif vs mode shadow
+
+Une variable d'environnement `TIK_ANTIFAKENEWS_MODE` permet de basculer :
+
+- `active` (défaut) : la cross-validation modifie réellement les signaux émis (drapeau, evidence outlier, force neutral si tripped)
+- `shadow` : la cross-validation est juste calculée et logguée, mais le signal est émis comme avant
+
+Si jamais l'algorithme avait un bug, on peut basculer en `shadow` sans redéployer le code (juste `docker compose restart` du scheduler avec la nouvelle variable d'env). Filet de sécurité.
+
+### Audit dans le temps
+
+Une nouvelle table `source_credibility_history` enregistre chaque ajustement (1 ligne par source par nuit). Permet de répondre à *« pourquoi le score de Reddit a-t-il chuté il y a 2 mois ? »* — on retrouve le hit rate du moment et le nombre de signaux qui ont conduit à la décision.
+
+---
+
+## 13. Pour résumer
 
 ### Ce que Tik fait pour chaque signal
 
@@ -394,7 +459,7 @@ Plus une source est **directe et neutre**, plus son score est élevé. Une sourc
 
 ---
 
-## 13. État actuel et pistes futures
+## 14. État actuel et pistes futures
 
 ### Ce qui marche aujourd'hui
 

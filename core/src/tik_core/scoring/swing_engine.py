@@ -23,7 +23,15 @@ import pandas as pd
 import structlog
 from redis.asyncio import Redis
 
+from tik_core.config import get_settings
+from tik_core.scoring.cross_validator import apply_cross_validation_to_decision
 from tik_core.scoring.indicators import ema, macd, rsi
+from tik_core.scoring.source_credibility import (
+    get_effective_score,
+    preload_source_scores,
+    reset_dynamic_scores,
+    set_dynamic_scores,
+)
 
 log = structlog.get_logger()
 
@@ -78,6 +86,7 @@ class SwingDecision:
     counter_scenarios: list[dict] = field(default_factory=list)
     evidence: list[dict] = field(default_factory=list)
     triggers: list[dict] = field(default_factory=list)
+    circuit_breaker_status: str = "ok"     # ok | degraded | tripped (cf. ADR-011)
 
 
 async def _fetch_binance_klines(symbol: str = "BTCUSDT", interval: str = "4h", limit: int = 200) -> pd.DataFrame:
@@ -343,7 +352,7 @@ def _enrich_with_fear_greed(decision: SwingDecision, fg: dict) -> float | None:
     decision.evidence.append(
         {
             "source": "alternative_me_fng",
-            "score": SOURCE_SCORES.get("alternative_me_fng", 0.5),
+            "score": get_effective_score("alternative_me_fng", SOURCE_SCORES),
             "fact": f"FG={value} ({classification})",
         }
     )
@@ -404,7 +413,7 @@ def _enrich_with_cryptocompare(decision: SwingDecision, cc: dict) -> float | Non
     decision.evidence.append(
         {
             "source": "cryptocompare_news",
-            "score": SOURCE_SCORES.get("cryptocompare_news", 0.5),
+            "score": get_effective_score("cryptocompare_news", SOURCE_SCORES),
             "fact": f"News score={score:+.2f} (bull={n_bull}, bear={n_bear} on {n_articles} BTC titles)",
         }
     )
@@ -479,7 +488,7 @@ def _enrich_with_google_news(decision: SwingDecision, gn: dict) -> float | None:
     decision.evidence.append(
         {
             "source": "google_news_rss",
-            "score": SOURCE_SCORES.get("google_news_rss", 0.5),
+            "score": get_effective_score("google_news_rss", SOURCE_SCORES),
             "fact": (
                 f"News score={score:+.2f} (bull={n_bull}, bear={n_bear} "
                 f"on {n_articles} {decision.entity_id} titles{pubs_str})"
@@ -556,7 +565,7 @@ def _enrich_with_reddit(decision: SwingDecision, rd: dict) -> float | None:
     decision.evidence.append(
         {
             "source": "reddit_btc",
-            "score": SOURCE_SCORES.get("reddit_btc", 0.5),
+            "score": get_effective_score("reddit_btc", SOURCE_SCORES),
             "fact": (
                 f"Reddit retail score={score:+.2f} "
                 f"(bull={n_bull}, bear={n_bear} on {n_articles} weighted posts{subs_str})"
@@ -595,45 +604,67 @@ async def analyze_swing_btc(redis: Redis | None = None) -> SwingDecision:
     if redis is None:
         return decision
 
-    bias_signals: list[float] = []
+    # Précharge les scores dynamiques (override Redis sur SOURCE_SCORES) — ADR-011
+    dynamic_scores = await preload_source_scores(
+        redis,
+        ["alternative_me_fng", "cryptocompare_news", "google_news_rss", "reddit_btc"],
+    )
+    token = set_dynamic_scores(dynamic_scores)
+    try:
+        biases_by_source: dict[str, float] = {}
 
-    fg = await _read_fear_greed(redis)
-    if fg is not None:
-        bias = _enrich_with_fear_greed(decision, fg)
-        if bias is not None:
-            bias_signals.append(bias)
-    else:
-        log.info("swing.btc.fear_greed_unavailable")
+        fg = await _read_fear_greed(redis)
+        if fg is not None:
+            bias = _enrich_with_fear_greed(decision, fg)
+            if bias is not None:
+                biases_by_source["alternative_me_fng"] = bias
+        else:
+            log.info("swing.btc.fear_greed_unavailable")
 
-    cc = await _read_cryptocompare(redis, currency="BTC")
-    if cc is not None:
-        bias = _enrich_with_cryptocompare(decision, cc)
-        if bias is not None:
-            bias_signals.append(bias)
-    else:
-        log.info("swing.btc.cryptocompare_unavailable")
+        cc = await _read_cryptocompare(redis, currency="BTC")
+        if cc is not None:
+            bias = _enrich_with_cryptocompare(decision, cc)
+            if bias is not None:
+                biases_by_source["cryptocompare_news"] = bias
+        else:
+            log.info("swing.btc.cryptocompare_unavailable")
 
-    gn = await _read_google_news(redis, entity_id="BTC")
-    if gn is not None:
-        bias = _enrich_with_google_news(decision, gn)
-        if bias is not None:
-            bias_signals.append(bias)
-    else:
-        log.info("swing.btc.google_news_unavailable")
+        gn = await _read_google_news(redis, entity_id="BTC")
+        if gn is not None:
+            bias = _enrich_with_google_news(decision, gn)
+            if bias is not None:
+                biases_by_source["google_news_rss"] = bias
+        else:
+            log.info("swing.btc.google_news_unavailable")
 
-    rd = await _read_reddit(redis, entity_id="BTC")
-    if rd is not None:
-        bias = _enrich_with_reddit(decision, rd)
-        if bias is not None:
-            bias_signals.append(bias)
-    else:
-        log.info("swing.btc.reddit_unavailable")
+        rd = await _read_reddit(redis, entity_id="BTC")
+        if rd is not None:
+            bias = _enrich_with_reddit(decision, rd)
+            if bias is not None:
+                biases_by_source["reddit_btc"] = bias
+        else:
+            log.info("swing.btc.reddit_unavailable")
 
-    if bias_signals:
-        combined_bias = sum(bias_signals) / len(bias_signals)
-        decision.veracity = _veracity_from_concordance(decision.direction, combined_bias)
+        if biases_by_source:
+            settings = get_settings()
+            cv = apply_cross_validation_to_decision(
+                decision, biases_by_source, mode=settings.antifakenews_mode
+            )
+            decision.veracity = _veracity_from_concordance(decision.direction, cv.combined_bias)
+            if cv.circuit_breaker_status != "ok":
+                log.info(
+                    "anti_fake_news.flagged",
+                    entity_id=decision.entity_id,
+                    horizon="swing",
+                    status=cv.circuit_breaker_status,
+                    outliers=list(cv.outlier_sources),
+                    method=cv.method,
+                    mode=settings.antifakenews_mode,
+                )
 
-    return decision
+        return decision
+    finally:
+        reset_dynamic_scores(token)
 
 
 async def _fetch_dxy_history(api_key: str, limit: int = 10) -> list[dict]:
@@ -717,7 +748,7 @@ def _enrich_with_dxy(decision: SwingDecision, history: list[dict]) -> float | No
     decision.evidence.append(
         {
             "source": "fred_dtwexbgs",
-            "score": SOURCE_SCORES.get("fred_dtwexbgs", 0.5),
+            "score": get_effective_score("fred_dtwexbgs", SOURCE_SCORES),
             "fact": f"DXY={recent:.2f} (var 5d {var_pct:+.2f}%)",
         }
     )
@@ -786,7 +817,7 @@ def _enrich_with_cot(decision: SwingDecision, cot: dict) -> float | None:
     decision.evidence.append(
         {
             "source": "cftc_cot",
-            "score": SOURCE_SCORES.get("cftc_cot", 0.5),
+            "score": get_effective_score("cftc_cot", SOURCE_SCORES),
             "fact": (
                 f"COT MM long={mm_long} short={mm_short} "
                 f"(net {net_pct:+.2f}, report {report_date[:10]})"
@@ -858,7 +889,7 @@ def _enrich_with_gdelt(decision: SwingDecision, gd: dict) -> float | None:
     decision.evidence.append(
         {
             "source": "gdelt_news",
-            "score": SOURCE_SCORES.get("gdelt_news", 0.5),
+            "score": get_effective_score("gdelt_news", SOURCE_SCORES),
             "fact": (
                 f"GDELT tone={tone:+.2f} (zone={zone}, "
                 f"agg {n_points} pts / {timespan})"
@@ -902,44 +933,66 @@ async def analyze_swing_gold(
     decision = _score_indicators(df)
     decision.entity_id = "GOLD"
 
-    bias_signals: list[float] = []
+    # Précharge les scores dynamiques (override Redis sur SOURCE_SCORES) — ADR-011
+    dynamic_scores = await preload_source_scores(
+        redis,
+        ["fred_dtwexbgs", "cftc_cot", "google_news_rss", "gdelt_news"],
+    )
+    token = set_dynamic_scores(dynamic_scores)
+    try:
+        biases_by_source: dict[str, float] = {}
 
-    if fred_api_key:
-        history = await _fetch_dxy_history(fred_api_key)
-        if history:
-            bias = _enrich_with_dxy(decision, history)
-            if bias is not None:
-                bias_signals.append(bias)
-        else:
-            log.info("swing.gold.dxy_unavailable")
+        if fred_api_key:
+            history = await _fetch_dxy_history(fred_api_key)
+            if history:
+                bias = _enrich_with_dxy(decision, history)
+                if bias is not None:
+                    biases_by_source["fred_dtwexbgs"] = bias
+            else:
+                log.info("swing.gold.dxy_unavailable")
 
-    if redis is not None:
-        cot = await _read_cot(redis)
-        if cot is not None:
-            bias = _enrich_with_cot(decision, cot)
-            if bias is not None:
-                bias_signals.append(bias)
-        else:
-            log.info("swing.gold.cot_unavailable")
+        if redis is not None:
+            cot = await _read_cot(redis)
+            if cot is not None:
+                bias = _enrich_with_cot(decision, cot)
+                if bias is not None:
+                    biases_by_source["cftc_cot"] = bias
+            else:
+                log.info("swing.gold.cot_unavailable")
 
-        gn = await _read_google_news(redis, entity_id="GOLD")
-        if gn is not None:
-            bias = _enrich_with_google_news(decision, gn)
-            if bias is not None:
-                bias_signals.append(bias)
-        else:
-            log.info("swing.gold.google_news_unavailable")
+            gn = await _read_google_news(redis, entity_id="GOLD")
+            if gn is not None:
+                bias = _enrich_with_google_news(decision, gn)
+                if bias is not None:
+                    biases_by_source["google_news_rss"] = bias
+            else:
+                log.info("swing.gold.google_news_unavailable")
 
-        gd = await _read_gdelt(redis, entity_id="GOLD")
-        if gd is not None:
-            bias = _enrich_with_gdelt(decision, gd)
-            if bias is not None:
-                bias_signals.append(bias)
-        else:
-            log.info("swing.gold.gdelt_unavailable")
+            gd = await _read_gdelt(redis, entity_id="GOLD")
+            if gd is not None:
+                bias = _enrich_with_gdelt(decision, gd)
+                if bias is not None:
+                    biases_by_source["gdelt_news"] = bias
+            else:
+                log.info("swing.gold.gdelt_unavailable")
 
-    if bias_signals:
-        combined_bias = sum(bias_signals) / len(bias_signals)
-        decision.veracity = _veracity_from_concordance(decision.direction, combined_bias)
+        if biases_by_source:
+            settings = get_settings()
+            cv = apply_cross_validation_to_decision(
+                decision, biases_by_source, mode=settings.antifakenews_mode
+            )
+            decision.veracity = _veracity_from_concordance(decision.direction, cv.combined_bias)
+            if cv.circuit_breaker_status != "ok":
+                log.info(
+                    "anti_fake_news.flagged",
+                    entity_id=decision.entity_id,
+                    horizon="swing",
+                    status=cv.circuit_breaker_status,
+                    outliers=list(cv.outlier_sources),
+                    method=cv.method,
+                    mode=settings.antifakenews_mode,
+                )
 
-    return decision
+        return decision
+    finally:
+        reset_dynamic_scores(token)

@@ -23,6 +23,7 @@ from tik_core.scoring.flash_engine import (
     should_emit,
 )
 from tik_core.scoring.publisher import publish_flash_signal, publish_swing_signal
+from tik_core.scoring.source_credibility import recalibrate_sources
 from tik_core.scoring.swing_engine import analyze_swing_btc, analyze_swing_gold
 
 log = structlog.get_logger()
@@ -46,6 +47,15 @@ async def _run_swing_gold(session_maker, redis, fred_api_key) -> None:
             await session.commit()
     except Exception as exc:  # noqa: BLE001
         log.error("scheduler.swing_gold.error", error=str(exc))
+
+
+async def _run_recalibrate_sources(session_maker, redis) -> None:
+    """Recalibration daily des scores de crédibilité par source (ADR-011)."""
+    try:
+        results = await recalibrate_sources(session_maker, redis)
+        log.info("scheduler.recalibrate_sources.done", n=len(results))
+    except Exception as exc:  # noqa: BLE001
+        log.error("scheduler.recalibrate_sources.error", error=str(exc))
 
 
 async def _run_flash_btc(session_maker, redis) -> None:
@@ -108,6 +118,17 @@ async def main() -> None:
         minutes=5,
         args=[session_maker, redis],
         id="flash_btc",
+        max_instances=1,
+        coalesce=True,
+    )
+    # Recalibration scores sources : daily 03:00 UTC (ADR-011)
+    scheduler.add_job(
+        _run_recalibrate_sources,
+        "cron",
+        hour=3,
+        minute=0,
+        args=[session_maker, redis],
+        id="recalibrate_sources",
         max_instances=1,
         coalesce=True,
     )

@@ -542,19 +542,48 @@ Enrichir le sentiment textuel multi-source (jusqu'ici limité à CryptoCompare B
   - **Étape 7 — Backtest sources numériques** (FG, GDELT tone, DXY, COT) sur série historique étendue (6-12 mois) plutôt que sur 100 items récents
   - **Étape 9 — Ajustements `SOURCE_SCORES`** dans `swing_engine.py` selon mesures
   - **Étape 10 — Décision GDELT BTC** (déployer ou archiver selon corrélation tone↔delta BTC mesurée)
-  - **Pas d'ADR-011 en Session 4** (l'utilisatrice a explicitement demandé `docs/methodology/calibration.md` en alternative). ADR-011 reste réservé pour la traduction native FR signaux Session 5 future.
+  - **Pas d'ADR en Session 4** (l'utilisatrice a explicitement demandé `docs/methodology/calibration.md` en alternative). ADR-012 sera réservé à la traduction native FR signaux future. ADR-011 a finalement été pris par l'anti fake-news (cf. Paquet 5 ci-dessous).
 
 - **Risques opérationnels rappelés** : Garde-fou 1 (mode shadow 3 mois) **strictement applicable** — la calibration ne touche pas la logique d'exécution Zeta, on est en pure observation. ADR-003 (pas de bypass V01-V15) **inchangé**. Paranoïa contrôlée maintenue. Le commit 2026-05-02 ne modifie aucun engine ni ingester ni endpoint API — uniquement scripts CLI + tests + docs + 1 ligne dans `core/docker-compose.yml`.
+
+### Paquet 5 — Anti fake-news : ✅ LIVRÉ (ADR-011, 2026-05-03)
+
+Cross-validation runtime + scoring source dynamique. Réveille l'infra dormante du Paquet 1 (`Signal.circuit_breaker_status`) et du Paquet 2 (hook SDK `on_fake_news_detected`).
+
+**Cross-validation runtime** (`core/src/tik_core/scoring/cross_validator.py`) :
+
+- **Algorithme adapté à la taille N** : no-op N≤1, règle disagreement N=2 (signes opposés ET écart > 0.8), Modified Z-score d'Iglewicz-Hoaglin (1993) pour N≥3 avec seuil 3.5 et fallback seuil absolu (>0.3) quand MAD=0.
+- **Détection de dispersion globale** complémentaire (écart-type sur les non-outliers, seuils 0.5 / 0.85) qui capture les distributions bimodales 50/50 que Modified Z laisse passer mathématiquement.
+- **Status final** = pire des deux (max sévérité). `"degraded"` flagge le signal sans modifier sa direction ; `"tripped"` force `direction="neutral"` et préfixe la `hypothesis` avec `"Anti fake-news: X/Y outliers — direction forced to neutral. (Original: ...)"`.
+- **Outliers individuels** marqués `is_outlier: true` dans leur evidence, neutralisés dans le `combined_bias` qui sert au calcul de la veracity.
+- **Mode `active`/`shadow`** via variable d'env `TIK_ANTIFAKENEWS_MODE` (défaut `active`). Mode `shadow` : cross-validation calculée + log structuré, mais decision inchangée. Permet bascule sans redéploiement si bug en prod.
+- Branché dans `analyze_swing_btc/gold` et `analyze_flash_btc` au lieu du calcul de moyenne brut. Helper `apply_cross_validation_to_decision(decision, biases, mode)` propage le résultat à la decision en place.
+
+**Scoring source dynamique** (`core/src/tik_core/scoring/source_credibility.py`) :
+
+- **Stockage hybride Redis (runtime) + Postgres (audit)** : clé Redis `tik.source_credibility.<source>` (TTL 8j, > intervalle scheduler 24h), nouvelle table `source_credibility_history` (1 row par source par recalibration).
+- **Mécanisme d'injection via `contextvars.ContextVar`** : aucune modification de signature des `_enrich_with_<source>`, le caller (`analyze_swing_btc/gold`, `analyze_flash_btc`) précharge les scores Redis au début de son exécution et active le context-var. Chaque helper appelle `get_effective_score(source, fallback_static)` qui lookup le context-var avant le fallback statique. Isolé par task asyncio (pas de races inter-cycles).
+- **Job APScheduler `recalibrate_sources`** cron daily 03:00 UTC dans `run_scheduler.py`. Lit les signaux des 30 derniers jours, calcule hit rate par source en réutilisant la logique de `backtest.evaluate_signal`, ajuste asymétriquement.
+- **Algorithme d'ajustement asymétrique** (paranoïa contrôlée — pénalité plus rapide que récompense) : hit rate <40% sur ≥30 samples → score ÷1.2 (penalty) ; 40–70% → unchanged ; >70% sur ≥30 samples → score ×1.1 (reward) ; <30 samples → unchanged. Cap final `[0.30, 0.95]`.
+- **Sources concernées** (`RECALIBRATABLE_SOURCES` whitelist) : alternative_me_fng, cryptocompare_news, google_news_rss, reddit_btc, gdelt_news, fred_dtwexbgs, cftc_cot, binance_orderbook, binance_aggtrades. Exclues : sources de prix (binance_klines, yahoo_finance, binance_klines_1m).
+- **Coefficients ÷1.2 / ×1.1 calibrés au pifomètre** — assumé ouvertement dans ADR-011, à réviser au cycle de calibration suivant (Session 4-bis du 2026-05-06+) en croisant avec les hit rates 5j mesurés sur le golden dataset.
+
+**Validation runtime** : 71 nouveaux tests (39 cross_validator + 32 source_credibility) couvrant les edge cases mathématiques (MAD=0, dispersion globale, asymétrie pénalité/récompense, cap min/max, fallback hiérarchique Redis/static, context-var dynamic_scores). Suite complète : 425 → **457 tests verts** (+32 source_credibility), aucune régression. Migration Alembic 0003 appliquée et table créée en DB.
+
+**ADR-011 documenté** : `docs/adr/011-anti-fake-news.md` formalise les choix structurants (Modified Z-score d'Iglewicz-Hoaglin + dispersion globale, stockage Redis+Postgres, asymétrie pénalité/récompense, mode active/shadow par variable d'env). Risques opérationnels rappelés : Garde-fou 1 (mode shadow 3 mois) **strictement applicable**, ADR-003 (pas de bypass V01-V15) **inchangé**, paranoïa contrôlée maintenue. ADR-004 (multi-overlay pattern) inchangé — anti fake-news enrichit le calcul du combined_bias, ne le remplace pas.
+
+**Documentation pédagogique** : nouvelle section 12 dans `docs/comprendre_tik.md` en français accessible (cross-validation expliquée avec un exemple concret 4 sources dont 1 aberrante, scoring dynamique expliqué avec son cycle quotidien, mode active vs shadow expliqué comme un filet de sécurité réversible).
 
 ### Couches encore non-implémentées (évolutions futures)
 
 - Engine macro (semaines-mois) — partiellement couvert via FRED
 - Flash GOLD (bloqué par le délai 15 min de Yahoo Finance — nécessite une source temps réel alternative)
-- Module anti-fake-news (cross-validation, scoring source dynamique) — l'infra Ollama est désormais en place, prête à être réutilisée
+- Détection d'anomalies par ingester (brigading Reddit, dominance d'un publisher Google News, pic de volume anormal) — backlog, complémentaire au Paquet 5 livré
 - Ingester news : ✅ CryptoCompare (Paquet 1.x), ✅ Google News RSS BTC + GOLD (Paquet 4 Session 1, ADR-008), ✅ Reddit BTC pondéré log upvotes (Paquet 4 Session 2, ADR-009), ✅ GDELT timelinetone GOLD NLP scientifique non-LLM (Paquet 4 Session 3, ADR-010), Nitter / GDELT BTC en évaluation Session 4+ (avec dataset golden)
 - Marchés prédictifs : Polymarket, Kalshi
 - Backtesting service (script CLI déjà livré, service à industrialiser)
 - Data alternative : Google Trends
+- Traduction native française des signaux Tik (ADR-012 réservé) — voir `docs/backlog.md` entry n°2
 
 ---
 
@@ -730,5 +759,5 @@ cp "$WORKTREE/path2" "$MAIN/path2"
 ---
 
 *Dernière mise à jour : 2026-05-03*
-*Version Tik : 0.1.0 (Core MVP livré + évolutions Paquet 1.x — swing BTC/GOLD multi-overlay + flash BTC + NLP Ollama sur les news ; **SDK Paquet 2 COMPLET** — version SDK 0.5.0, client HTTP + WebSocket + hooks + cache + circuit breaker + telemetry non-bloquant + config YAML hot-reload + doc intégration Zeta + 4 exemples runnable + ADR-007 + CI ; **Dashboard Paquet 3 COMPLET** — version dashboard 0.5.0, app Expo SDK 54 avec auth + Home KPIs + Signals feed WebSocket + détail signal + Alerts + Bots + Config + push notifications, mise en service réelle sur iPhone via Expo Go le 2026-05-03 avec 2 bugs visibles fixés dans la foulée (logo iPhone tronqué + WS auth `_session_maker` import statique = bug 7 section 9) ; **Paquet 4 Sessions 1 + 2 + 3 livrées + Session 4 partielle** — Google News RSS BTC + GOLD (ADR-008) + Reddit BTC pondéré log upvotes (ADR-009) + GDELT timelinetone GOLD NLP scientifique non-LLM contrarian (ADR-010), 4 sources sentiment cross-validées sur BTC, 4 overlays cross-validés sur GOLD, **diversification méthodologique** Ollama-LLM vs NLP scientifique, 10 ingesters total ; **pipeline de calibration livré** (Session 4 — 5 scripts CLI collect/annotate/predict/backtest/measure + 65 tests pytest + `docs/methodology/calibration.md` + glossaire EN→FR ~80 termes) avec premier cycle 100 items annotés à la main, predictions Ollama+keywords générées, deltas 1h/6h mesurés ; **deltas 24h+5d et conclusions structurelles à venir le 2026-05-06+** ; v1.0.0 du SDK réservée à la mise en production réelle dans Zeta après 3 mois de mode shadow)*
+*Version Tik : 0.1.1 (Core MVP livré + évolutions Paquet 1.x — swing BTC/GOLD multi-overlay + flash BTC + NLP Ollama sur les news ; **SDK Paquet 2 COMPLET** — version SDK 0.5.0, client HTTP + WebSocket + hooks + cache + circuit breaker + telemetry non-bloquant + config YAML hot-reload + doc intégration Zeta + 4 exemples runnable + ADR-007 + CI ; **Dashboard Paquet 3 COMPLET** — version dashboard 0.5.0, app Expo SDK 54 avec auth + Home KPIs + Signals feed WebSocket + détail signal + Alerts + Bots + Config + push notifications, mise en service réelle sur iPhone via Expo Go le 2026-05-03 avec 2 bugs visibles fixés dans la foulée (logo iPhone tronqué + WS auth `_session_maker` import statique = bug 7 section 9) ; **Paquet 4 Sessions 1 + 2 + 3 livrées + Session 4 partielle** — Google News RSS BTC + GOLD (ADR-008) + Reddit BTC pondéré log upvotes (ADR-009) + GDELT timelinetone GOLD NLP scientifique non-LLM contrarian (ADR-010), 4 sources sentiment cross-validées sur BTC, 4 overlays cross-validés sur GOLD, **diversification méthodologique** Ollama-LLM vs NLP scientifique, 10 ingesters total ; **pipeline de calibration livré** (Session 4 — 5 scripts CLI collect/annotate/predict/backtest/measure + 65 tests pytest + `docs/methodology/calibration.md` + glossaire EN→FR ~80 termes) avec premier cycle 100 items annotés à la main, predictions Ollama+keywords générées, deltas 1h/6h mesurés ; **deltas 24h+5d et conclusions structurelles à venir le 2026-05-06+** ; **Paquet 5 Anti fake-news LIVRÉ 2026-05-03 (ADR-011)** — cross-validation runtime via Modified Z-score d'Iglewicz-Hoaglin + dispersion globale, scoring source dynamique avec recalibration automatique daily 03:00 UTC, mode active/shadow par variable d'env `TIK_ANTIFAKENEWS_MODE`, table DB `source_credibility_history` pour audit, hook SDK `on_fake_news_detected` enfin actif, 71 nouveaux tests (39 cross_validator + 32 source_credibility), 425 → 457 tests verts ; v1.0.0 du SDK réservée à la mise en production réelle dans Zeta après 3 mois de mode shadow)*
 *Mainteneur : utilisatrice solo + assistant Claude via Claude Desktop (app native macOS)*

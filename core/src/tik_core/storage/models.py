@@ -171,6 +171,34 @@ class BacktestRun(Base):
     notes: Mapped[str | None] = mapped_column(Text)
 
 
+class SourceCredibilityHistory(Base):
+    """Historique des ajustements de score de crédibilité par source.
+
+    Une row par source par cycle de recalibration (job daily à 03:00 UTC).
+    Permet de tracer l'évolution des scores dans le temps, comprendre
+    pourquoi une source a été dévaluée/promue, et auditer la dérive.
+
+    Cf. ADR-011 — Anti fake-news.
+    """
+
+    __tablename__ = "source_credibility_history"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid4())
+    )
+    source: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    computed_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False, index=True
+    )
+    score: Mapped[float] = mapped_column(Float, nullable=False)
+    previous_score: Mapped[float | None] = mapped_column(Float)
+    hit_rate: Mapped[float | None] = mapped_column(Float)
+    samples: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    lookback_days: Mapped[int] = mapped_column(Integer, default=30, nullable=False)
+    adjustment: Mapped[str] = mapped_column(String(16), default="unchanged")
+    # "unchanged" | "penalty" | "reward"
+
+
 class ApiKey(Base):
     """Clé API pour authentification des SDK clients.
 
