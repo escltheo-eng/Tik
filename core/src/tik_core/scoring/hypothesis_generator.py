@@ -151,7 +151,7 @@ class OllamaHypothesisGenerator(HypothesisGenerator):
         url: str,
         model: str,
         fallback: HypothesisGenerator | None = None,
-        timeout_s: float = 25.0,
+        timeout_s: float = 35.0,
         num_predict: int = 350,
     ) -> None:
         self.url = url.rstrip("/")
@@ -184,9 +184,14 @@ class OllamaHypothesisGenerator(HypothesisGenerator):
             raw = await self._call_ollama(decision, horizon)
         except Exception as exc:  # noqa: BLE001
             self._consecutive_failures += 1
+            # str(exc) est souvent vide pour httpx.ReadTimeout / asyncio
+            # CancelledError — utiliser le repr() pour avoir au moins le
+            # type d'exception, indispensable pour diagnostiquer en prod
+            # (concurrence Ollama, network reset, modèle déchargé, etc.)
             log.warning(
                 "hypothesis_generator.ollama_error",
-                error=str(exc),
+                error_type=type(exc).__name__,
+                error_repr=repr(exc)[:200],
                 entity_id=decision.entity_id,
                 horizon=horizon,
                 consecutive_failures=self._consecutive_failures,
@@ -334,7 +339,7 @@ async def apply_llm_hypothesis(
     horizon: str,
     generator: HypothesisGenerator | None,
     mode: str,
-    timeout_s: float = 30.0,
+    timeout_s: float = 40.0,
 ) -> None:
     """Applique le generator à la decision en place selon le mode.
 
@@ -348,10 +353,11 @@ async def apply_llm_hypothesis(
                    l'ancienne pour audit
 
     Le timeout `timeout_s` enveloppe l'appel `generator.generate()` —
-    fixé à 30s par défaut, légèrement supérieur au timeout HTTP interne
-    du generator (25s) pour laisser une marge sans déclencher deux
+    fixé à 40s par défaut, légèrement supérieur au timeout HTTP interne
+    du generator (35s) pour laisser une marge sans déclencher deux
     erreurs en cascade. Calibré sur la latence mesurée de llama3.2:3b
-    sur Mac M1 (~13s/cycle pour ~250 mots).
+    sur Mac M1 (~13s/cycle pour ~250 mots) + tolérance pour 1 mise
+    en queue Ollama si plusieurs jobs Tik appellent en concurrence.
     Ne lève jamais : tout échec est loggué et la decision reste
     inchangée (= conserve son hypothèse template).
     """
