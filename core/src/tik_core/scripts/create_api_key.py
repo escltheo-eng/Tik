@@ -9,7 +9,6 @@ La clé en clair est affichée UNE SEULE FOIS. À stocker immédiatement côté 
 
 import argparse
 import asyncio
-from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -17,6 +16,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from tik_core.auth.api_key import generate_key
 from tik_core.config import get_settings
 from tik_core.storage.models import ApiKey
+from tik_core.utils.time import now_utc_naive
 
 DEFAULT_SCOPES = [
     "read:signals",
@@ -49,7 +49,7 @@ async def _create(client_id: str, name: str | None, scopes: list[str]) -> None:
             key_suffix=key_suffix,
             scopes=scopes,
             active=True,
-            created_at=datetime.utcnow(),
+            created_at=now_utc_naive(),
         )
         session.add(key)
         await session.commit()

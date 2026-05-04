@@ -1,6 +1,6 @@
 """Endpoints signals : récupération des signaux émis par Tik."""
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
@@ -10,6 +10,7 @@ from tik_core.auth import AuthContext, require_scope
 from tik_core.storage.database import get_session
 from tik_core.storage.models import Signal
 from tik_core.storage.schemas import SignalOut
+from tik_core.utils.time import now_utc_naive
 
 router = APIRouter(prefix="/signals")
 
@@ -61,7 +62,7 @@ async def search_signals(
     _ctx: AuthContext = Depends(require_scope("read:signals")),
 ) -> list[Signal]:
     """Recherche signaux avec filtres."""
-    since = datetime.utcnow() - timedelta(hours=since_hours)
+    since = now_utc_naive() - timedelta(hours=since_hours)
     stmt = (
         select(Signal)
         .where(Signal.timestamp >= since)

@@ -509,7 +509,7 @@ async def main() -> None:
 
     print(f"  → {len(signals)} signaux totaux en base")
 
-    cutoff = datetime.utcnow() - timedelta(days=args.horizon_days)
+    cutoff = now_utc_naive() - timedelta(days=args.horizon_days)
     eligible = [s for s in signals if s.timestamp < cutoff]
     print(f"  → {len(eligible)} signaux éligibles (plus de {args.horizon_days}j d'âge)")
 

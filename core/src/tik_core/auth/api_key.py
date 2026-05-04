@@ -8,7 +8,6 @@ Les 4 derniers caractères sont conservés séparément pour affichage UI.
 
 import hashlib
 import secrets
-from datetime import datetime
 
 from fastapi import HTTPException, Request, status
 from sqlalchemy import select
@@ -16,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from tik_core.auth.provider import AuthContext, AuthProvider
 from tik_core.storage.models import ApiKey
+from tik_core.utils.time import now_utc_naive
 
 
 def hash_key(raw_key: str) -> str:
@@ -71,14 +71,14 @@ class ApiKeyProvider(AuthProvider):
                 detail="Invalid API key",
             )
 
-        if api_key.expires_at is not None and api_key.expires_at < datetime.utcnow():
+        if api_key.expires_at is not None and api_key.expires_at < now_utc_naive():
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Expired API key",
             )
 
         # Mise à jour last_used_at (best-effort, pas bloquant si échec)
-        api_key.last_used_at = datetime.utcnow()
+        api_key.last_used_at = now_utc_naive()
 
         return AuthContext(
             client_id=api_key.client_id,

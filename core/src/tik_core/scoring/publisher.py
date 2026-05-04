@@ -5,7 +5,7 @@ Utilisé par les engines (swing, flash, macro) pour émettre un signal.
 
 import json
 import uuid
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import structlog
 from redis.asyncio import Redis
@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from tik_core.scoring.flash_engine import FlashDecision
 from tik_core.scoring.swing_engine import SwingDecision
 from tik_core.storage.models import Signal
+from tik_core.utils.time import iso_utc, now_utc
 
 log = structlog.get_logger()
 
@@ -26,7 +27,7 @@ EXPIRY_BY_HORIZON = {
 
 
 def _make_signal_id(horizon: str, entity_id: str) -> str:
-    ts = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+    ts = now_utc().strftime("%Y%m%d%H%M%S")
     short = uuid.uuid4().hex[:6]
     return f"TIK-{horizon.upper()}-{entity_id}-{ts}-{short}"
 
@@ -44,7 +45,7 @@ async def _publish_signal(
     cross-validation). Le paramètre `veracity` reste accepté pour override.
     """
     signal_id = _make_signal_id(horizon, decision.entity_id)
-    expiry = datetime.utcnow() + EXPIRY_BY_HORIZON[horizon]
+    expiry = now_utc() + EXPIRY_BY_HORIZON[horizon]
     final_veracity = veracity if veracity is not None else decision.veracity
 
     decision_advisory = getattr(decision, "advisory", None)
@@ -71,9 +72,12 @@ async def _publish_signal(
     session.add(signal)
     await session.flush()
 
+    # iso_utc force le suffixe `Z` même si SQLAlchemy a strippé la tzinfo
+    # à l'insertion DB — garantit que les clients (dashboard, SDK) parsent
+    # correctement comme UTC sans risque d'interprétation locale (cf. ADR-013).
     payload = {
         "id": signal.id,
-        "timestamp": signal.timestamp.isoformat(),
+        "timestamp": iso_utc(signal.timestamp),
         "entity_id": signal.entity_id,
         "horizon": signal.horizon,
         "direction": signal.direction,
@@ -84,7 +88,7 @@ async def _publish_signal(
         "evidence": signal.evidence,
         "triggers": signal.triggers,
         "sources_count": signal.sources_count,
-        "expiry": signal.expiry.isoformat() if signal.expiry else None,
+        "expiry": iso_utc(signal.expiry),
         "advisory": signal.advisory,
         "circuit_breaker_status": signal.circuit_breaker_status,
     }

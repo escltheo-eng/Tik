@@ -1,12 +1,21 @@
 """Schémas Pydantic partagés (I/O API).
 
 Sources de vérité pour les formats. Le SDK reprendra les mêmes schémas.
+
+Sérialisation timezone-aware (cf. ADR-013) : tous les champs `datetime`
+exposés dans les schémas Out sont sérialisés en JSON avec un suffixe
+`Z` (UTC explicite). Si le datetime entrant est naïf (cas des lectures
+SQLAlchemy depuis une colonne `DateTime` sans `timezone=True`), il est
+considéré comme UTC sémantique et marqué `Z` à la sortie. Si déjà
+aware, l'offset est converti en UTC puis restitué en `Z`.
 """
 
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
+
+from tik_core.utils.time import iso_utc
 
 
 # ----- Entities -----
@@ -28,6 +37,10 @@ class EntityOut(BaseModel):
     active: bool
     created_at: datetime
     updated_at: datetime
+
+    @field_serializer("created_at", "updated_at", when_used="json")
+    def _ser_dt(self, value: datetime) -> str:
+        return iso_utc(value)  # type: ignore[return-value]
 
 
 # ----- Signals -----
@@ -82,6 +95,10 @@ class SignalOut(BaseModel):
     advisory: Advisory = Field(default_factory=Advisory)
     circuit_breaker_status: str = "ok"
 
+    @field_serializer("timestamp", "expiry", when_used="json")
+    def _ser_dt(self, value: datetime | None) -> str | None:
+        return iso_utc(value)
+
 
 # ----- Feedback -----
 
@@ -104,6 +121,10 @@ class FeedbackOut(BaseModel):
     outcome: str
     received_at: datetime
 
+    @field_serializer("received_at", when_used="json")
+    def _ser_dt(self, value: datetime) -> str:
+        return iso_utc(value)  # type: ignore[return-value]
+
 
 # ----- Veracity -----
 
@@ -112,6 +133,10 @@ class VeracityStatus(BaseModel):
     sources_count_active: int
     last_computed: datetime
     status: str  # "healthy" | "degraded" | "collapse"
+
+    @field_serializer("last_computed", when_used="json")
+    def _ser_dt(self, value: datetime) -> str:
+        return iso_utc(value)  # type: ignore[return-value]
 
 
 class SourceVeracity(BaseModel):

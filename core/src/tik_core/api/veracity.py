@@ -1,7 +1,5 @@
 """Endpoints veracity : état global + détail par source."""
 
-from datetime import datetime
-
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +8,7 @@ from tik_core.auth import AuthContext, require_scope
 from tik_core.storage.database import get_session
 from tik_core.storage.models import Source
 from tik_core.storage.schemas import SourceVeracity, VeracityStatus
+from tik_core.utils.time import now_utc
 
 router = APIRouter(prefix="/veracity")
 
@@ -33,7 +32,7 @@ async def global_veracity(
         return VeracityStatus(
             global_veracity=0.0,
             sources_count_active=0,
-            last_computed=datetime.utcnow(),
+            last_computed=now_utc(),
             status="degraded",
         )
 
@@ -57,7 +56,7 @@ async def global_veracity(
     return VeracityStatus(
         global_veracity=round(avg, 4),
         sources_count_active=len(sources),
-        last_computed=datetime.utcnow(),
+        last_computed=now_utc(),
         status=status_str,
     )
 

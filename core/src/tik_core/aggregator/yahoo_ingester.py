@@ -17,6 +17,7 @@ import structlog
 from redis.asyncio import Redis
 
 from tik_core.aggregator.base import BaseIngester, MarketTick
+from tik_core.utils.time import now_utc
 
 log = structlog.get_logger()
 
@@ -84,7 +85,7 @@ class YahooPoller(BaseIngester):
             meta = chart["meta"]
             price = float(meta["regularMarketPrice"])
             ts_unix = int(meta.get("regularMarketTime", 0))
-            ts = datetime.fromtimestamp(ts_unix, tz=timezone.utc) if ts_unix else datetime.utcnow()
+            ts = datetime.fromtimestamp(ts_unix, tz=timezone.utc) if ts_unix else now_utc()
         except (KeyError, IndexError, TypeError, ValueError) as exc:
             log.warning("yahoo.parse.error", error=str(exc))
             return None

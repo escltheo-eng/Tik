@@ -480,7 +480,51 @@ Toutes les sources de news que Tik consomme sont filtrées sur `lang=EN`, et les
 
 ---
 
-## 14. Pour résumer
+## 14. Pourquoi tous les timestamps Tik portent un Z
+
+### Le bug d'affichage qui a tout déclenché
+
+Le 2026-05-04, l'utilisatrice a remarqué que tous les libellés « il y a X minutes » affichés par le dashboard étaient **systématiquement en avance de 2 heures** (en CEST, c'est-à-dire en France au printemps/été). Un signal émis il y a 5 minutes affichait « il y a 2 h 5 min ». Comme si le scheduler de Tik avait pris 2 heures de retard. Mais en vérifiant les logs du core, les signaux étaient bien émis aux fréquences attendues. **Pas un bug Tik, mais un bug d'affichage.**
+
+### La cause : l'horloge sans étiquette
+
+Le core émettait ses timestamps via une fonction Python qui retourne un instant sans dire dans quel fuseau horaire il est exprimé (techniquement : un *datetime naïf*). Concrètement, Tik écrivait `"2026-05-04T11:32:14"` sans préciser que c'était de l'UTC.
+
+Côté dashboard, JavaScript reçoit cette chaîne et — en l'absence d'étiquette de fuseau — l'**interprète comme heure locale**. Donc Tik dit « 11:32 UTC » mais le dashboard comprend « 11:32 Paris CEST » = 09:32 UTC. D'où le décalage de 2 heures.
+
+C'est un piège classique : **le même chiffre 11:32 ne veut pas dire la même chose** selon qu'il est étiqueté UTC ou local. Sans étiquette, c'est une ambiguïté qui finit toujours par mordre.
+
+### Le fix en deux temps
+
+**Temps 1 — côté dashboard (le 2026-05-04 matin)** : un petit utilitaire `parseUtcIso` qui ajoute la lettre `Z` (UTC explicite) si elle manque dans la chaîne. Bug résolu en 30 minutes pour l'utilisatrice. Mais ce filet ne couvre que le dashboard — le SDK Python et le futur connecteur Zeta liraient toujours des timestamps ambigus.
+
+**Temps 2 — côté backend (cet ADR-013, le 2026-05-04 après-midi)** : Tik émet désormais **tous ses timestamps en UTC explicite**, marqué d'un `Z` final. Le format ressemble maintenant à `"2026-05-04T11:32:14Z"`. Quel que soit le consommateur (dashboard, SDK, futur bot), le timestamp est sans ambiguïté.
+
+### Concrètement, qu'est-ce qui change
+
+Pour l'utilisatrice : **rien à ses yeux** — le dashboard affichait déjà la bonne heure depuis le matin grâce au filet `parseUtcIso`. Mais en interne, Tik est désormais cohérent partout : un signal créé à 11:32 UTC dans le scheduler arrive à 11:32 UTC dans la base de données, ressort à 11:32 UTC du WebSocket, et apparaît à 13:32 dans le dashboard parisien (heure d'été). **Pas un seul intermédiaire ne peut plus se tromper de fuseau.**
+
+Pour les futures connexions :
+
+- Le **SDK Python** lira automatiquement des datetimes en UTC explicite (Pydantic reconnaît le `Z` natif)
+- Le **futur connecteur Zeta** héritera du même format
+- Si on ajoute demain un nouveau type de consommateur (notification push, Slack bot, MQTT), il bénéficiera lui aussi de la convention « tout est en `Z` »
+
+### Pourquoi pas de migration de la base de données
+
+La base de données Tik (PostgreSQL avec hypertable TimescaleDB) stocke les datetimes dans un format qui n'enregistre pas le fuseau (TIMESTAMP WITHOUT TIME ZONE). On aurait pu la migrer vers TIMESTAMPTZ pour stocker explicitement le fuseau, mais ça aurait nécessité une migration sur les partitions Timescale existantes — risqué et coûteux. À la place, on a choisi de **traiter le fuseau au moment de la sortie** : la couche Pydantic (qui sérialise en JSON) ajoute systématiquement le `Z`, même quand la valeur lue depuis la base est sans étiquette. C'est une convention claire (« la base est sémantiquement UTC ») sans toucher au schéma.
+
+Si demain on a besoin d'analyser la base en SQL brut depuis un autre outil (BI, Grafana SQL direct), il faudra savoir que le fuseau est UTC implicite. À ce moment-là, on documentera ou on migrera. Pas avant.
+
+### Ce que cela apprend sur Tik
+
+C'est un de ces bugs « invisibles tant qu'on ne regarde pas, et qui mordent à un moment imprévisible ». Il aurait pu rester caché pendant des mois — l'utilisatrice n'avait jamais comparé l'heure du dashboard avec un `date -u` au terminal jusqu'à ce qu'une carte Stats LLM ait l'air de mentir sur l'âge du dernier signal.
+
+La leçon technique : **toute chaîne de date qui voyage entre systèmes doit porter son fuseau**. Un datetime sans tzinfo est une bombe à retardement.
+
+---
+
+## 15. Pour résumer
 
 ### Ce que Tik fait pour chaque signal
 
@@ -507,7 +551,7 @@ Toutes les sources de news que Tik consomme sont filtrées sur `lang=EN`, et les
 
 ---
 
-## 15. État actuel et pistes futures
+## 16. État actuel et pistes futures
 
 ### Ce qui marche aujourd'hui
 

@@ -32,7 +32,7 @@ import asyncio
 import contextvars
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from typing import Any
 
 import httpx
@@ -42,6 +42,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tik_core.storage.models import Signal, SourceCredibilityHistory
+from tik_core.utils.time import now_utc_naive
 
 # Note : pas d'import top-level de SOURCE_SCORES depuis swing_engine pour éviter
 # le cycle (swing_engine importe set_dynamic_scores/get_effective_score d'ici).
@@ -350,8 +351,8 @@ async def recalibrate_sources(
     4. Calcule l'ajustement asymétrique (penalty/reward/unchanged).
     5. Persiste en Redis (lecture runtime) + DB (audit).
     """
-    cutoff_lookback = datetime.utcnow() - timedelta(days=LOOKBACK_DAYS)
-    cutoff_horizon = datetime.utcnow() - timedelta(days=HORIZON_DAYS)
+    cutoff_lookback = now_utc_naive() - timedelta(days=LOOKBACK_DAYS)
+    cutoff_horizon = now_utc_naive() - timedelta(days=HORIZON_DAYS)
 
     log.info("source_credibility.recalibrate.start", lookback_days=LOOKBACK_DAYS)
 

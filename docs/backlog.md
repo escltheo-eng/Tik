@@ -75,16 +75,19 @@ sur les vrais signaux Tik.
 
 ---
 
-## 2. Traduction native française des signaux Tik (réservé ADR-013)
+## 2. Traduction native française des signaux Tik (réservé ADR-014)
 
 **Date d'identification** : 2026-05-02 (Paquet 4 Session 4, en cours d'annotation
 manuelle du golden dataset)
 
 > **MAJ 2026-05-03** : ADR-011 a finalement été utilisé pour l'anti fake-news,
-> ADR-012 pour le LLM hypothesis generator (Paquet 6). **L'ADR de la traduction
-> FR sera donc ADR-013** au moment de l'attaquer. Le périmètre s'élargit
-> légèrement : depuis ADR-012, l'hypothèse devient un texte structuré ~150 mots
-> qui rejoint la liste des champs à traduire.
+> ADR-012 pour le LLM hypothesis generator (Paquet 6).
+>
+> **MAJ 2026-05-04** : ADR-013 a finalement été utilisé pour le fix timezone
+> bug 8 (cf. `docs/adr/013-timezone-aware-datetimes.md`). **L'ADR de la
+> traduction FR sera donc ADR-014** au moment de l'attaquer. Le périmètre
+> s'élargit toujours depuis ADR-012 : l'hypothèse contextualisée ~150 mots
+> rejoint la liste des champs à traduire.
 
 **Contexte** : tous les champs textuels produits par Tik aujourd'hui sont en
 anglais (cohérent : les sources Google News, CryptoCompare, GDELT, Reddit
@@ -144,7 +147,7 @@ le signal limite proprement la charge Ollama.
 - Cache Redis `tik.translation.{signal_id}.{lang}`, TTL = TTL signal
 - Tests pytest (~10 tests : cache hit/miss, fallback Ollama down, lang
   inconnue → 400, EN par défaut inchangé)
-- ADR-012 documente le choix Option A vs B/C *(ADR-011 est désormais réservé à l'anti fake-news, livré le 2026-05-03)*
+- ADR-014 documente le choix Option A vs B/C *(ADR-011 = anti fake-news 2026-05-03, ADR-012 = LLM hypothesis 2026-05-03, ADR-013 = timezone fix 2026-05-04)*
 
 **Bénéfice** :
 - L'utilisatrice lit ses signaux en FR sans avoir besoin d'apprendre le
@@ -160,7 +163,7 @@ Pas avant la fin de la Session 4 (calibration en cours). Idéalement :
 - **Si la calibration de Session 4 fait remonter des ajustements
   structurants** sur `SOURCE_SCORES` ou les engines → enchaîner Session 5
   sur ces ajustements d'abord, puis Session 6 sur la traduction.
-- **Sinon** → Session 5 dédiée à la traduction native FR (avec ADR-012).
+- **Sinon** → Session 5 dédiée à la traduction native FR (avec ADR-014).
 
 **Risque rappelé** : Garde-fou 1 (mode shadow 3 mois) **strictement applicable**
 à ce nouveau code de traduction (pas de risque trading mais le contrat ADR-003

@@ -54,7 +54,7 @@ Quatre questions structurantes à résoudre :
 
 **Argument décisif** : faire FR ici déclasserait la qualité de l'hypothèse à cause des limites du llama3.2:3b en français (déjà constaté lors de la traduction des titres golden dataset). Mieux vaut une hypothèse EN précise + ADR-013 future qui traduira tout le signal d'un coup (evidence + triggers + CS + hypothèse) avec un cache lazy. Cohérence > confort court terme.
 
-**Conséquence** : `docs/backlog.md` entry #2 (traduction native FR) devient ADR-013 et traduira *tous* les champs textuels du signal.
+**Conséquence** : `docs/backlog.md` entry #2 (traduction native FR) devient **ADR-014** et traduira *tous* les champs textuels du signal. *(MAJ 2026-05-04 : ADR-013 a été utilisé pour le fix timezone bug 8 — voir `docs/adr/013-timezone-aware-datetimes.md`. La traduction FR glisse d'un cran à ADR-014.)*
 
 ### 3. Mode de bascule — Shadow par défaut, opt-in via env
 

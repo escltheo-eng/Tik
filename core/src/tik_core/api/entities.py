@@ -1,7 +1,5 @@
 """CRUD entities observées par Tik (BTC, GOLD, event_X...)."""
 
-from datetime import datetime
-
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +8,7 @@ from tik_core.auth import AuthContext, get_auth_context, require_scope
 from tik_core.storage.database import get_session
 from tik_core.storage.models import Entity
 from tik_core.storage.schemas import EntityIn, EntityOut
+from tik_core.utils.time import now_utc_naive
 
 router = APIRouter(prefix="/entities")
 
@@ -46,8 +45,8 @@ async def create_entity(
         namespace=payload.namespace,
         metadata_json=payload.metadata,
         active=True,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
+        created_at=now_utc_naive(),
+        updated_at=now_utc_naive(),
     )
     session.add(entity)
     await session.flush()
@@ -77,4 +76,4 @@ async def deactivate_entity(
     if entity is None:
         raise HTTPException(status_code=404, detail="Entity not found")
     entity.active = False
-    entity.updated_at = datetime.utcnow()
+    entity.updated_at = now_utc_naive()

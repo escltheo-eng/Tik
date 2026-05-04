@@ -37,6 +37,7 @@ from tik_core.scoring.source_credibility import (
     reset_dynamic_scores,
     set_dynamic_scores,
 )
+from tik_core.utils.time import now_utc
 
 log = structlog.get_logger()
 
@@ -160,7 +161,7 @@ def _score_flash_indicators(df: pd.DataFrame) -> FlashDecision:
     if len(df) < 60:
         return FlashDecision(
             entity_id="unknown",
-            timestamp=datetime.utcnow(),
+            timestamp=now_utc(),
             direction="neutral",
             confidence=0.0,
             hypothesis="Insufficient historical data for flash analysis",
@@ -312,7 +313,7 @@ def _score_flash_indicators(df: pd.DataFrame) -> FlashDecision:
 
     return FlashDecision(
         entity_id=df.attrs.get("entity_id", "unknown"),
-        timestamp=datetime.utcnow(),
+        timestamp=now_utc(),
         direction=direction,
         confidence=round(confidence, 3),
         hypothesis=hypothesis,
@@ -549,7 +550,7 @@ async def analyze_flash_btc(
         log.warning("flash.btc.stale_data_skip")
         return FlashDecision(
             entity_id="BTC",
-            timestamp=datetime.utcnow(),
+            timestamp=now_utc(),
             direction="neutral",
             confidence=0.0,
             hypothesis="Realtime feed stale (>60s old) — flash analysis skipped",

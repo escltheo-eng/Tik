@@ -7,7 +7,7 @@ unitaire.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta, timezone
 from unittest.mock import MagicMock
 
 import pytest
@@ -34,6 +34,7 @@ from tik_core.scoring.source_credibility import (
     set_dynamic_scores,
     set_source_score,
 )
+from tik_core.utils.time import now_utc_naive
 
 
 # ----- Fakes minimaux -----
@@ -270,7 +271,7 @@ async def test_preload_redis_none_returns_empty_dict():
 # =====================================================================
 
 def test_compute_hit_rates_btc_long_success():
-    now = datetime.utcnow()
+    now = now_utc_naive()
     ts0 = now - timedelta(days=10)
     # delta +2% → long success
     sig = _make_signal("BTC", "long", ts0, ["alternative_me_fng", "google_news_rss"])
@@ -285,7 +286,7 @@ def test_compute_hit_rates_btc_long_success():
 
 
 def test_compute_hit_rates_btc_short_failure():
-    now = datetime.utcnow()
+    now = now_utc_naive()
     ts0 = now - timedelta(days=10)
     sig = _make_signal("BTC", "short", ts0, ["reddit_btc"])
 
@@ -299,7 +300,7 @@ def test_compute_hit_rates_btc_short_failure():
 
 
 def test_compute_hit_rates_filters_non_recalibratable():
-    now = datetime.utcnow()
+    now = now_utc_naive()
     ts0 = now - timedelta(days=10)
     # source binance_klines n'est PAS dans RECALIBRATABLE_SOURCES → ignorée
     sig = _make_signal("BTC", "long", ts0, ["binance_klines", "alternative_me_fng"])
@@ -314,7 +315,7 @@ def test_compute_hit_rates_filters_non_recalibratable():
 
 
 def test_compute_hit_rates_aggregates_multi_signal():
-    now = datetime.utcnow()
+    now = now_utc_naive()
     ts0 = now - timedelta(days=10)
     sigs = [
         _make_signal("BTC", "long", ts0, ["alternative_me_fng"], sig_id="s1"),

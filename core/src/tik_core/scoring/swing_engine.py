@@ -36,6 +36,7 @@ from tik_core.scoring.source_credibility import (
     reset_dynamic_scores,
     set_dynamic_scores,
 )
+from tik_core.utils.time import now_utc
 
 log = structlog.get_logger()
 
@@ -152,7 +153,7 @@ def _score_indicators(df: pd.DataFrame) -> SwingDecision:
     if len(df) < 60:
         return SwingDecision(
             entity_id="unknown",
-            timestamp=datetime.utcnow(),
+            timestamp=now_utc(),
             direction="neutral",
             confidence=0.0,
             hypothesis="Insufficient historical data for swing analysis",
@@ -280,7 +281,7 @@ def _score_indicators(df: pd.DataFrame) -> SwingDecision:
 
     return SwingDecision(
         entity_id=df.attrs.get("entity_id", "unknown"),
-        timestamp=datetime.utcnow(),
+        timestamp=now_utc(),
         direction=direction,
         confidence=round(confidence, 3),
         hypothesis=hypothesis,

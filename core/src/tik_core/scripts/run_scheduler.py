@@ -8,7 +8,6 @@ dans le même container via docker-compose (scaling vertical suffisant).
 """
 
 import asyncio
-from datetime import datetime
 
 import redis.asyncio as aioredis
 import structlog
@@ -29,6 +28,7 @@ from tik_core.scoring.hypothesis_generator import (
 from tik_core.scoring.publisher import publish_flash_signal, publish_swing_signal
 from tik_core.scoring.source_credibility import recalibrate_sources
 from tik_core.scoring.swing_engine import analyze_swing_btc, analyze_swing_gold
+from tik_core.utils.time import now_utc
 
 log = structlog.get_logger()
 
@@ -92,7 +92,7 @@ async def _run_flash_btc(
             return
 
         last = await read_last_emission(redis, decision.entity_id)
-        if not should_emit(decision, last, datetime.utcnow()):
+        if not should_emit(decision, last, now_utc()):
             log.info(
                 "scheduler.flash_btc.skipped_no_change",
                 direction=decision.direction,

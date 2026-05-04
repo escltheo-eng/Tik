@@ -20,6 +20,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
+from tik_core.utils.time import now_utc_naive
+
 
 class Base(DeclarativeBase):
     """Base déclarative SQLAlchemy."""
@@ -59,9 +61,9 @@ class Entity(Base):
     namespace: Mapped[str] = mapped_column(String(64), nullable=False)
     metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc_naive)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+        DateTime, default=now_utc_naive, onupdate=now_utc_naive
     )
 
     signals: Mapped[list["Signal"]] = relationship(back_populates="entity")
@@ -83,7 +85,7 @@ class Source(Base):
     tier: Mapped[int] = mapped_column(Integer, default=3)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc_naive)
 
 
 class Signal(Base):
@@ -93,7 +95,7 @@ class Signal(Base):
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     timestamp: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False, index=True
+        DateTime, default=now_utc_naive, nullable=False, index=True
     )
     entity_id: Mapped[str] = mapped_column(
         ForeignKey("entities.id", ondelete="CASCADE"), nullable=False, index=True
@@ -134,7 +136,7 @@ class Feedback(Base):
     pnl_pct: Mapped[float | None] = mapped_column(Float)
     duration_held_s: Mapped[int | None] = mapped_column(Integer)
     exit_reason: Mapped[str | None] = mapped_column(String(64))
-    received_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    received_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc_naive)
 
 
 class BacktestRun(Base):
@@ -149,7 +151,7 @@ class BacktestRun(Base):
     id: Mapped[str] = mapped_column(
         String(36), primary_key=True, default=lambda: str(uuid4())
     )
-    run_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    run_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc_naive, index=True)
 
     # Paramètres du run
     horizon_days: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -188,7 +190,7 @@ class SourceCredibilityHistory(Base):
     )
     source: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     computed_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False, index=True
+        DateTime, default=now_utc_naive, nullable=False, index=True
     )
     score: Mapped[float] = mapped_column(Float, nullable=False)
     previous_score: Mapped[float | None] = mapped_column(Float)
@@ -216,6 +218,6 @@ class ApiKey(Base):
     key_suffix: Mapped[str] = mapped_column(String(8), nullable=False)
     scopes: Mapped[list] = mapped_column(JSON, default=list)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc_naive)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime)

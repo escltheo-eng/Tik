@@ -15,6 +15,7 @@ import structlog
 from redis.asyncio import Redis
 
 from tik_core.aggregator.base import BaseIngester, MacroDataPoint
+from tik_core.utils.time import now_utc
 
 log = structlog.get_logger()
 
@@ -114,7 +115,7 @@ class FredIngester(BaseIngester):
         try:
             ts = datetime.fromisoformat(last["date"]).replace(tzinfo=timezone.utc)
         except Exception:  # noqa: BLE001
-            ts = datetime.utcnow().replace(tzinfo=timezone.utc)
+            ts = now_utc()
 
         return MacroDataPoint(
             series_id=series_id,
