@@ -7,6 +7,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { AlertEntry, AlertType, useAlerts } from '@/src/alerts/AlertsContext';
+import { timeAgo } from '@/src/utils/time';
 
 const ALERT_LABELS: Record<AlertType, string> = {
   crash_warning: 'Crash warning',
@@ -25,20 +26,6 @@ const ALERT_COLORS: Record<AlertType, string> = {
   fake_news_detected: '#8e44ad',
   veracity_collapse: '#e67e22',
 };
-
-function timeAgo(iso: string): string {
-  const then = new Date(iso).getTime();
-  const now = Date.now();
-  const diffMs = Math.max(0, now - then);
-  const sec = Math.floor(diffMs / 1000);
-  if (sec < 60) return `il y a ${sec} s`;
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `il y a ${min} min`;
-  const hours = Math.floor(min / 60);
-  if (hours < 24) return `il y a ${hours} h`;
-  const days = Math.floor(hours / 24);
-  return `il y a ${days} j`;
-}
 
 export default function AlertsScreen() {
   const router = useRouter();

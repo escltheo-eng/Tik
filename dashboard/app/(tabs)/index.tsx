@@ -3,6 +3,7 @@ import { ActivityIndicator, Platform, Pressable, StyleSheet } from 'react-native
 
 import { KpiCard } from '@/components/dashboard/kpi-card';
 import { MiniSparkline } from '@/components/dashboard/mini-sparkline';
+import { StatsLLMCard } from '@/components/dashboard/stats-llm-card';
 import { VeracityGauge } from '@/components/dashboard/veracity-gauge';
 import ParallaxScrollView from '@/components/parallax-scroll-view';
 import { ThemedText } from '@/components/themed-text';
@@ -14,8 +15,9 @@ import { TikError } from '@/src/api/errors';
 import { Health } from '@/src/api/types';
 import { useAuth } from '@/src/auth/AuthContext';
 import { useDashboardKpis } from '@/src/hooks/useDashboardKpis';
+import { timeAgo } from '@/src/utils/time';
 
-const APP_VERSION = '0.5.0';
+const APP_VERSION = '0.5.1';
 
 const HEALTH_REFRESH_INTERVAL_MS = 30_000;
 
@@ -32,20 +34,6 @@ const INITIAL_HEALTH: HealthState = {
   error: null,
   lastChecked: null,
 };
-
-function timeAgo(iso: string): string {
-  const then = new Date(iso).getTime();
-  const now = Date.now();
-  const diffMs = Math.max(0, now - then);
-  const sec = Math.floor(diffMs / 1000);
-  if (sec < 60) return `il y a ${sec} s`;
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `il y a ${min} min`;
-  const hours = Math.floor(min / 60);
-  if (hours < 24) return `il y a ${hours} h`;
-  const days = Math.floor(hours / 24);
-  return `il y a ${days} j`;
-}
 
 function directionColor(direction: string): string {
   switch (direction) {
@@ -193,6 +181,12 @@ export default function HomeScreen() {
           <ThemedText style={{ opacity: 0.6 }}>Veracity inconnue.</ThemedText>
         )}
       </ThemedView>
+
+      <StatsLLMCard
+        stats={kpis.llmStatsToday}
+        loading={kpis.loading}
+        error={kpis.signals24hError}
+      />
 
       <ThemedView style={styles.section}>
         <ThemedText type="subtitle">Activité 24 h</ThemedText>

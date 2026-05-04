@@ -17,6 +17,8 @@ import { searchSignals, getGlobalVeracity } from '@/src/api/endpoints';
 import { TikError } from '@/src/api/errors';
 import { Signal, VeracityStatus } from '@/src/api/types';
 import { useAuth } from '@/src/auth/AuthContext';
+import { isSignalLlmEnriched } from '@/src/utils/llm';
+import { parseUtcIso } from '@/src/utils/time';
 
 const REFRESH_INTERVAL_MS = 60_000;
 const DEFAULT_TRACKED_ENTITIES = ['BTC', 'GOLD'] as const;
@@ -32,6 +34,18 @@ export interface HorizonCounts {
   total: number;
 }
 
+export interface LlmLastSignal {
+  timestamp: string;
+  isLlmOk: boolean;
+}
+
+export interface LlmStats {
+  total: number;
+  llmOk: number;
+  percentOk: number | null;
+  lastSignal: LlmLastSignal | null;
+}
+
 export interface DashboardKpis {
   veracity: VeracityStatus | null;
   veracityError: string | null;
@@ -41,6 +55,7 @@ export interface DashboardKpis {
   signalsByHorizon: HorizonCounts;
   lastSignalByEntity: Record<string, Signal | null>;
   veracitySeries: number[];
+  llmStatsToday: LlmStats;
   refresh: () => Promise<void>;
 }
 
@@ -87,6 +102,34 @@ function deriveVeracitySeries(signals: Signal[], maxPoints = 12): number[] {
   // Inverse l'ordre : du plus ancien au plus récent pour le tracé.
   const sliced = signals.slice(0, maxPoints).reverse();
   return sliced.map((s) => s.veracity);
+}
+
+function startOfTodayUtc(now: Date): Date {
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+}
+
+export function deriveLlmStats(signals: Signal[], now: Date): LlmStats {
+  const startUtcMs = startOfTodayUtc(now).getTime();
+  const todaySignals = signals.filter(
+    (s) => parseUtcIso(s.timestamp).getTime() >= startUtcMs,
+  );
+  const total = todaySignals.length;
+  if (total === 0) {
+    return { total: 0, llmOk: 0, percentOk: null, lastSignal: null };
+  }
+  const llmOk = todaySignals.filter(isSignalLlmEnriched).length;
+  const percentOk = (llmOk / total) * 100;
+  // signals déjà triés desc par timestamp côté core (latest first).
+  const latest = todaySignals[0];
+  return {
+    total,
+    llmOk,
+    percentOk,
+    lastSignal: {
+      timestamp: latest.timestamp,
+      isLlmOk: isSignalLlmEnriched(latest),
+    },
+  };
 }
 
 export function useDashboardKpis(options: UseDashboardKpisOptions = {}): DashboardKpis {
@@ -161,6 +204,7 @@ export function useDashboardKpis(options: UseDashboardKpisOptions = {}): Dashboa
     [signals24h, trackedEntities],
   );
   const veracitySeries = useMemo(() => deriveVeracitySeries(signals24h, 12), [signals24h]);
+  const llmStatsToday = useMemo(() => deriveLlmStats(signals24h, new Date()), [signals24h]);
 
   return {
     veracity,
@@ -171,6 +215,7 @@ export function useDashboardKpis(options: UseDashboardKpisOptions = {}): Dashboa
     signalsByHorizon,
     lastSignalByEntity,
     veracitySeries,
+    llmStatsToday,
     refresh,
   };
 }

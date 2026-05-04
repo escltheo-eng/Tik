@@ -369,7 +369,7 @@ Implémenté dans `Tik/sdk/`. Découpage final en 5 sessions :
 
 **Garde-fou ADR-003** verrouillé par test runtime ET vérifié explicitement en CI (`pytest tests/test_client.py::test_client_does_not_expose_execution_methods` dans le job `sdk-test`). Aucune méthode `place_order`, `execute`, `trade`, `buy`, `sell`, `bypass_guard` exposée.
 
-### Paquet 3 — Dashboard Expo : ✅ LIVRÉ (5 sessions, version 0.5.0)
+### Paquet 3 — Dashboard Expo : ✅ LIVRÉ (5 sessions + évolution 2026-05-04, version 0.5.1)
 
 App Expo SDK 54 livrée dans `Tik/dashboard/`. 5 sessions livrées et pushées entre les commits `5ba28cb` et `b438f29` :
 
@@ -398,8 +398,14 @@ App Expo SDK 54 livrée dans `Tik/dashboard/`. 5 sessions livrées et pushées e
 - 2 bugs découverts pendant la mise en service : logo "Tik" tronqué sur iPhone (fontSize 96 → 72) + WebSocket auth refused systématique (import statique `_session_maker`). Fixés et commit le 2026-05-03 (cf. section 9 bug 7).
 
 **Limites connues à ce stade** :
-- Les hypothèses de signaux affichées dans le détail sont **minimalistes** (juste `"Swing long on BTC based on EMA/RSI/MACD confluence (bull=0.65, bear=0.18)"`). Les sections Evidence et Triggers contiennent l'info riche, mais l'hypothèse en haut n'est pas générée par NLP. Amélioration possible en ré-utilisant Ollama pour synthétiser un texte plus contextuel — à mettre en backlog si intérêt.
+- Les hypothèses de signaux affichées dans le détail sont **minimalistes** (juste `"Swing long on BTC based on EMA/RSI/MACD confluence (bull=0.65, bear=0.18)"`). Les sections Evidence et Triggers contiennent l'info riche, mais l'hypothèse en haut n'est pas générée par NLP. Amélioration possible en ré-utilisant Ollama pour synthétiser un texte plus contextuel — à mettre en backlog si intérêt. *(Limite résolue par le Paquet 6 ADR-012 du 2026-05-03 : le candidat LLM est désormais affiché dans la carte secondaire "Hypothèse contextuelle" du détail signal en mode shadow.)*
 - Mode 4G hors WiFi maison non fonctionnel (l'iPhone ne peut pas atteindre `192.168.1.34` depuis l'extérieur). Pour mobilité 4G, prévoir un setup ngrok/Tailscale ou un hébergement cloud — à voir si besoin réel.
+
+**Évolution post-livraison (2026-05-04 — version 0.5.1)** :
+- **Carte "Stats LLM" sur Home** : nouveau composant `dashboard/components/dashboard/stats-llm-card.tsx` qui affiche en temps réel le ratio de signaux émis aujourd'hui (depuis 00 h UTC) avec une sortie LLM ≥ 30 mots. Code couleur vert/orange/rouge (seuils 80 % / 60 %), badge "LLM ✓" ou "fallback" sur le dernier signal. Calcul **côté client** à partir des 100 signaux déjà fetchés par `useDashboardKpis` (zéro nouveau request HTTP, zéro modification backend). Couvre les modes `shadow` ET `active` du `TIK_LLM_HYPOTHESIS_MODE` via le helper `isSignalLlmEnriched(signal)` — préparé pour la bascule shadow → active prévue le 2026-05-05 sans intervention dashboard supplémentaire.
+- **Fix bug d'affichage timezone (Bug 8 section 9)** : le core émet ses timestamps via `datetime.utcnow()` (Pydantic sérialise sans suffixe `Z`), JavaScript les interprétait comme heure locale → décalage de +UTC offset (2 h en CEST, 1 h en CET). Nouveau utilitaire `dashboard/src/utils/time.ts` (`parseUtcIso` + `timeAgo` + `formatLocal`) qui ajoute `Z` si absent. Refactor des 4 fonctions `timeAgo` dupliquées (alerts, index, signals, stats-llm-card) en un seul import partagé. Refactor des 2 `new Date(iso).toLocaleString()` du détail signal en `formatLocal`. Refactor du `new Date(s.timestamp).getTime()` du filtre `deriveLlmStats` dans `useDashboardKpis`. **Tous les âges et timestamps du dashboard sont désormais corrects.**
+- **Factorisation seuil "30 mots"** du candidat LLM dans `dashboard/src/utils/llm.ts` (`MIN_LLM_HYPOTHESIS_WORDS`, `countWords`, `isLlmCandidateValid`, `isSignalLlmEnriched`) — élimine la duplication entre la carte secondaire "Hypothèse contextuelle" du détail signal (existait déjà) et la carte Stats LLM Home (nouvelle).
+- **Bump version dashboard 0.5.0 → 0.5.1**. 2 bugs Alerts pré-existants identifiés et tracés en section 10 (persistance + timestamp figé) à fixer dans une session dédiée.
 
 ### Paquet 4 — Diversification des sources OSINT news : 🟡 EN COURS
 
@@ -682,15 +688,49 @@ Bug invisible côté REST parce que les routes REST utilisent la **fonction** `g
 
 **À ajouter en futur** : un test pytest qui démarre l'app FastAPI complète (lifespan inclus) puis tente une connexion WS, pour attraper ce genre de bug en CI plutôt qu'en production. Reporté Session future.
 
-**Ces 7 fixes sont déjà appliqués dans le code actuel** (et poussés sur GitHub).
+### Bug 8 — Décalage de 2 h sur tous les âges affichés côté dashboard (timezone UTC mal interprétée)
+
+**Symptôme** : sur tous les écrans du dashboard (Home, Signals, Alerts, détail signal, nouvelle carte Stats LLM), tous les libellés "il y a X minutes/heures" sont systématiquement en avance de l'écart UTC ↔ heure locale (2 h en CEST, 1 h en CET). Un signal émis il y a 5 min affiche "il y a 2 h 5 min". Sur le détail signal, "Émis le ..." affiche un timestamp décalé. L'utilisatrice voit "il y a 2 h" alors que le scheduler tourne aux fréquences attendues (flash 5 min, swing 15-30 min).
+
+**Cause** : le core sérialise tous ses timestamps via `datetime.utcnow()` qui retourne un `datetime` **naïf** (sans tzinfo). Pydantic le sérialise en chaîne ISO **sans suffixe `Z`** : par exemple `"2026-05-04T10:38:14.554767"`. Côté dashboard, `new Date("2026-05-04T10:38:14.554767")` interprète selon ECMA-262 cette chaîne comme **heure locale** (pas UTC). Conséquence : un signal émis à 10:38 UTC est traité côté dashboard comme 10:38 Paris CEST = 08:38 UTC. Le delta `Date.now() - parsedDate` est donc systématiquement faussé de l'écart de timezone.
+
+Bug pré-existant depuis le Paquet 3 (commit `5ba28cb` du 2026-05-01) mais resté invisible parce que l'utilisatrice n'avait jamais comparé l'âge affiché avec un `date -u` terminal jusqu'au 2026-05-04 (lors de la livraison Stats LLM card). **Pas un bug Tik** (les signaux sont bien émis en instantané, le scheduler tourne aux fréquences fixes attendues) — uniquement un bug d'affichage côté client.
+
+**Fix côté dashboard uniquement (2026-05-04)** : nouvel utilitaire `dashboard/src/utils/time.ts` avec `parseUtcIso(iso)` qui détecte la présence d'une timezone (`Z`, `+HH:MM`, `-HH:MM`) via regex et ajoute `Z` si absent. `timeAgo` et `formatLocal` réutilisent ce helper. Refactor des 5 fichiers consommateurs (suppression des 4 `timeAgo` dupliqués + 2 `new Date(iso).toLocaleString()` du détail signal + 1 `new Date(iso).getTime()` du filtre `deriveLlmStats` dans `useDashboardKpis`). **Compat forward** : si le backend ajoute un jour la timezone explicite (`Z` ou `+00:00`), `parseUtcIso` la détecte et n'ajoute rien — donc pas de double-encoding.
+
+**Fix backend complémentaire (futur, à reporter en ADR dédié)** : remplacer `datetime.utcnow()` (deprecated en Python 3.12 d'ailleurs) par `datetime.now(timezone.utc)` dans tous les `scoring/*.py` et `storage/models.py`, et configurer Pydantic pour sérialiser avec la timezone. Ça corrigerait le bug à la source pour **TOUS les clients** (SDK Python, Zeta-future, dashboard, futurs bots). Reporté à une session dédiée — le fix dashboard suffit aujourd'hui pour l'utilisatrice unique.
+
+**Validation runtime** (2026-05-04) :
+- Heure UTC terminal : `date -u` → 11:36 UTC ✓
+- Heure locale iPhone : 13:35 (CEST = UTC+2) → écart cohérent ✓
+- Carte Stats LLM dashboard : "Dernier signal il y a 4 min" sur un signal émis à 11:32 UTC ✓
+- Détail signal "Émis le 04/05/2026 13:32:14" pour un signal de timestamp `2026-05-04T11:32:14` ✓
+
+**Ces 8 fixes sont déjà appliqués dans le code actuel** (et poussés sur GitHub).
 
 ---
 
 ## 10. Bugs non résolus / améliorations à faire
 
-✅ **Pas de bug ouvert connu actuellement.**
+2 bugs identifiés sur l'écran Alerts du dashboard pendant la livraison Stats LLM card du 2026-05-04. Ces 2 bugs **existaient déjà avant** mais n'avaient jamais été identifiés explicitement. À fixer dans une session dédiée (effort total estimé ~35 min).
 
-Cette section sera repeuplée si de nouveaux bugs sont identifiés. Pour les évolutions fonctionnelles à venir (nouvelles sources, engines flash/macro, NLP, backtest, etc.), voir la section 8 — *Couches encore non-implémentées*.
+### Bug A — Alertes non persistées entre redémarrages
+
+**Symptôme** : à chaque reload Expo (secousse + Reload, ou kill/relance Expo Go), toutes les alertes accumulées dans l'écran Alerts disparaissent.
+
+**Cause** : `dashboard/src/alerts/AlertsContext.tsx:79` stocke les alertes dans un `useState<AlertEntry[]>([])` — state local React, en mémoire seulement. Le commentaire ligne 13-14 le documente explicitement : *"Les alertes vivent en mémoire (max 50). Pour persister entre redémarrages, on pourra ajouter un AsyncStorage plus tard si besoin."* La persistance n'a jamais été implémentée.
+
+**Fix proposé** : migrer vers `@react-native-async-storage/async-storage` pour persister `alerts` à chaque `setAlerts`, hydrater au mount du provider via un `useEffect`. Effort estimé : ~30 min.
+
+### Bug B — Timestamp figé dans Alerts tant qu'aucune nouvelle alerte n'arrive
+
+**Symptôme** : sur l'écran Alerts, le libellé "il y a X" sous chaque alerte est calculé une seule fois (au moment où l'alerte arrive ou au moment du premier render) et reste figé. Une notif reçue à 11:32 UTC affichera "il y a 34 secondes" lors de l'arrivée et continuera d'afficher "34 secondes" même 2 h plus tard, jusqu'à ce qu'une nouvelle alerte déclenche un re-render.
+
+**Cause** : `dashboard/app/(tabs)/alerts.tsx` n'a pas de mécanisme de re-render périodique. Le composant ne se re-rend que quand `alerts` (du contexte) change. À noter qu'avec le fix Bug 8 (timezone, 2026-05-04), le timestamp affiché initial est désormais correct — le bug "figé" reste, mais avec une valeur de départ juste.
+
+**Fix proposé** : ajouter dans `AlertsScreen` un `useEffect` avec un `setInterval(() => setTick(t => t + 1), 30_000)` pour forcer un re-render toutes les 30 s. Effort estimé : ~5 min.
+
+Pour les évolutions fonctionnelles à venir (nouvelles sources, engines flash/macro, NLP, backtest, etc.), voir la section 8 — *Couches encore non-implémentées*.
 
 ---
 
@@ -796,6 +836,6 @@ cp "$WORKTREE/path2" "$MAIN/path2"
 
 ---
 
-*Dernière mise à jour : 2026-05-03*
-*Version Tik : 0.1.1 (Core MVP livré + évolutions Paquet 1.x — swing BTC/GOLD multi-overlay + flash BTC + NLP Ollama sur les news ; **SDK Paquet 2 COMPLET** — version SDK 0.5.0, client HTTP + WebSocket + hooks + cache + circuit breaker + telemetry non-bloquant + config YAML hot-reload + doc intégration Zeta + 4 exemples runnable + ADR-007 + CI ; **Dashboard Paquet 3 COMPLET** — version dashboard 0.5.0, app Expo SDK 54 avec auth + Home KPIs + Signals feed WebSocket + détail signal + Alerts + Bots + Config + push notifications, mise en service réelle sur iPhone via Expo Go le 2026-05-03 avec 2 bugs visibles fixés dans la foulée (logo iPhone tronqué + WS auth `_session_maker` import statique = bug 7 section 9) ; **Paquet 4 Sessions 1 + 2 + 3 livrées + Session 4 partielle** — Google News RSS BTC + GOLD (ADR-008) + Reddit BTC pondéré log upvotes (ADR-009) + GDELT timelinetone GOLD NLP scientifique non-LLM contrarian (ADR-010), 4 sources sentiment cross-validées sur BTC, 4 overlays cross-validés sur GOLD, **diversification méthodologique** Ollama-LLM vs NLP scientifique, 10 ingesters total ; **pipeline de calibration livré** (Session 4 — 5 scripts CLI collect/annotate/predict/backtest/measure + 65 tests pytest + `docs/methodology/calibration.md` + glossaire EN→FR ~80 termes) avec premier cycle 100 items annotés à la main, predictions Ollama+keywords générées, deltas 1h/6h mesurés ; **deltas 24h+5d et conclusions structurelles à venir le 2026-05-06+** ; **Paquet 5 Anti fake-news LIVRÉ 2026-05-03 (ADR-011)** — cross-validation runtime via Modified Z-score d'Iglewicz-Hoaglin + dispersion globale, scoring source dynamique avec recalibration automatique daily 03:00 UTC, mode active/shadow par variable d'env `TIK_ANTIFAKENEWS_MODE`, table DB `source_credibility_history` pour audit, hook SDK `on_fake_news_detected` enfin actif, 71 nouveaux tests (39 cross_validator + 32 source_credibility), 425 → 457 tests verts ; **Paquet 6 LLM hypothesis generator LIVRÉ 2026-05-03 (ADR-012)** — synthèse contextuelle des hypothèses signal via llama3.2:3b en 6 sections fixes (~150 mots EN), pattern Strategy `HypothesisGenerator` calque ADR-006, mode `disabled|shadow|active` par var env `TIK_LLM_HYPOTHESIS_MODE` (shadow par défaut → sortie LLM dans `Signal.advisory.llm_hypothesis_candidate`, hypothesis garde template), réveil champ DB `Signal.advisory` existant (zéro modif schéma), validation post-génération (longueur + mots-clés + sanitize markdown), circuit breaker batch-level identique news_classifier, timeout strict 30s, branchement swing BTC + swing GOLD + flash BTC, premiers cycles validés runtime 2026-05-03 20:44-20:45 (139 mots GOLD swing, 125 mots BTC flash), 39 nouveaux tests, 522 → 561 tests verts ; v1.0.0 du SDK réservée à la mise en production réelle dans Zeta après 3 mois de mode shadow)*
+*Dernière mise à jour : 2026-05-04*
+*Version Tik : 0.1.1 (Core MVP livré + évolutions Paquet 1.x — swing BTC/GOLD multi-overlay + flash BTC + NLP Ollama sur les news ; **SDK Paquet 2 COMPLET** — version SDK 0.5.0, client HTTP + WebSocket + hooks + cache + circuit breaker + telemetry non-bloquant + config YAML hot-reload + doc intégration Zeta + 4 exemples runnable + ADR-007 + CI ; **Dashboard Paquet 3 COMPLET** — version dashboard 0.5.0, app Expo SDK 54 avec auth + Home KPIs + Signals feed WebSocket + détail signal + Alerts + Bots + Config + push notifications, mise en service réelle sur iPhone via Expo Go le 2026-05-03 avec 2 bugs visibles fixés dans la foulée (logo iPhone tronqué + WS auth `_session_maker` import statique = bug 7 section 9) ; **Paquet 4 Sessions 1 + 2 + 3 livrées + Session 4 partielle** — Google News RSS BTC + GOLD (ADR-008) + Reddit BTC pondéré log upvotes (ADR-009) + GDELT timelinetone GOLD NLP scientifique non-LLM contrarian (ADR-010), 4 sources sentiment cross-validées sur BTC, 4 overlays cross-validés sur GOLD, **diversification méthodologique** Ollama-LLM vs NLP scientifique, 10 ingesters total ; **pipeline de calibration livré** (Session 4 — 5 scripts CLI collect/annotate/predict/backtest/measure + 65 tests pytest + `docs/methodology/calibration.md` + glossaire EN→FR ~80 termes) avec premier cycle 100 items annotés à la main, predictions Ollama+keywords générées, deltas 1h/6h mesurés ; **deltas 24h+5d et conclusions structurelles à venir le 2026-05-06+** ; **Paquet 5 Anti fake-news LIVRÉ 2026-05-03 (ADR-011)** — cross-validation runtime via Modified Z-score d'Iglewicz-Hoaglin + dispersion globale, scoring source dynamique avec recalibration automatique daily 03:00 UTC, mode active/shadow par variable d'env `TIK_ANTIFAKENEWS_MODE`, table DB `source_credibility_history` pour audit, hook SDK `on_fake_news_detected` enfin actif, 71 nouveaux tests (39 cross_validator + 32 source_credibility), 425 → 457 tests verts ; **Paquet 6 LLM hypothesis generator LIVRÉ 2026-05-03 (ADR-012)** — synthèse contextuelle des hypothèses signal via llama3.2:3b en 6 sections fixes (~150 mots EN), pattern Strategy `HypothesisGenerator` calque ADR-006, mode `disabled|shadow|active` par var env `TIK_LLM_HYPOTHESIS_MODE` (shadow par défaut → sortie LLM dans `Signal.advisory.llm_hypothesis_candidate`, hypothesis garde template), réveil champ DB `Signal.advisory` existant (zéro modif schéma), validation post-génération (longueur + mots-clés + sanitize markdown), circuit breaker batch-level identique news_classifier, timeout strict 30s, branchement swing BTC + swing GOLD + flash BTC, premiers cycles validés runtime 2026-05-03 20:44-20:45 (139 mots GOLD swing, 125 mots BTC flash), 39 nouveaux tests, 522 → 561 tests verts ; v1.0.0 du SDK réservée à la mise en production réelle dans Zeta après 3 mois de mode shadow ; **Évolution Dashboard 2026-05-04 (version 0.5.1)** — carte "Stats LLM" sur Home (% signaux émis aujourd'hui depuis 00 h UTC avec sortie LLM ≥ 30 mots, code couleur vert/orange/rouge seuils 80/60 %, badge "LLM ✓"/"fallback" sur dernier signal, calcul côté client zéro request HTTP supplémentaire, couvre modes shadow et active de `TIK_LLM_HYPOTHESIS_MODE`) + **fix Bug 8 timezone** dashboard (utilitaire `parseUtcIso` ajoutant `Z` si absent, refactor 4 `timeAgo` dupliqués → 1 seul, refactor `toLocaleString` détail signal, tous les âges désormais corrects partout) + factorisation seuil 30 mots dans `utils/llm.ts` partagé entre carte détail signal et nouvelle carte Stats LLM Home + 2 bugs Alerts pré-existants identifiés en section 10 (persistance + timestamp figé) reportés à session dédiée)*
 *Mainteneur : utilisatrice solo + assistant Claude via Claude Desktop (app native macOS)*

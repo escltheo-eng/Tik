@@ -16,6 +16,7 @@ import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Signal } from '@/src/api/types';
 import { useSignalStream } from '@/src/hooks/useSignalStream';
+import { timeAgo } from '@/src/utils/time';
 
 const ENTITY_FILTERS: { label: string; value: string | undefined }[] = [
   { label: 'Tous', value: undefined },
@@ -29,20 +30,6 @@ const HORIZON_FILTERS: { label: string; value: string | undefined }[] = [
   { label: 'Swing', value: 'swing' },
   { label: 'Macro', value: 'macro' },
 ];
-
-function timeAgo(iso: string): string {
-  const then = new Date(iso).getTime();
-  const now = Date.now();
-  const diffMs = Math.max(0, now - then);
-  const sec = Math.floor(diffMs / 1000);
-  if (sec < 60) return `il y a ${sec} s`;
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `il y a ${min} min`;
-  const hours = Math.floor(min / 60);
-  if (hours < 24) return `il y a ${hours} h`;
-  const days = Math.floor(hours / 24);
-  return `il y a ${days} j`;
-}
 
 function directionColor(direction: string): string {
   switch (direction) {

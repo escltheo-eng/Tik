@@ -10,6 +10,8 @@ import { getSignal } from '@/src/api/endpoints';
 import { TikError } from '@/src/api/errors';
 import { Signal } from '@/src/api/types';
 import { useAuth } from '@/src/auth/AuthContext';
+import { isLlmCandidateValid } from '@/src/utils/llm';
+import { formatLocal } from '@/src/utils/time';
 
 function directionColor(direction: string): string {
   switch (direction) {
@@ -114,11 +116,11 @@ export default function SignalDetailScreen() {
         </ThemedView>
 
         <ThemedText style={styles.metaLine}>
-          Émis le {new Date(signal.timestamp).toLocaleString()}
+          Émis le {formatLocal(signal.timestamp)}
         </ThemedText>
         {signal.expiry ? (
           <ThemedText style={styles.metaLine}>
-            Expire le {new Date(signal.expiry).toLocaleString()}
+            Expire le {formatLocal(signal.expiry)}
           </ThemedText>
         ) : null}
         {signal.circuit_breaker_status !== 'ok' ? (
@@ -148,8 +150,7 @@ export default function SignalDetailScreen() {
         Si aucun des deux n'est présent (mode disabled ou Paquet 6 pas
         encore livré sur ce signal historique), la carte ne s'affiche pas.
       */}
-      {signal.advisory.llm_hypothesis_candidate &&
-       signal.advisory.llm_hypothesis_candidate.split(/\s+/).filter(Boolean).length >= 30 ? (
+      {isLlmCandidateValid(signal.advisory.llm_hypothesis_candidate) ? (
         <ThemedView style={[cardStyle, styles.llmCard]}>
           <ThemedView style={[styles.llmHeader, { backgroundColor: 'transparent' }]}>
             <ThemedText type="subtitle">Hypothèse contextuelle</ThemedText>
