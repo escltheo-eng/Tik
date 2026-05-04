@@ -91,6 +91,20 @@ MIN_WORDS = 50
 MAX_WORDS = 400
 MARKDOWN_RE = re.compile(r"(\*\*|##|```|__)")
 
+# Patterns d'hallucination de prix : le LLM 3B a tendance à inventer des
+# niveaux du genre "$50,000" ou "$1,800 USD" qui ne sont jamais dans les
+# inputs (Tik ne fournit pas le prix courant au prompt, uniquement RSI,
+# EMA, MACD, scores). Si un de ces patterns matche le texte généré ET ne
+# se retrouve pas verbatim dans les `fact`/`value` des inputs decision,
+# c'est une hallucination → fallback template.
+PRICE_PATTERNS = [
+    re.compile(r"\$\s*\d[\d,.]*"),  # "$50,000", "$1.8k", "$78400"
+    re.compile(
+        r"\b\d[\d,.]*\s*(?:USD|EUR|dollars?|euros?)\b",
+        re.IGNORECASE,
+    ),  # "50000 USD", "1,800 dollars"
+]
+
 
 class OllamaHypothesisGenerator(HypothesisGenerator):
     """Génération via LLM local Ollama. Fallback template sur erreur.
@@ -122,19 +136,33 @@ class OllamaHypothesisGenerator(HypothesisGenerator):
         "1. Verdict and quality (1 sentence): direction + asset + "
         "confidence + veracity, qualify the concordance.\n"
         "2. Technical reading (1-2 sentences): which indicators converge, "
-        "key thresholds reached.\n"
+        "quote ONLY values present in 'Technical triggers' or 'Evidence "
+        "sources' above (RSI value, EMA values, MACD value).\n"
         "3. Sentiment cross-validation (2-3 sentences): name each "
         "non-technical source with its bias and a short descriptor.\n"
-        "4. Anti fake-news status (1 sentence): if status is not 'ok', "
-        "explicit which sources are flagged. If 'ok', state briefly.\n"
-        "5. Main risk (1-2 sentences): name the most probable "
-        "counter-scenario with its probability and mitigation.\n"
-        "6. Watch (1 sentence): key level or signal to monitor.\n\n"
-        "CONSTRAINTS:\n"
-        "- Use ONLY the data provided above. Do NOT invent prices, "
-        "levels, percentages, sources, or news headlines not present "
-        "in the input.\n"
-        "- Output ONLY the hypothesis text in the structure above.\n"
+        "4. Anti fake-news status (1 sentence): repeat the status value "
+        "given in the input (ok / degraded / tripped). If outliers are "
+        "listed, name them. Otherwise say 'no source flagged'. Do NOT "
+        "contradict the input status.\n"
+        "5. Main risk (1-2 sentences): pick the counter-scenario with "
+        "the HIGHEST probability listed above, name it explicitly, "
+        "quote its probability, restate its mitigation.\n"
+        "6. Watch (1 sentence): describe what indicator threshold or "
+        "counter-scenario condition would invalidate the thesis. Quote "
+        "ONLY indicator values present in the input (e.g., 'RSI breaking "
+        "above 75', 'EMA9/EMA21 crossover reversal', 'macro_shock counter"
+        "-scenario activation'). Do NOT invent specific price levels.\n\n"
+        "STRICT CONSTRAINTS — VIOLATIONS WILL TRIGGER FALLBACK:\n"
+        "- Use ONLY the data provided above. Every number, source name, "
+        "counter-scenario name MUST come from the input.\n"
+        "- Do NOT cite price levels in dollars/euros (e.g. '$50,000', "
+        "'$1,800'). Prices are NOT in the input data.\n"
+        "- Do NOT contradict the input. If sentiment score is negative, "
+        "do NOT call it bullish. If status is 'ok', do NOT say sources "
+        "are flagged.\n"
+        "- Do NOT invent ETF flows, news headlines, FOMC dates, "
+        "geopolitical events, or any external context not in the input.\n"
+        "- Output ONLY the hypothesis text in the 6-section structure.\n"
         "- No preamble, no closing remark, no markdown formatting "
         "(no **, ##, ```, __).\n"
         "- 120-180 words total. English only.\n\n"
@@ -216,6 +244,17 @@ class OllamaHypothesisGenerator(HypothesisGenerator):
             # Sortie LLM invalide : pas un échec réseau, on ne touche pas
             # au compteur du circuit breaker — c'est juste un loupé
             # ponctuel du modèle. Fallback template sur cette decision.
+            return await self.fallback.generate(decision, horizon)
+
+        invented = self._find_invented_prices(cleaned, decision)
+        if invented:
+            log.warning(
+                "hypothesis_generator.ollama_invented_price",
+                entity_id=decision.entity_id,
+                horizon=horizon,
+                invented=invented[:5],
+                preview=cleaned[:200],
+            )
             return await self.fallback.generate(decision, horizon)
 
         self._consecutive_failures = 0
@@ -329,6 +368,30 @@ class OllamaHypothesisGenerator(HypothesisGenerator):
         if decision.entity_id.upper() not in upper:
             return False
         return True
+
+    @staticmethod
+    def _find_invented_prices(text: str, decision: Any) -> list[str]:
+        """Détecte les patterns prix ($XXX,XXX, NNNN USD) dans la sortie
+        qui ne se retrouvent PAS verbatim dans les inputs decision.
+
+        Tik ne fournit jamais le prix courant en $ au LLM (uniquement
+        RSI, EMA, MACD, scores de sentiment). Si le LLM cite un prix
+        en $, il l'a inventé. Retourne la liste des matchs problématiques
+        (vide = OK) — limitée à 5 entrées pour ne pas spam les logs.
+        """
+        allowed_text = " ".join(
+            [str(e.get("fact", "")) for e in decision.evidence]
+            + [str(t.get("value", "")) for t in decision.triggers]
+        )
+        invented: list[str] = []
+        for pattern in PRICE_PATTERNS:
+            for match in pattern.finditer(text):
+                matched = match.group(0).strip()
+                if matched not in allowed_text:
+                    invented.append(matched)
+                    if len(invented) >= 5:
+                        return invented
+        return invented
 
 
 # === Helper d'application pour les engines ===

@@ -331,6 +331,66 @@ async def test_ollama_strips_markdown_in_response(monkeypatch):
     assert "**" not in text
 
 
+# ===== Anti-hallucination prix =====
+
+
+def test_find_invented_prices_dollar_format():
+    """Détecte un prix $XXX,XXX inventé (BTC à 78k mais LLM dit $50,000)."""
+    decision = _rich_decision()  # contient EMA20/50=104500/103200, pas de $
+    text = "Watch the key level of $50,000 on Binance for confirmation."
+    invented = OllamaHypothesisGenerator._find_invented_prices(text, decision)
+    assert "$50,000" in invented
+
+
+def test_find_invented_prices_dollar_no_separator():
+    decision = _rich_decision()
+    text = "Monitor support at $78400 for trend continuation."
+    invented = OllamaHypothesisGenerator._find_invented_prices(text, decision)
+    assert any("78400" in m for m in invented)
+
+
+def test_find_invented_prices_usd_suffix():
+    decision = _rich_decision()
+    text = "The 1,800 USD level is critical for gold."
+    invented = OllamaHypothesisGenerator._find_invented_prices(text, decision)
+    assert any("1,800" in m for m in invented)
+
+
+def test_find_invented_prices_clean_text_returns_empty():
+    """Texte sans prix en $ → liste vide (OK)."""
+    decision = _rich_decision()
+    text = (
+        "Watch RSI breaking above 70 or EMA crossover reversal. "
+        "Macro_shock counter-scenario activation would invalidate."
+    )
+    invented = OllamaHypothesisGenerator._find_invented_prices(text, decision)
+    assert invented == []
+
+
+def test_find_invented_prices_allows_indicator_values():
+    """Citer EMA20=104500 sans $ ne déclenche pas l'alarme."""
+    decision = _rich_decision()
+    text = "EMA20 at 104500 and EMA50 at 103200 confirm uptrend."
+    invented = OllamaHypothesisGenerator._find_invented_prices(text, decision)
+    assert invented == []
+
+
+async def test_ollama_generate_invented_price_falls_back(monkeypatch):
+    """Sortie LLM avec prix inventé → fallback template silencieux."""
+    gen = OllamaHypothesisGenerator(url="http://x", model="llama3.2:3b")
+    halluc = (
+        "Long position recommended on BTC with confidence 0.78. "
+        "Watch the key level of $50,000 on Binance for confirmation. "
+    ) * 6  # ~70 mots, contient direction + entity_id + prix inventé
+    monkeypatch.setattr(gen, "_call_ollama", AsyncMock(return_value=halluc))
+    decision = _rich_decision()
+    text = await gen.generate(decision, "swing")
+    # Doit retourner le template fallback, pas l'hallucination
+    assert "Swing long on BTC" in text
+    assert "$50,000" not in text
+    assert gen._consecutive_failures == 0  # Pas un échec réseau
+
+
 # ===== apply_llm_hypothesis (helper) =====
 
 
