@@ -10,10 +10,13 @@
  * entity/horizon, on veut tout savoir). Quand l'utilisateur n'est pas
  * authentifié, le stream reste fermé.
  *
- * Les alertes vivent en mémoire (max 50). Pour persister entre redémarrages,
- * on pourra ajouter un AsyncStorage plus tard si besoin.
+ * Persistance : les alertes sont stockées dans AsyncStorage (clé
+ * `tik.alerts.v1`). Hydratation eager au mount du provider (avant le
+ * premier render) ; persistance à chaque changement de la liste. Cap à
+ * MAX_ALERTS=50 inchangé. Bug A section 10 CLAUDE.md résolu.
  */
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   createContext,
   useCallback,
@@ -31,6 +34,7 @@ import { useAuth } from '@/src/auth/AuthContext';
 
 const MAX_ALERTS = 50;
 const VERACITY_COLLAPSE_THRESHOLD = 0.5;
+const STORAGE_KEY = 'tik.alerts.v1';
 
 export type AlertType = 'crash_warning' | 'fake_news_detected' | 'veracity_collapse';
 
@@ -79,6 +83,50 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
   const [alerts, setAlerts] = useState<AlertEntry[]>([]);
   const [connected, setConnected] = useState(false);
   const streamRef = useRef<TikStream | null>(null);
+
+  // Hydratation eager au mount + persistance à chaque changement.
+  // Le flag `hydrated` empêche d'écraser le storage avec [] au boot
+  // avant que la lecture initiale ait eu lieu.
+  const [hydrated, setHydrated] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(STORAGE_KEY);
+        if (cancelled) return;
+        if (raw) {
+          const parsed = JSON.parse(raw) as AlertEntry[];
+          if (Array.isArray(parsed)) {
+            // Ne pas écraser les alertes éventuellement arrivées du WS pendant
+            // la lecture asynchrone du storage (cas rarissime mais sûr).
+            setAlerts((current) =>
+              current.length === 0 ? parsed.slice(0, MAX_ALERTS) : current,
+            );
+          }
+        }
+      } catch (err) {
+        console.warn('[AlertsContext] failed to hydrate from storage, resetting', err);
+        try {
+          await AsyncStorage.removeItem(STORAGE_KEY);
+        } catch {
+          /* swallow */
+        }
+      } finally {
+        if (!cancelled) setHydrated(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(alerts)).catch((err) => {
+      console.warn('[AlertsContext] failed to persist alerts to storage', err);
+    });
+  }, [alerts, hydrated]);
 
   const pushAlert = useCallback((alert: AlertEntry) => {
     setAlerts((prev) => {

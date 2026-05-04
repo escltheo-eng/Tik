@@ -45,7 +45,17 @@ async def _publish_signal(
     cross-validation). Le paramètre `veracity` reste accepté pour override.
     """
     signal_id = _make_signal_id(horizon, decision.entity_id)
-    expiry = now_utc() + EXPIRY_BY_HORIZON[horizon]
+    # Strip tzinfo avant insertion DB : Signal.timestamp et Signal.expiry sont
+    # DateTime sans timezone=True (TIMESTAMP WITHOUT TIME ZONE). asyncpg lève
+    # DataError sur un datetime aware au lieu de stripper silencieusement (le
+    # commentaire d'utils/time.py qui prétend le contraire est obsolète). Le
+    # serializer Pydantic iso_utc continue de produire `Z` à la sortie API.
+    timestamp_naive = (
+        decision.timestamp.replace(tzinfo=None)
+        if decision.timestamp.tzinfo is not None
+        else decision.timestamp
+    )
+    expiry = (now_utc() + EXPIRY_BY_HORIZON[horizon]).replace(tzinfo=None)
     final_veracity = veracity if veracity is not None else decision.veracity
 
     decision_advisory = getattr(decision, "advisory", None)
@@ -54,7 +64,7 @@ async def _publish_signal(
 
     signal = Signal(
         id=signal_id,
-        timestamp=decision.timestamp,
+        timestamp=timestamp_naive,
         entity_id=decision.entity_id,
         horizon=horizon,
         direction=decision.direction,

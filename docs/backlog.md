@@ -169,3 +169,103 @@ Pas avant la fin de la Session 4 (calibration en cours). Idéalement :
 à ce nouveau code de traduction (pas de risque trading mais le contrat ADR-003
 de non-bypass V01-V15 reste **inchangé** — la traduction ne touche aucune logique
 décisionnelle).
+
+---
+
+## 3. Plan préparation trading manuel J+10 (2026-05-04 → 2026-05-14)
+
+**Date d'identification** : 2026-05-04
+
+**Contexte** : l'utilisatrice principale a annoncé son intention de **trader
+manuellement avec Tik dans 10 jours**. Ça change le statut de Tik : il passe
+d'outil d'observation (mode shadow vs Zeta) à outil d'aide à la décision
+réelle avec son capital. Le Garde-fou 1 (Tik shadow 3 mois) **ne s'applique
+pas** au trading manuel humain — c'est son jugement qui filtre, pas un guard
+pipeline V01-V15. La séquence ci-dessous priorise donc **calibration empirique
+de la confiance + contexte rapide sans risque LLM + discipline opérationnelle**
+plutôt que des features narratives risquées (cf. entry n°4 ci-dessous, Phase 2
+LLM enrichi reportée post-J+30).
+
+### Séquence proposée (4 features + calibration)
+
+| Jour | Feature | Effort | Valeur trading |
+|---|---|---|---|
+| **J+1-2** | **Phase 1 — Carte "Top headlines aujourd'hui"** dashboard. Réutilise les news déjà ingérées (Google News BTC/GOLD + CryptoCompare + Reddit + GDELT). 5-10 titres affichés bruts avec source, sentiment et heure. Tri par crédibilité × récence. | ~½ session (1 endpoint API + 1 carte Tsx) | Contexte rapide brut. Tu vois les news qui motivent les sentiments avant de regarder les signaux. **Zéro risque LLM hallucination** — c'est de la donnée brute citant ses sources. Pattern OSINT pro classique (Recorded Future, Bellingcat). |
+| **J+3-4** | **Carte Home "Hit rate live"** — pourcentage de signaux Tik corrects sur les 30 derniers jours par horizon (flash 1h / swing 7j) et asset (BTC/GOLD). Réutilise `core/src/tik_core/scripts/backtest.py` déjà livré, expose en endpoint API + carte Home. | ~1 session | Calibre ta confiance. Si swing BTC est à 65% sur 30j, tu trades avec sizing X. Si à 45%, tu skip ou tu réduis. **C'est la feature N°1 d'un outil de signal pour démarrer un live trading.** |
+| **J+5-6** | **Vue "Track record signal"** dans le détail signal. Pour chaque signal historique, affiche le delta de prix après 1h/6h/24h/5j (multi-horizon, cohérent avec le pipeline calibration Session 4 Paquet 4). Badges visuels ✓ correct / ✗ raté / ⚠ neutre. | ~1 session | Tu apprends à reconnaître les types de signaux qui marchent vs ceux qui ratent. Ton oeil se forme avant le live. |
+| **J+7-8** | **Workflow "Watchlist post-trade"** — bouton "j'ai pris ce trade" sur le détail signal qui ajoute le signal à une watchlist persistée (AsyncStorage, pattern déjà déployé pour Alerts cf. bug A résolu 2026-05-04). Onglet Watchlist dédié. | ~1 session | Discipline opérationnelle. Tu sais quel signal a déclenché quel trade. Indispensable pour tirer des leçons après. |
+| **J+9-10** | **Run de validation finale + calibration mentale** — usage Tik en mode "préparation trading" pendant 2 jours sans prendre de trade pour de vrai. Identification des manques. | 0 dev | Calibration mentale avant le live. Identification des features manquantes pour itérer post-J+10. |
+
+### Décisions structurantes prises
+
+- **Pas de Phase 2 LLM enrichi avant J+10** (cf. entry n°4) : l'argument décisif d'ADR-012 (*"hypothèse hallucinée serait pire que template"*) s'applique encore plus fort en trading live. Le LLM 3B a des limites documentées (markdown résiduel, sortie parfois trop courte, hallucinations potentielles sur input long) et 10 jours ne suffisent pas pour valider en mode shadow strict.
+- **Aucune modification des engines / pipeline scoring / cross-validation** : les 4 features sont purement dashboard + endpoints API en lecture. Garde-fou 1 préservé. ADR-003 inchangé. Le pattern multi-overlay ADR-004 inchangé. Aucun risque de régression sur le calcul des signaux.
+- **Réutilisation maximale de l'infra existante** : `backtest.py` (CLI déjà livré Paquet 1.x) devient un module importable, klines Binance + Yahoo Finance déjà câblés, AsyncStorage pattern déjà déployé pour Alerts. Faible effort = faible risque.
+- **Persistance Watchlist AsyncStorage et non DB Postgres** : la watchlist est un workflow utilisateur **personnel** (pas une donnée Tik partagée). AsyncStorage est suffisant et cohérent avec Alerts. Si à terme on voulait sync multi-device, on migrerait vers un endpoint API + DB.
+
+### Risques opérationnels rappelés
+
+- Garde-fou 1 (mode shadow Tik vs Zeta 3 mois) **strictement applicable** — Tik continue de **ne jamais passer d'ordre Zeta**. Le trading manuel est exécuté par l'utilisatrice elle-même via son broker habituel.
+- Garde-fou 2 (budget test 5%) **rappelé fortement** au moment du démarrage trading manuel J+10. Recommandation : commencer avec un capital **inférieur à 5%** du capital total et augmenter progressivement après 2-3 semaines de live profitable.
+- ADR-003 (pas de bypass V01-V15) **inchangé** — Tik ne crée jamais d'ordre. Ces 4 features sont en lecture seule côté Tik.
+- Paranoïa contrôlée maintenue — chaque signal continue de livrer hypothèse + contre-scénarios + evidence + triggers + cross-validation anti fake-news.
+
+---
+
+## 4. Phase 2 — Enrichissement contextuel hypothèse LLM (réservé ADR-015, post-J+30)
+
+**Date d'identification** : 2026-05-04
+
+**Contexte** : retour utilisatrice constaté lors de la session de bascule LLM
+shadow runtime (2026-05-04 après-midi) — *"L'hypothèse contextuelle je la
+voyais autrement, un vrai contexte qui ne fait pas que la synthèse des autres
+cartes mais aussi une synthèse de contexte de la situation d'un point de vue
+économique, politique, etc."*. Aujourd'hui le LLM ne reçoit que les données
+internes de la `decision` Tik (direction + confidence + veracity + evidence +
+triggers + counter-scenarios + statut anti fake-news). Donc il synthétise ce
+qu'on lui donne — **par construction**, c'est un résumé des autres cartes du
+détail signal. C'est le choix d'ADR-012 décision 5 (*"Use ONLY the data
+provided"*) pour éviter les hallucinations.
+
+**Reporté volontairement post-J+30** car :
+
+1. **Mode shadow strict impossible en 10 jours** — ADR-012 dit explicitement *"valider la qualité de la sortie LLM sur 5-10 cycles avant bascule active"*. Phase 2 augmente le risque hallucination en élargissant le contexte du prompt. 1 mois shadow + dataset golden d'évaluation (~30 signaux annotés sur "narrative pertinente vs hallucinée") sont nécessaires avant bascule. Pas faisable en 10j.
+2. **Llama 3.2:3b a des limites documentées** — sortie parfois trop courte (cycles à 76 mots vs cible 120-180, observé 2026-05-04 17:11), markdown résiduel, hallucinations potentielles sur input long.
+3. **Doctrine OSINT pro** — plateformes OSINT classiques (Recorded Future, Maltego, Palantir Foundry) fournissent des **données structurées** et laissent l'humain interpréter. Les nouvelles plateformes émergentes qui intègrent du LLM (Anduril Lattice, Perplexity Sonar) le font avec très haute exigence sur la traçabilité des sources. La carte Top headlines (entry n°3 Phase 1) répond déjà au besoin contextuel **sans risque LLM**.
+
+### Pistes évaluées
+
+| Piste | Pour | Contre rédhibitoire |
+|---|---|---|
+| **A. Top 5-10 headlines du jour injectés dans le prompt** (réutilise les ingesters Google News + CryptoCompare + Reddit + GDELT déjà en place) | Données déjà collectées, zéro coût additionnel d'ingestion. Pattern cohérent avec multi-overlay ADR-004. | Ne reste plus que du sentiment headlines, pas vraiment "macro". Risque hallucination LLM sur input long. |
+| B. Calendrier économique (FOMC, NFP, CPI, GDP, élections) — nouveau ingester FRED événements / investing.com | Vrai contexte macro. Sources gratuites. | Nouveau ingester à coder (~1 session). Risque hallucination LLM identique. |
+| C. LLM avec accès web (Anthropic Claude API + web search, ou Perplexity Sonar) | Contexte vraiment large, sans nouvel ingester. Traçabilité sources si bien implémenté. | Sort du scope "Ollama local gratuit". Coût API. Latence. Dépendance externe Anthropic/Perplexity. |
+| D. Snapshot quotidien rédigé par un autre LLM call ("Quels sont les 3 enjeux dominants du jour pour BTC/Or ?") | Un seul LLM call/jour distillé en 200 mots passés au prompt signal. Reste local. | Risque hallucination amplifié si data brute pas disponible. Cumul 2 niveaux LLM = 2× risque. |
+
+### Verdict envisagé
+
+**Piste A en mode shadow strict 1 mois** quand on l'attaquera, avec
+dataset golden d'évaluation (~30 signaux annotés humain-ressenti
+"narrative pertinente vs hallucinée vs trop générique"). Bascule active
+**uniquement si** le hit rate "narrative juge humain → score acceptable"
+est > 80% sur le golden. Sinon revert à template.
+
+**Pré-requis** : avoir validé **empiriquement** au moins 2-3 semaines de
+trading manuel sur la carte Top headlines (entry n°3 Phase 1) pour savoir
+si le contexte brut suffit OU s'il manque vraiment une couche narrative
+LLM. Sinon on code une feature dont on ne sait pas encore si on en a besoin.
+
+### Quand l'attaquer
+
+**Post-J+30** (après 2-3 semaines de trading manuel avec carte Top
+headlines), uniquement si le retour utilisatrice confirme un manque
+contextuel narratif que la carte brute ne couvre pas.
+
+**Coût estimé** : ~1-2 sessions de dev + 1 mois shadow + ~1 session de
+mesure golden. Soit ~6 semaines calendaires depuis le démarrage.
+
+**Risque rappelé** : Garde-fou 1 (mode shadow Tik vs Zeta 3 mois)
+**strictement applicable**. ADR-003 (pas de bypass V01-V15) **inchangé**.
+Mode shadow LLM strict obligatoire avant bascule active (ne pas répéter
+l'erreur de raisonner *"bah on verra ben"* — l'hypothèse hallucinée serait
+pire que template, cf. ADR-012 décision 3).

@@ -15,9 +15,10 @@ import { TikError } from '@/src/api/errors';
 import { Health } from '@/src/api/types';
 import { useAuth } from '@/src/auth/AuthContext';
 import { useDashboardKpis } from '@/src/hooks/useDashboardKpis';
+import { useTick } from '@/src/hooks/use-tick';
 import { timeAgo } from '@/src/utils/time';
 
-const APP_VERSION = '0.5.1';
+const APP_VERSION = '0.5.2';
 
 const HEALTH_REFRESH_INTERVAL_MS = 30_000;
 
@@ -79,6 +80,7 @@ export default function HomeScreen() {
   }, [checkHealth]);
 
   const kpis = useDashboardKpis();
+  useTick();
 
   const statusLabel: Record<HealthState['status'], string> = {
     idle: 'Inactif',

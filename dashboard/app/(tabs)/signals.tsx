@@ -16,6 +16,7 @@ import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Signal } from '@/src/api/types';
 import { useSignalStream } from '@/src/hooks/useSignalStream';
+import { useTick } from '@/src/hooks/use-tick';
 import { timeAgo } from '@/src/utils/time';
 
 const ENTITY_FILTERS: { label: string; value: string | undefined }[] = [
@@ -86,6 +87,9 @@ export default function SignalsScreen() {
     entity,
     horizon,
   });
+  // Force re-render des items FlatList toutes les 30 s pour rafraîchir les
+  // libellés "il y a X" (la FlatList mémoïse ses rows par défaut).
+  const tick = useTick();
 
   const renderItem: ListRenderItem<Signal> = useMemo(
     () => ({ item }) => (
@@ -197,6 +201,7 @@ export default function SignalsScreen() {
       ) : (
         <FlatList
           data={signals}
+          extraData={tick}
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
           contentContainerStyle={styles.listContent}

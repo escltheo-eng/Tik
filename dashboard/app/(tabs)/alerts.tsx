@@ -7,6 +7,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { AlertEntry, AlertType, useAlerts } from '@/src/alerts/AlertsContext';
+import { useTick } from '@/src/hooks/use-tick';
 import { timeAgo } from '@/src/utils/time';
 
 const ALERT_LABELS: Record<AlertType, string> = {
@@ -33,6 +34,7 @@ export default function AlertsScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const palette = Colors[colorScheme];
   const { alerts, unreadCount, connected, markAllAsRead, clear } = useAlerts();
+  useTick();
 
   const renderAlert = (alert: AlertEntry) => {
     const color = ALERT_COLORS[alert.type];
