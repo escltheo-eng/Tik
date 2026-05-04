@@ -150,6 +150,29 @@ class SourceVeracity(BaseModel):
     active: bool
 
 
+# ----- Headlines (Phase 1 trading manuel J+10) -----
+
+class HeadlineOut(BaseModel):
+    """Titre brut OSINT agrégé depuis les ingesters news.
+
+    Pattern OSINT pro : données brutes citant leurs sources, l'humain
+    interprète. Endpoint domain-agnostic — pas de logique trading-spécifique.
+    """
+
+    title: str
+    url: str | None = None
+    publisher: str
+    source: str  # "google_news_rss" | "cryptocompare_news" | "reddit_btc" | …
+    credibility: float = Field(ge=0, le=1)
+    sentiment: str  # "bull" | "bear" | "neutral"
+    published_at: datetime | None = None
+    fetched_at: datetime
+
+    @field_serializer("published_at", "fetched_at", when_used="json")
+    def _ser_dt(self, value: datetime | None) -> str | None:
+        return iso_utc(value)
+
+
 # ----- Health -----
 
 class HealthOut(BaseModel):

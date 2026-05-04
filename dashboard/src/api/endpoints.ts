@@ -11,6 +11,7 @@
 import { HttpClient } from './client';
 import {
   Entity,
+  Headline,
   Health,
   Signal,
   SourceVeracity,
@@ -103,4 +104,27 @@ export async function listSources(
 
 export async function getSource(client: HttpClient, id: string): Promise<SourceVeracity> {
   return client.get<SourceVeracity>(`/veracity/sources/${encodeURIComponent(id)}`);
+}
+
+// ----- Headlines (Phase 1 trading manuel J+10) -----
+
+export interface TopHeadlinesParams {
+  limit?: number;
+  sinceHours?: number;
+  sort?: 'credibility_recency' | 'recency';
+}
+
+export async function getTopHeadlines(
+  client: HttpClient,
+  entityId: string,
+  params: TopHeadlinesParams = {},
+): Promise<Headline[]> {
+  return client.get<Headline[]>(
+    `/headlines/${encodeURIComponent(entityId)}`,
+    {
+      limit: params.limit ?? 10,
+      since_hours: params.sinceHours ?? 24,
+      sort: params.sort ?? 'credibility_recency',
+    },
+  );
 }

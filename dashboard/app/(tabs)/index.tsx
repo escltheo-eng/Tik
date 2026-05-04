@@ -4,6 +4,7 @@ import { ActivityIndicator, Platform, Pressable, StyleSheet } from 'react-native
 import { KpiCard } from '@/components/dashboard/kpi-card';
 import { MiniSparkline } from '@/components/dashboard/mini-sparkline';
 import { StatsLLMCard } from '@/components/dashboard/stats-llm-card';
+import { TopHeadlinesCard } from '@/components/dashboard/top-headlines-card';
 import { VeracityGauge } from '@/components/dashboard/veracity-gauge';
 import ParallaxScrollView from '@/components/parallax-scroll-view';
 import { ThemedText } from '@/components/themed-text';
@@ -16,9 +17,10 @@ import { Health } from '@/src/api/types';
 import { useAuth } from '@/src/auth/AuthContext';
 import { useDashboardKpis } from '@/src/hooks/useDashboardKpis';
 import { useTick } from '@/src/hooks/use-tick';
+import { useTopHeadlines } from '@/src/hooks/useTopHeadlines';
 import { timeAgo } from '@/src/utils/time';
 
-const APP_VERSION = '0.5.2';
+const APP_VERSION = '0.5.3';
 
 const HEALTH_REFRESH_INTERVAL_MS = 30_000;
 
@@ -80,6 +82,8 @@ export default function HomeScreen() {
   }, [checkHealth]);
 
   const kpis = useDashboardKpis();
+  const [headlinesEntity, setHeadlinesEntity] = useState<string>('BTC');
+  const headlinesState = useTopHeadlines(headlinesEntity, { limit: 5 });
   useTick();
 
   const statusLabel: Record<HealthState['status'], string> = {
@@ -188,6 +192,15 @@ export default function HomeScreen() {
         stats={kpis.llmStatsToday}
         loading={kpis.loading}
         error={kpis.signals24hError}
+      />
+
+      <TopHeadlinesCard
+        headlines={headlinesState.headlines}
+        entityId={headlinesEntity}
+        onEntityChange={setHeadlinesEntity}
+        displayLimit={5}
+        loading={headlinesState.loading}
+        error={headlinesState.error}
       />
 
       <ThemedView style={styles.section}>

@@ -524,7 +524,117 @@ La leçon technique : **toute chaîne de date qui voyage entre systèmes doit po
 
 ---
 
-## 15. Pour résumer
+## 15. La couche contextuelle : carte Top headlines (2026-05-05)
+
+Jusqu'ici, Tik produisait deux choses pour son utilisateur final :
+
+1. **Des signaux décisionnels** (« BTC long, confiance 65 %, fiabilité 90 % ») → ce qui dit *quoi faire*
+2. **Des hypothèses expliquées en clair** dans chaque signal → ce qui dit *pourquoi*
+
+Mais il manquait une troisième brique : **le contexte narratif brut**. Si tu lis un signal Tik et que tu te demandes « OK, et qu'est-ce qui se dit dans le marché en ce moment, exactement ? », tu devais ouvrir Twitter, CoinDesk, Reuters, Yahoo Finance en parallèle pour comprendre la narrative en cours. C'est exactement le boulot d'un analyste pro qui consulte son terminal Bloomberg le matin avant de trader.
+
+### Ce que fait la carte « Top headlines »
+
+Sur l'écran Home du dashboard, juste sous la carte « Stats LLM », il y a maintenant un panneau **Top headlines** avec :
+
+- **Un sélecteur BTC / GOLD** (c'est toi qui choisis l'actif)
+- **5 titres bruts** issus des dernières 24 h, classifiés bull / bear / neutral
+- **La source de chaque titre** affichée en clair (Google News · Yahoo Finance, CryptoCompare · CoinDesk, Reddit · r/Bitcoin, etc.)
+- **L'âge du titre** (« il y a 12 min », « il y a 3 h »)
+- Un **tap sur un titre** → ouvre l'article original dans Safari natif
+- Un **bouton « Voir tous »** qui navigue vers une vue plein écran avec jusqu'à 25 titres
+
+Tout ça est gratuit (les sources existaient déjà — on ne fait que les exposer brut au lieu de les agréger uniquement en score). Aucune nouvelle API payante, aucun nouveau process serveur.
+
+### D'où viennent ces titres ?
+
+Tik a déjà 3 ingesters news qui tournent toutes les 30 minutes en arrière-plan pour alimenter le scoring de sentiment des signaux :
+
+- **Google News RSS** (sources mainstream pro : Reuters, Bloomberg, FT, Yahoo Finance, FXStreet, CoinDesk pour BTC ; KITCO, Mining.com, Fortune, Morningstar pour GOLD)
+- **CryptoCompare** (CoinDesk Data, ~50 articles éditoriaux crypto par cycle)
+- **Reddit** (r/Bitcoin et r/CryptoMarkets, posts filtrés ≥ 5 upvotes, pas de stickied modos, pas de NSFW)
+
+La carte va simplement lire **les mêmes données** que Tik utilise déjà pour calculer les signaux, et te les montre brutes au lieu de seulement te montrer leur agrégat numérique.
+
+### Comment Tik trie les titres affichés
+
+Par défaut, Tik trie par **crédibilité × récence**. Concrètement :
+
+- Chaque source a un **score de crédibilité** (Google News 0.70, CryptoCompare 0.70, Reddit 0.65 — cf. section 11)
+- Plus le titre est récent, plus il pèse (« décroissance exponentielle » avec une demi-vie de 12 heures : un titre de la journée pèse encore beaucoup, un titre vieux de 24 h pèse environ 10 % de sa valeur initiale)
+- Les deux se multiplient → un titre Reuters d'il y a 1 h passe devant un titre Reddit d'il y a 6 h, mais un titre Reddit d'il y a 30 min peut passer devant un titre Reuters d'il y a 18 h.
+
+C'est le même principe qu'un fil d'actualité de pro : *qualité de la source × fraîcheur*.
+
+### Et la dédup multi-source ?
+
+Si le même article est relayé sur Google News *et* sur CryptoCompare (ce qui arrive souvent : un article CoinDesk apparaît dans les deux flux), Tik n'affichera **pas le même titre deux fois**. Le titre normalisé (mis en minuscules, espaces nettoyés) sert de clé de dédup — la première version dans le tri gagne.
+
+Cela a nécessité un **petit nettoyage côté Google News** : Google News a la mauvaise habitude de coller ` - Reuters` à la fin de chaque titre (genre *« Bitcoin reclaims 80K - Reuters »*), même quand la balise XML `<source>` contient déjà *« Reuters »*. Sans nettoyage, le même article relayé via Google News (avec suffix) vs CryptoCompare (sans suffix) aurait deux titres strictement différents et la dédup serait défaite. Un helper `_strip_publisher_suffix` retire ce suffix proprement avant classification.
+
+### Ce que la carte filtre déjà (et ce qu'elle ne filtre pas)
+
+**La carte hérite déjà** des filtres en amont :
+
+| Filtre | Origine |
+|---|---|
+| ✅ Sources curées (mainstream pro, pas de bruit Twitter brut, pas de WSB) | ADR-008 / ADR-009 / ADR-006 |
+| ✅ Classification de sentiment (bull / bear / neutral) | Même classifier Ollama llama3.2:3b qui alimente les signaux |
+| ✅ Crédibilité par source affichée | `SOURCE_SCORES` dynamique, ADR-011 |
+| ✅ Filtres anti-brigading Reddit (score ≥ 5, no-stickied, no-NSFW) | ADR-009 |
+
+**Ce que la carte ne fait pas** (par choix structurel) :
+
+| Filtre absent | Pourquoi |
+|---|---|
+| ❌ Cross-validation Modified Z-score (anti fake-news ADR-011) | Conçu pour comparer des **biais agrégés multi-source** (« Google News dit +0.3, Reddit dit −0.9 → outlier »). Inapplicable à un titre isolé qui n'a pas de « biais agrégé ». |
+| ❌ Filtrage des titres dissonants | Pattern OSINT pro classique : tu veux voir **toutes** les sources curées, y compris dissonantes. Filtrer une dissonance peut masquer une info précieuse (cas Roubini en 2007 sur les subprimes). C'est à toi, l'humain, d'arbitrer entre concordance et dissonance. |
+
+### Comment l'utiliser intelligemment
+
+**Workflow recommandé avant chaque trade manuel** (~3 minutes) :
+
+1. **État du core** (10 sec) → Connecté ?
+2. **Veracity globale** (10 sec) → > 0.70 ?
+3. **Top headlines BTC ou GOLD** (30 sec) :
+   - **4-5 titres concordants** (tous bull ou tous bear) sur sources mainstream → narrative claire, contexte favorable
+   - **3 bull / 2 bear sur sources crédibles** → marché incertain, attente recommandée
+   - **Discordance forte mainstream vs Reddit** → arbitrage à toi (mainstream = institutionnel, Reddit = retail)
+4. **Lecture du signal Tik** (1 min) → direction + confidence + veracity + hypothèse contextuelle
+5. **Confrontation** signal ↔ narrative (30 sec) :
+   - Concordance → confiance accrue, tu peux trade au sizing prévu
+   - Discordance modérée → réduire sizing
+   - Discordance forte → skip ce trade
+6. **Vérification finale** : tap sur 1-2 titres pour lire les articles complets
+
+Total : 3 minutes de prep avant entrée. C'est le standard d'un analyste pro avant une décision.
+
+### Ce que la carte n'est PAS
+
+- **Pas un signal Tik** : la carte montre des inputs bruts, pas une décision algorithmique. Elle n'a pas de `confidence`, pas de `veracity`, pas de `counter_scenarios`. Ces concepts s'appliquent aux signaux décisionnels.
+- **Pas une synthèse LLM** : aucun risque d'hallucination — chaque ligne est un titre réel publié par une vraie source, avec son URL cliquable. Choix conscient pour le trading manuel J+10 (cf. ADR-012 décision 3 : « hypothèse hallucinée serait pire que template »).
+- **Pas pour Zeta** : Zeta est un bot trading déterministe qui consomme des **décisions** (signaux Tik) via le SDK. Pas des titres bruts. Les titres sont déjà incorporés en amont via le calcul du score net Google News / CryptoCompare / Reddit qui finit dans `evidence` du signal.
+- **Potentiellement pour Totem** (bot ML, à venir) : Totem pourrait consommer les titres bruts comme features supplémentaires (encoder via embeddings BERT, agréger en vecteur, alimenter un modèle XGBoost). C'est l'archi des hedge funds quantitatifs. Hors scope J+10 mais l'endpoint le permet.
+
+### Pourquoi c'est conforme aux standards OSINT pro
+
+Les outils pro qui inspirent Tik (Recorded Future, Bloomberg Terminal, Refinitiv Eikon, Palantir Foundry) appliquent **tous** ce pattern :
+
+- **Multi-source** : on agrège plusieurs flux indépendants
+- **Sentiment classifié** : on étiquette chaque titre par un NLP (custom chez Recorded Future, Tik utilise Ollama 3B local)
+- **Crédibilité affichée** : chaque source a un score visible
+- **Citation explicite des sources** : tu peux toujours cliquer pour lire l'article original
+- **Pas de synthèse LLM par défaut** (ou alors avec très haute exigence sur la traçabilité, comme Anduril Lattice)
+
+Différence vs eux : Tik est **gratuit, hostable localement, et combine cette couche contextuelle avec un pipeline de signaux décisionnels et une cross-validation anti fake-news (ADR-011) qu'aucun de ces outils n'a dans un même produit**. Volume plus modeste (~75 titres/24h vs des milliers chez Bloomberg), mais le mécanisme est aligné.
+
+### Limite documentée à connaître
+
+Le LLM 3B utilisé pour classifier le sentiment **n'est pas 100 % déterministe** sur les titres ambigus. À deux cycles d'écart (30 min), un même titre légèrement borderline (genre *« Bitcoin holds support »*) peut basculer entre bull et neutral. Le score net agrégé reste stable à ±5 % mais les classifications individuelles peuvent changer. Une amélioration prévue en backlog : persister le sentiment par hash du titre (TTL 7 jours) pour réutiliser le verdict au lieu de re-classifier — bénéfice : stabilité totale + économie de calcul.
+
+---
+
+## 16. Pour résumer
 
 ### Ce que Tik fait pour chaque signal
 
@@ -551,7 +661,7 @@ La leçon technique : **toute chaîne de date qui voyage entre systèmes doit po
 
 ---
 
-## 16. État actuel et pistes futures
+## 17. État actuel et pistes futures
 
 ### Ce qui marche aujourd'hui
 

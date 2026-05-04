@@ -93,3 +93,18 @@ export interface SourceVeracity {
   tier: number;
   active: boolean;
 }
+
+// ----- Headlines (Phase 1 trading manuel J+10) -----
+
+export type HeadlineSentiment = 'bull' | 'bear' | 'neutral';
+
+export interface Headline {
+  title: string;
+  url: string | null;
+  publisher: string;
+  source: string;
+  credibility: number;
+  sentiment: string;
+  published_at: string | null;
+  fetched_at: string;
+}

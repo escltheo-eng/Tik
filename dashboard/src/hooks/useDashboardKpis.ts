@@ -155,7 +155,7 @@ export function useDashboardKpis(options: UseDashboardKpisOptions = {}): Dashboa
         setVeracityError(msg);
         return null;
       }),
-      searchSignals(client, { sinceHours: windowHours, limit: 100 }).catch((err: unknown) => {
+      searchSignals(client, { sinceHours: windowHours, limit: 500 }).catch((err: unknown) => {
         if (cancelledRef.current) return null;
         const msg = err instanceof TikError ? err.message : (err as Error).message;
         setSignals24hError(msg);

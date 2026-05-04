@@ -6,6 +6,11 @@ des titres via un `NewsClassifier` injecté (keywords ou LLM via Ollama).
 
 API CryptoCompare (rebranded CoinDesk Data) : free tier ~11k req/mois,
 plafond 250k à vie. On polle 1 fois par heure (≈720 req/mois).
+
+Champ `headlines` (Phase 1 trading manuel J+10) : liste des titres bruts
+classifiés, persistée dans le payload Redis aux côtés des agrégats. Cap
+local à `MAX_HEADLINES = 25`. Le calcul du score reste strictement
+inchangé — additif uniquement.
 """
 
 import asyncio
@@ -23,6 +28,7 @@ log = structlog.get_logger()
 
 NEWS_URL = "https://min-api.cryptocompare.com/data/v2/news/"
 REDIS_TTL_S = 2 * 3600  # 2h, plus court que FG car les news bougent vite
+MAX_HEADLINES = 25
 
 
 class CryptoCompareIngester(BaseIngester):
@@ -71,6 +77,43 @@ class CryptoCompareIngester(BaseIngester):
         await self.classifier.aclose()
         log.info("cryptocompare.ingester.stopped")
 
+    @staticmethod
+    def _verdict_to_sentiment(n_bull: int, n_bear: int) -> str:
+        """Convertit le couple (n_bull, n_bear) du classifier en label trinaire."""
+        if n_bull > n_bear:
+            return "bull"
+        if n_bear > n_bull:
+            return "bear"
+        return "neutral"
+
+    @staticmethod
+    def _parse_unix_iso(ts) -> str | None:
+        """Convertit un UNIX timestamp (int/float/str) en ISO 8601 aware UTC."""
+        if ts is None or ts == "":
+            return None
+        try:
+            return datetime.fromtimestamp(int(float(ts)), tz=timezone.utc).isoformat()
+        except (TypeError, ValueError, OverflowError, OSError):
+            return None
+
+    @staticmethod
+    def _extract_publisher(article: dict) -> str:
+        """Extrait le nom du publisher de `source_info.name` ou de `source` brut.
+
+        CryptoCompare expose le publisher de deux façons selon l'article :
+        - `source_info.name` (canonique, ex: "CoinDesk")
+        - `source` (string brute, ex: "coindesk")
+        """
+        info = article.get("source_info") if isinstance(article, dict) else None
+        if isinstance(info, dict):
+            name = info.get("name")
+            if name:
+                return str(name).strip()
+        raw = article.get("source")
+        if raw:
+            return str(raw).strip()
+        return "unknown"
+
     async def _fetch(self, client: httpx.AsyncClient) -> dict | None:
         try:
             r = await client.get(
@@ -105,14 +148,29 @@ class CryptoCompareIngester(BaseIngester):
         n_bullish = 0
         n_bearish = 0
         n_neutral = 0
+        headlines: list[dict] = []
+        fetched_at = datetime.now(tz=timezone.utc).isoformat()
         for a in articles:
-            n_bull, n_bear = await self.classifier.classify(a.get("title", ""))
-            if n_bull > n_bear:
+            title = a.get("title", "")
+            n_bull, n_bear = await self.classifier.classify(title)
+            sentiment = self._verdict_to_sentiment(n_bull, n_bear)
+            if sentiment == "bull":
                 n_bullish += 1
-            elif n_bear > n_bull:
+            elif sentiment == "bear":
                 n_bearish += 1
             else:
                 n_neutral += 1
+            if len(headlines) < MAX_HEADLINES:
+                headlines.append(
+                    {
+                        "title": str(title).strip(),
+                        "url": a.get("url") or None,
+                        "publisher": self._extract_publisher(a),
+                        "sentiment": sentiment,
+                        "published_at": self._parse_unix_iso(a.get("published_on")),
+                        "fetched_at": fetched_at,
+                    }
+                )
 
         n_classified = n_bullish + n_bearish
         score = (n_bullish - n_bearish) / n_classified if n_classified > 0 else 0.0
@@ -126,7 +184,8 @@ class CryptoCompareIngester(BaseIngester):
             "n_bullish": n_bullish,
             "n_bearish": n_bearish,
             "n_neutral": n_neutral,
-            "fetched_at": datetime.now(tz=timezone.utc).isoformat(),
+            "headlines": headlines,
+            "fetched_at": fetched_at,
         }
 
     async def _run(self) -> None:
@@ -146,5 +205,6 @@ class CryptoCompareIngester(BaseIngester):
                         n_bullish=point["n_bullish"],
                         n_bearish=point["n_bearish"],
                         n_neutral=point["n_neutral"],
+                        n_headlines=len(point["headlines"]),
                     )
                 await asyncio.sleep(self.interval_s)

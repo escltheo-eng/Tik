@@ -552,3 +552,121 @@ async def test_stop_calls_classifier_aclose():
     ing = _make_ingester(classifier=classifier)
     await ing.stop()
     assert classifier.aclose_called is True
+
+
+# =============================================================================
+# Champ `headlines` (Phase 1 trading manuel J+10)
+# =============================================================================
+
+
+async def test_fetch_includes_headlines_field_for_reddit():
+    """Le payload Reddit inclut une liste `headlines` aux côtés des agrégats."""
+    classifier = FakeClassifier(default=(0, 0))
+    ing = _make_ingester(classifier=classifier)
+    client = _FakeClient(
+        responses_by_sub={
+            "Bitcoin": REDDIT_FIXTURE_BITCOIN,
+            "CryptoMarkets": REDDIT_FIXTURE_CRYPTOMARKETS,
+        }
+    )
+
+    payload = await ing._fetch(client)
+    assert payload is not None
+    assert "headlines" in payload
+    assert isinstance(payload["headlines"], list)
+    # 5 posts gardés après filtres (3 Bitcoin + 2 CryptoMarkets)
+    assert len(payload["headlines"]) == 5
+
+
+async def test_fetch_reddit_headlines_use_thread_permalink_as_url():
+    """L'URL Reddit dans headlines pointe vers le thread (permalink) avec préfixe complet."""
+    classifier = FakeClassifier(default=(0, 0))
+    ing = _make_ingester(classifier=classifier)
+    fixture_with_permalink = _make_listing(
+        [
+            {
+                "kind": "t3",
+                "data": {
+                    "title": "Test post",
+                    "score": 100,
+                    "subreddit": "Bitcoin",
+                    "stickied": False,
+                    "over_18": False,
+                    "permalink": "/r/Bitcoin/comments/abc123/test_post/",
+                    "created_utc": 1714521600.0,
+                },
+            }
+        ]
+    )
+    client = _FakeClient(responses_by_sub={"Bitcoin": fixture_with_permalink})
+    ing.subreddits = ["Bitcoin"]
+
+    payload = await ing._fetch(client)
+    assert payload is not None
+    assert len(payload["headlines"]) == 1
+    h = payload["headlines"][0]
+    assert h["url"] == "https://www.reddit.com/r/Bitcoin/comments/abc123/test_post/"
+    assert h["publisher"] == "r/Bitcoin"
+
+
+async def test_fetch_reddit_headlines_sentiment_matches_verdict():
+    """Le label sentiment des headlines reflète le verdict trinaire du classifier."""
+    classifier = FakeClassifier(
+        verdicts_by_title={
+            "Bull post": (1, 0),
+            "Bear post": (0, 1),
+        },
+        default=(0, 0),
+    )
+    ing = _make_ingester(classifier=classifier)
+    fixture = _make_listing(
+        [
+            _make_post("Bull post", score=100),
+            _make_post("Bear post", score=100),
+            _make_post("Neutral post", score=100),
+        ]
+    )
+    client = _FakeClient(responses_by_sub={"Bitcoin": fixture})
+    ing.subreddits = ["Bitcoin"]
+
+    payload = await ing._fetch(client)
+    assert payload is not None
+    by_title = {h["title"]: h["sentiment"] for h in payload["headlines"]}
+    assert by_title["Bull post"] == "bull"
+    assert by_title["Bear post"] == "bear"
+    assert by_title["Neutral post"] == "neutral"
+
+
+async def test_fetch_reddit_headlines_published_at_iso():
+    """`published_at` est un ISO 8601 dérivé du UNIX timestamp `created_utc`."""
+    classifier = FakeClassifier(default=(0, 0))
+    ing = _make_ingester(classifier=classifier)
+    fixture = _make_listing(
+        [_make_post("Hello", score=100)]
+    )
+    client = _FakeClient(responses_by_sub={"Bitcoin": fixture})
+    ing.subreddits = ["Bitcoin"]
+
+    payload = await ing._fetch(client)
+    assert payload is not None
+    assert len(payload["headlines"]) == 1
+    h = payload["headlines"][0]
+    # created_utc=1714521600 → 2024-04-30T22:40:00Z
+    assert h["published_at"] is not None
+    assert h["published_at"].startswith("2024-")
+
+
+def test_build_permalink_handles_relative_and_absolute():
+    """Le helper accepte un permalink relatif ou déjà absolu."""
+    assert (
+        RedditIngester._build_permalink("/r/Bitcoin/comments/abc/title/")
+        == "https://www.reddit.com/r/Bitcoin/comments/abc/title/"
+    )
+    # Si déjà absolu, pas de double préfixe
+    assert (
+        RedditIngester._build_permalink("https://www.reddit.com/r/X/comments/y/z/")
+        == "https://www.reddit.com/r/X/comments/y/z/"
+    )
+    # None → None
+    assert RedditIngester._build_permalink(None) is None
+    assert RedditIngester._build_permalink("") is None

@@ -11,11 +11,18 @@ tout rate-limit observé). 50 titres max par cycle pour rester comparable
 Endpoint Google News RSS non officiellement documenté mais stable depuis
 20 ans. En cas de fail (HTTP, parsing), on log un warning et on saute le
 cycle — pas de circuit cassant globalement, le cycle suivant retentera.
+
+Champ `headlines` (Phase 1 trading manuel J+10) : liste des titres bruts
+classifiés, persistée dans le payload Redis aux côtés des agrégats. Cap
+local à `MAX_HEADLINES = 25` (suffisant pour le merge multi-source côté
+endpoint `/headlines/{entity_id}`). Le calcul du score reste strictement
+inchangé — additif uniquement.
 """
 
 from __future__ import annotations
 
 import asyncio
+import calendar
 import json
 from collections import Counter
 from datetime import datetime, timezone
@@ -37,6 +44,7 @@ GOOGLE_NEWS_RSS_TPL = (
 USER_AGENT = "Mozilla/5.0 (compatible; TikBot/0.1)"
 REDIS_TTL_S = 2 * 3600  # 2h, comme CryptoCompare
 REDIS_KEY_TPL = "tik.sentiment.google_news.{entity}"
+MAX_HEADLINES = 25
 
 
 class GoogleNewsIngester(BaseIngester):
@@ -111,6 +119,53 @@ class GoogleNewsIngester(BaseIngester):
             return raw_title.rsplit(" - ", 1)[-1].strip()
         return "unknown"
 
+    @staticmethod
+    def _strip_publisher_suffix(title: str, publisher: str) -> str:
+        """Retire le suffix ` - {publisher}` à la fin du titre Google News.
+
+        Google News colle systématiquement ` - Reuters` / ` - Bloomberg` à la
+        fin du `<title>` même quand la balise `<source>` est présente. Sans
+        nettoyage, un même article relayé par Google News ET par CryptoCompare
+        a deux titres strictement différents (un avec suffix, l'autre sans),
+        ce qui défait la dédup multi-source de l'endpoint /headlines.
+        """
+        if not title or not publisher or publisher == "unknown":
+            return title
+        suffix = f" - {publisher}"
+        if title.endswith(suffix):
+            return title[: -len(suffix)].rstrip()
+        return title
+
+    @staticmethod
+    def _extract_published_iso(entry) -> str | None:
+        """Convertit `entry.published_parsed` (struct_time UTC) en ISO 8601 aware UTC.
+
+        Retourne None si feedparser n'a pas pu parser la date (champ absent
+        ou format inconnu).
+        """
+        parsed = None
+        try:
+            parsed = entry.get("published_parsed") if hasattr(entry, "get") else None
+        except (AttributeError, KeyError, TypeError):
+            return None
+        if not parsed:
+            return None
+        try:
+            ts = calendar.timegm(parsed)  # struct_time UTC → epoch
+            dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+            return dt.isoformat()
+        except (TypeError, ValueError, OverflowError):
+            return None
+
+    @staticmethod
+    def _verdict_to_sentiment(n_bull: int, n_bear: int) -> str:
+        """Convertit le couple (n_bull, n_bear) du classifier en label trinaire."""
+        if n_bull > n_bear:
+            return "bull"
+        if n_bear > n_bull:
+            return "bear"
+        return "neutral"
+
     async def _fetch(self, client: httpx.AsyncClient) -> dict | None:
         url = self._build_url()
         try:
@@ -149,16 +204,36 @@ class GoogleNewsIngester(BaseIngester):
         n_bearish = 0
         n_neutral = 0
         publishers: list[str] = []
+        headlines: list[dict] = []
+        fetched_at = datetime.now(tz=timezone.utc).isoformat()
         for entry in entries:
             title = entry.get("title", "") if hasattr(entry, "get") else ""
-            publishers.append(self._extract_publisher(entry))
-            n_bull, n_bear = await self.classifier.classify(title)
-            if n_bull > n_bear:
+            url_link = entry.get("link", "") if hasattr(entry, "get") else ""
+            publisher = self._extract_publisher(entry)
+            publishers.append(publisher)
+            # Nettoie le suffix " - Publisher" pour la dédup multi-source côté
+            # endpoint /headlines, mais ne change rien au calcul du score
+            # (la classif keywords/Ollama est insensible au suffix).
+            clean_title = self._strip_publisher_suffix(str(title), publisher)
+            n_bull, n_bear = await self.classifier.classify(clean_title)
+            sentiment = self._verdict_to_sentiment(n_bull, n_bear)
+            if sentiment == "bull":
                 n_bullish += 1
-            elif n_bear > n_bull:
+            elif sentiment == "bear":
                 n_bearish += 1
             else:
                 n_neutral += 1
+            if len(headlines) < MAX_HEADLINES:
+                headlines.append(
+                    {
+                        "title": clean_title.strip(),
+                        "url": str(url_link) if url_link else None,
+                        "publisher": publisher,
+                        "sentiment": sentiment,
+                        "published_at": self._extract_published_iso(entry),
+                        "fetched_at": fetched_at,
+                    }
+                )
 
         n_classified = n_bullish + n_bearish
         score = (n_bullish - n_bearish) / n_classified if n_classified > 0 else 0.0
@@ -179,7 +254,8 @@ class GoogleNewsIngester(BaseIngester):
             "n_bearish": n_bearish,
             "n_neutral": n_neutral,
             "top_publishers": top_publishers,
-            "fetched_at": datetime.now(tz=timezone.utc).isoformat(),
+            "headlines": headlines,
+            "fetched_at": fetched_at,
         }
 
     async def _run(self) -> None:
@@ -204,6 +280,7 @@ class GoogleNewsIngester(BaseIngester):
                         n_bullish=point["n_bullish"],
                         n_bearish=point["n_bearish"],
                         n_neutral=point["n_neutral"],
+                        n_headlines=len(point["headlines"]),
                         top_publisher=top,
                     )
                 await asyncio.sleep(self.interval_s)

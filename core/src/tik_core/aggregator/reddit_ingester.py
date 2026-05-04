@@ -11,6 +11,11 @@ log, mitigation brigading via filtres conservateurs).
 Pas de Reddit pour GOLD : r/Gold trop petit, r/wallstreetbets trop bruité
 et mal calibré pour le LLM 3B (ironie + argot WSB). GDELT évalué en
 Session 3 comme alternative macro/géopol pour GOLD.
+
+Champ `headlines` (Phase 1 trading manuel J+10) : liste des titres bruts
+classifiés, persistée dans le payload Redis aux côtés des agrégats. Cap
+local à `MAX_HEADLINES = 25`. Le calcul du score reste strictement
+inchangé — additif uniquement.
 """
 
 from __future__ import annotations
@@ -35,6 +40,7 @@ USER_AGENT = "tik-osint-bot/0.1 (research; contact escltheo@gmail.com)"
 REDIS_TTL_S = 2 * 3600  # 2h, comme les autres sources textuelles
 REDIS_KEY_TPL = "tik.sentiment.reddit.{entity}"
 MIN_SCORE_THRESHOLD = 5  # filtre brigading bas étage (cf. ADR-009 décision 3)
+MAX_HEADLINES = 25
 
 
 class RedditIngester(BaseIngester):
@@ -150,6 +156,43 @@ class RedditIngester(BaseIngester):
             return -1
         return 0
 
+    @staticmethod
+    def _verdict_value_to_sentiment(verdict: int) -> str:
+        """Convertit un verdict trinaire (-1/0/+1) en label string."""
+        if verdict > 0:
+            return "bull"
+        if verdict < 0:
+            return "bear"
+        return "neutral"
+
+    @staticmethod
+    def _parse_unix_iso(ts) -> str | None:
+        """Convertit un UNIX timestamp (int/float/str) en ISO 8601 aware UTC."""
+        if ts is None or ts == "":
+            return None
+        try:
+            return datetime.fromtimestamp(int(float(ts)), tz=timezone.utc).isoformat()
+        except (TypeError, ValueError, OverflowError, OSError):
+            return None
+
+    @staticmethod
+    def _build_permalink(permalink: str | None) -> str | None:
+        """Reconstruit l'URL absolue d'un thread Reddit depuis le permalink relatif.
+
+        Reddit JSON expose `permalink: /r/Bitcoin/comments/abc/title/` — on
+        préfixe `https://www.reddit.com` pour avoir une URL cliquable.
+        Préféré à `pdata["url"]` qui pointe parfois vers une ressource externe
+        (image, vidéo, article relayé) plutôt que le thread lui-même.
+        """
+        if not permalink:
+            return None
+        s = str(permalink)
+        if s.startswith("http"):
+            return s
+        if not s.startswith("/"):
+            s = "/" + s
+        return f"https://www.reddit.com{s}"
+
     async def _fetch(self, client: httpx.AsyncClient) -> dict | None:
         # 1. Récupérer les posts de tous les subs, filtrer
         all_posts: list[tuple[str, dict]] = []
@@ -181,6 +224,8 @@ class RedditIngester(BaseIngester):
         weighted_numerator = 0.0
         weighted_denominator = 0.0
         sub_distribution: list[str] = []
+        headlines: list[dict] = []
+        fetched_at = datetime.now(tz=timezone.utc).isoformat()
 
         for sub, pdata in all_posts:
             title = pdata.get("title", "") or ""
@@ -190,6 +235,7 @@ class RedditIngester(BaseIngester):
                 score = 0
             n_bull, n_bear = await self.classifier.classify(title)
             verdict = self._verdict_to_value(n_bull, n_bear)
+            sentiment = self._verdict_value_to_sentiment(verdict)
             if verdict > 0:
                 n_bullish += 1
             elif verdict < 0:
@@ -200,6 +246,17 @@ class RedditIngester(BaseIngester):
             weighted_numerator += weight * verdict
             weighted_denominator += weight
             sub_distribution.append(sub)
+            if len(headlines) < MAX_HEADLINES:
+                headlines.append(
+                    {
+                        "title": str(title).strip(),
+                        "url": self._build_permalink(pdata.get("permalink")),
+                        "publisher": f"r/{sub}",
+                        "sentiment": sentiment,
+                        "published_at": self._parse_unix_iso(pdata.get("created_utc")),
+                        "fetched_at": fetched_at,
+                    }
+                )
 
         # 3. Score net pondéré ∈ [-1, +1]
         score_net = (
@@ -224,7 +281,8 @@ class RedditIngester(BaseIngester):
             "n_bearish": n_bearish,
             "n_neutral": n_neutral,
             "top_subreddits": top_subs,
-            "fetched_at": datetime.now(tz=timezone.utc).isoformat(),
+            "headlines": headlines,
+            "fetched_at": fetched_at,
         }
 
     async def _run(self) -> None:
@@ -250,6 +308,7 @@ class RedditIngester(BaseIngester):
                         n_bullish=point["n_bullish"],
                         n_bearish=point["n_bearish"],
                         n_neutral=point["n_neutral"],
+                        n_headlines=len(point["headlines"]),
                         top_sub=top,
                     )
                 await asyncio.sleep(self.interval_s)

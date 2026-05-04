@@ -308,9 +308,12 @@ async def test_fetch_calls_classifier_for_each_title():
     await ing._fetch(client)
 
     assert len(classifier.calls) == 3
-    # Le classifier reçoit les titres bruts (avec suffix " - Publisher")
-    assert any("Reuters" in t for t in classifier.calls)
-    assert any("Bloomberg" in t for t in classifier.calls)
+    # Le classifier reçoit les titres NETTOYÉS du suffix " - Publisher"
+    # (cf. _strip_publisher_suffix, ajouté Phase 1 J+10 pour la dédup
+    # multi-source côté endpoint /headlines).
+    assert "Bitcoin surges to record high" in classifier.calls
+    assert "Crypto crash erases gains" in classifier.calls
+    assert "BTC market analysis without source tag" in classifier.calls
 
 
 async def test_fetch_resets_classifier_circuit_breaker():
@@ -430,3 +433,123 @@ async def test_stop_calls_classifier_aclose():
     # On ne lance pas start() (qui boucle), on appelle juste stop() pour vérifier aclose
     await ing.stop()
     assert classifier.aclose_called is True
+
+
+# =============================================================================
+# Champ `headlines` (Phase 1 trading manuel J+10)
+# =============================================================================
+
+
+async def test_fetch_includes_headlines_field():
+    """Le payload inclut une liste `headlines` avec les titres bruts classifiés."""
+    classifier = FakeClassifier(verdicts=[(1, 0), (0, 1), (0, 0)])
+    ing = _make_ingester(classifier=classifier, entity_id="BTC")
+    client = _FakeClient(response_text=RSS_FIXTURE_BTC)
+
+    payload = await ing._fetch(client)
+    assert payload is not None
+    assert "headlines" in payload
+    assert isinstance(payload["headlines"], list)
+    assert len(payload["headlines"]) == 3
+
+
+async def test_fetch_headlines_have_complete_format():
+    """Chaque headline a title/url/publisher/sentiment/fetched_at + published_at optionnel."""
+    classifier = FakeClassifier(verdicts=[(1, 0), (0, 1), (0, 0)])
+    ing = _make_ingester(classifier=classifier, entity_id="BTC")
+    client = _FakeClient(response_text=RSS_FIXTURE_BTC)
+
+    payload = await ing._fetch(client)
+    assert payload is not None
+    for h in payload["headlines"]:
+        assert "title" in h and isinstance(h["title"], str)
+        assert "url" in h  # peut être None ou string
+        assert "publisher" in h and isinstance(h["publisher"], str)
+        assert "sentiment" in h and h["sentiment"] in ("bull", "bear", "neutral")
+        assert "fetched_at" in h and isinstance(h["fetched_at"], str)
+        assert "published_at" in h  # peut être None ou ISO string
+
+
+async def test_fetch_headlines_sentiment_matches_classifier_verdict():
+    """Le label sentiment correspond strictement au verdict du classifier."""
+    classifier = FakeClassifier(verdicts=[(1, 0), (0, 1), (0, 0)])
+    ing = _make_ingester(classifier=classifier, entity_id="BTC")
+    client = _FakeClient(response_text=RSS_FIXTURE_BTC)
+
+    payload = await ing._fetch(client)
+    assert payload is not None
+    sentiments = [h["sentiment"] for h in payload["headlines"]]
+    assert sentiments == ["bull", "bear", "neutral"]
+
+
+def test_strip_publisher_suffix_removes_trailing_publisher():
+    """Le titre est nettoyé du suffix ' - Publisher' (préserve la dédup multi-source)."""
+    out = GoogleNewsIngester._strip_publisher_suffix(
+        "Bitcoin surges to record high - Reuters",
+        "Reuters",
+    )
+    assert out == "Bitcoin surges to record high"
+
+
+def test_strip_publisher_suffix_no_match_returns_unchanged():
+    """Si le titre ne se termine pas par ' - Publisher', il est renvoyé inchangé."""
+    out = GoogleNewsIngester._strip_publisher_suffix(
+        "Bitcoin surges to record high",
+        "Reuters",
+    )
+    assert out == "Bitcoin surges to record high"
+
+
+def test_strip_publisher_suffix_unknown_publisher_returns_unchanged():
+    """Si publisher='unknown', on ne touche pas au titre."""
+    out = GoogleNewsIngester._strip_publisher_suffix(
+        "Bitcoin update - Some site",
+        "unknown",
+    )
+    assert out == "Bitcoin update - Some site"
+
+
+async def test_fetch_headlines_strip_publisher_suffix_in_titles():
+    """Les titres dans le champ headlines sont nettoyés du ' - Publisher' final."""
+    classifier = FakeClassifier(verdicts=[(1, 0), (0, 1), (0, 0)])
+    ing = _make_ingester(classifier=classifier, entity_id="BTC")
+    client = _FakeClient(response_text=RSS_FIXTURE_BTC)
+
+    payload = await ing._fetch(client)
+    assert payload is not None
+    titles = [h["title"] for h in payload["headlines"]]
+    # Les 2 premiers fixtures ont " - Reuters" / " - Bloomberg" → doivent être nettoyés
+    assert "Bitcoin surges to record high" in titles
+    assert "Crypto crash erases gains" in titles
+    # Le 3e fixture n'a pas de suffix → reste tel quel
+    assert "BTC market analysis without source tag" in titles
+
+
+async def test_fetch_headlines_capped_at_max_25():
+    """Si plus de 25 entries sont classifiées, le champ headlines est cappé à 25.
+
+    Le score net continue d'être calculé sur TOUS les titres classifiés
+    (rétrocompat — calcul inchangé).
+    """
+    # 50 entries identiques, classifier neutre
+    rss_50 = """<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel>"""
+    for i in range(50):
+        rss_50 += (
+            f"<item><title>BTC update {i} - Reuters</title>"
+            f"<link>https://news.google.com/{i}</link>"
+            f"<pubDate>Wed, 30 Apr 2026 14:00:00 GMT</pubDate>"
+            f"<source url='https://reuters.com'>Reuters</source>"
+            f"</item>"
+        )
+    rss_50 += "</channel></rss>"
+
+    classifier = FakeClassifier(verdicts=[(0, 0)] * 50)
+    ing = _make_ingester(classifier=classifier, entity_id="BTC", limit=50)
+    client = _FakeClient(response_text=rss_50)
+
+    payload = await ing._fetch(client)
+    assert payload is not None
+    # n_articles compte tous les titres classifiés (pas cappé)
+    assert payload["n_articles"] == 50
+    # headlines liste cappée à 25
+    assert len(payload["headlines"]) == 25
