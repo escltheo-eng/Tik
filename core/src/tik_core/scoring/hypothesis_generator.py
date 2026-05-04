@@ -449,7 +449,25 @@ async def apply_llm_hypothesis(
         )
         return
 
+    # Détection de fallback : si le generator (Ollama) a fallback sur son
+    # template interne (timeout, sortie invalide, prix inventé, circuit
+    # breaker ouvert), le texte retourné est exactement le rendu template
+    # — pas un vrai contenu LLM. On ne stocke alors RIEN dans
+    # `advisory.llm_hypothesis_candidate` (mode shadow) ni rien à
+    # remplacer (mode active) pour éviter d'afficher dans le dashboard
+    # une carte "LLM · validation" qui ne contient pas de texte LLM.
+    template_text = render_template_hypothesis(decision, horizon)
+    is_fallback = (llm_text.strip() == template_text.strip())
+
     if mode == "shadow":
+        if is_fallback:
+            log.info(
+                "hypothesis_generator.shadow.fallback",
+                entity_id=decision.entity_id,
+                horizon=horizon,
+                reason="llm_returned_template_no_candidate_stored",
+            )
+            return
         if not isinstance(decision.advisory, dict):
             decision.advisory = {}
         decision.advisory["llm_hypothesis_candidate"] = llm_text
@@ -463,6 +481,14 @@ async def apply_llm_hypothesis(
         return
 
     if mode == "active":
+        if is_fallback:
+            log.info(
+                "hypothesis_generator.active.fallback",
+                entity_id=decision.entity_id,
+                horizon=horizon,
+                reason="llm_returned_template_kept_as_is",
+            )
+            return
         if not isinstance(decision.advisory, dict):
             decision.advisory = {}
         decision.advisory["template_hypothesis"] = decision.hypothesis

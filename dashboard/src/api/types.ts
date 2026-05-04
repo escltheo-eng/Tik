@@ -48,11 +48,17 @@ export interface Advisory {
   bias_on_existing_positions: string | null;
   macro_crash_warning: boolean;
   notes: string | null;
+  // Champs ADR-012 (LLM hypothesis generator) — optionnels.
+  // Présents selon le mode TIK_LLM_HYPOTHESIS_MODE :
+  //   shadow → llm_hypothesis_candidate (sortie LLM en validation passive)
+  //   active → template_hypothesis (ancien template conservé pour audit)
+  llm_hypothesis_candidate?: string;
+  template_hypothesis?: string;
 }
 
 export type Direction = 'long' | 'short' | 'neutral';
 export type Horizon = 'flash' | 'swing' | 'macro';
-export type CircuitBreakerStatus = 'ok' | 'tripped';
+export type CircuitBreakerStatus = 'ok' | 'degraded' | 'tripped';
 
 export interface Signal {
   id: string;

@@ -411,28 +411,69 @@ async def test_apply_with_none_generator_is_noop():
     assert decision.advisory == {}
 
 
-async def test_apply_shadow_stores_in_advisory():
+async def test_apply_shadow_stores_distinct_llm_output():
+    """Mode shadow stocke le candidate uniquement si la sortie LLM
+    diffère du template (= vraie sortie LLM, pas un fallback)."""
     decision = _rich_decision()
     original = decision.hypothesis
+
+    class RealLLMGen(HypothesisGenerator):
+        method_name = "ollama:fake"
+
+        async def generate(self, decision, horizon):
+            return (
+                "Long position recommended on BTC with high confidence. " * 12
+            )
+
+    await apply_llm_hypothesis(decision, "swing", RealLLMGen(), mode="shadow")
+    assert decision.hypothesis == original  # template inchangé
+    assert "llm_hypothesis_candidate" in decision.advisory
+    assert "Long position" in decision.advisory["llm_hypothesis_candidate"]
+
+
+async def test_apply_shadow_skips_fallback_template():
+    """Si le generator retourne le template (fallback Ollama), aucun
+    candidate n'est stocké pour ne pas tromper le dashboard."""
+    decision = _rich_decision()
+    original = decision.hypothesis
+    # TemplateHypothesisGenerator retourne EXACTEMENT le rendu template,
+    # qui équivaut à un fallback côté apply_llm_hypothesis.
     gen = TemplateHypothesisGenerator()
     await apply_llm_hypothesis(decision, "swing", gen, mode="shadow")
-    # hypothesis NE doit PAS être modifié en mode shadow
     assert decision.hypothesis == original
-    # mais l'advisory doit contenir le candidate LLM
-    assert "llm_hypothesis_candidate" in decision.advisory
-    assert "Swing long on BTC" in decision.advisory["llm_hypothesis_candidate"]
+    assert "llm_hypothesis_candidate" not in decision.advisory
 
 
-async def test_apply_active_replaces_hypothesis():
+async def test_apply_active_replaces_with_distinct_llm_output():
+    """Mode active remplace l'hypothèse uniquement si la sortie diffère
+    du template. Sinon, l'hypothèse reste intacte (pas de double-écriture
+    inutile + log explicite du fallback)."""
+    decision = _rich_decision()
+    original = decision.hypothesis
+
+    class RealLLMGen(HypothesisGenerator):
+        method_name = "ollama:fake"
+
+        async def generate(self, decision, horizon):
+            return (
+                "Long position recommended on BTC with high confidence. " * 12
+            )
+
+    await apply_llm_hypothesis(decision, "swing", RealLLMGen(), mode="active")
+    assert decision.hypothesis != original
+    assert "Long position" in decision.hypothesis
+    assert decision.advisory["template_hypothesis"] == original
+
+
+async def test_apply_active_skips_fallback_template():
+    """En mode active, si la sortie est le template (fallback), on ne
+    fait rien (decision.hypothesis a déjà le template)."""
     decision = _rich_decision()
     original = decision.hypothesis
     gen = TemplateHypothesisGenerator()
     await apply_llm_hypothesis(decision, "swing", gen, mode="active")
-    # hypothesis remplacée
-    assert decision.hypothesis != original
-    assert "Swing long on BTC" in decision.hypothesis
-    # ancien template conservé pour audit
-    assert decision.advisory["template_hypothesis"] == original
+    assert decision.hypothesis == original
+    assert "template_hypothesis" not in decision.advisory
 
 
 async def test_apply_handles_timeout():
@@ -481,11 +522,19 @@ async def test_apply_unknown_mode_is_noop():
 
 
 async def test_apply_handles_advisory_not_dict():
-    """Si decision.advisory n'est pas un dict (ex: None), on le réinitialise."""
+    """Si decision.advisory n'est pas un dict (ex: None), on le réinitialise
+    quand on stocke un candidate. Vérifié avec une vraie sortie LLM
+    (différente du template) pour ne pas tomber dans la branche fallback."""
     decision = _rich_decision()
     decision.advisory = None  # type: ignore[assignment]
-    gen = TemplateHypothesisGenerator()
-    await apply_llm_hypothesis(decision, "swing", gen, mode="shadow")
+
+    class RealLLMGen(HypothesisGenerator):
+        method_name = "ollama:fake"
+
+        async def generate(self, decision, horizon):
+            return "Long position recommended on BTC " * 15
+
+    await apply_llm_hypothesis(decision, "swing", RealLLMGen(), mode="shadow")
     assert isinstance(decision.advisory, dict)
     assert "llm_hypothesis_candidate" in decision.advisory
 

@@ -55,6 +55,12 @@ class Advisory(BaseModel):
     bias_on_existing_positions: str | None = None
     macro_crash_warning: bool = False
     notes: str | None = None
+    # Champs ADR-012 (LLM hypothesis generator) — optionnels.
+    # Présents selon le mode TIK_LLM_HYPOTHESIS_MODE :
+    #   shadow → llm_hypothesis_candidate (sortie LLM en validation passive)
+    #   active → template_hypothesis (ancien template conservé pour audit)
+    llm_hypothesis_candidate: str | None = None
+    template_hypothesis: str | None = None
 
 
 class SignalOut(BaseModel):

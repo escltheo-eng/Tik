@@ -137,6 +137,40 @@ export default function SignalDetailScreen() {
         </ThemedView>
       ) : null}
 
+      {/*
+        Carte secondaire ADR-012 — affichée conditionnellement :
+        - Mode shadow : Signal.advisory.llm_hypothesis_candidate présent
+          ET de longueur ≥ 30 mots (filet anti-fantôme en cas de
+          stockage par erreur d'un texte template court côté backend).
+        - Mode active : Signal.advisory.template_hypothesis présent
+          → on montre l'ancien texte template "pour référence" en audit
+          permanent post-bascule.
+        Si aucun des deux n'est présent (mode disabled ou Paquet 6 pas
+        encore livré sur ce signal historique), la carte ne s'affiche pas.
+      */}
+      {signal.advisory.llm_hypothesis_candidate &&
+       signal.advisory.llm_hypothesis_candidate.split(/\s+/).filter(Boolean).length >= 30 ? (
+        <ThemedView style={[cardStyle, styles.llmCard]}>
+          <ThemedView style={[styles.llmHeader, { backgroundColor: 'transparent' }]}>
+            <ThemedText type="subtitle">Hypothèse contextuelle</ThemedText>
+            <ThemedView style={[styles.llmBadge, { backgroundColor: '#7f8c8d' }]}>
+              <ThemedText style={styles.llmBadgeLabel}>LLM · validation</ThemedText>
+            </ThemedView>
+          </ThemedView>
+          <ThemedText>{signal.advisory.llm_hypothesis_candidate}</ThemedText>
+        </ThemedView>
+      ) : signal.advisory.template_hypothesis ? (
+        <ThemedView style={[cardStyle, styles.llmCard]}>
+          <ThemedView style={[styles.llmHeader, { backgroundColor: 'transparent' }]}>
+            <ThemedText type="subtitle">Hypothèse template</ThemedText>
+            <ThemedView style={[styles.llmBadge, { backgroundColor: '#7f8c8d' }]}>
+              <ThemedText style={styles.llmBadgeLabel}>référence</ThemedText>
+            </ThemedView>
+          </ThemedView>
+          <ThemedText>{signal.advisory.template_hypothesis}</ThemedText>
+        </ThemedView>
+      ) : null}
+
       <ThemedView style={cardStyle}>
         <ThemedText type="subtitle">
           Contre-scénarios ({signal.counter_scenarios.length})
@@ -320,5 +354,26 @@ const styles = StyleSheet.create({
   idCard: {
     paddingVertical: 8,
     alignItems: 'center',
+  },
+  llmCard: {
+    // Léger fond gris-bleu pour distinguer visuellement la carte
+    // secondaire de validation. Border identique aux autres cartes.
+    backgroundColor: 'rgba(127, 140, 141, 0.06)',
+  },
+  llmHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  llmBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 4,
+  },
+  llmBadgeLabel: {
+    color: '#ffffff',
+    fontSize: 10,
+    fontWeight: '600',
+    letterSpacing: 0.4,
   },
 });
