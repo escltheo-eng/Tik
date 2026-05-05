@@ -22,7 +22,11 @@ export function KpiCard({ title, value, subtitle, accent, style }: KpiCardProps)
       <ThemedText type="title" style={[styles.value, accent ? { color: accent } : undefined]}>
         {value}
       </ThemedText>
-      {subtitle ? <ThemedText style={styles.subtitle}>{subtitle}</ThemedText> : null}
+      {subtitle ? (
+        <ThemedText style={styles.subtitle} numberOfLines={2}>
+          {subtitle}
+        </ThemedText>
+      ) : null}
     </ThemedView>
   );
 }
@@ -34,7 +38,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 12,
     gap: 4,
-    minHeight: 96,
+    // Augmenté de 96 → 110 pour accommoder un subtitle sur 2 lignes
+    // (cas "Dernier signal par actif" avec conf + verac + il y a X min).
+    minHeight: 110,
   },
   title: {
     fontSize: 12,
@@ -49,5 +55,6 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 12,
     opacity: 0.6,
+    lineHeight: 16,
   },
 });
