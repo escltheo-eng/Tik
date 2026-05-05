@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, StyleSheet } from 'react-native';
 
+import { HitRateByVeracityCard } from '@/components/dashboard/hit-rate-by-veracity-card';
 import { HitRateCard } from '@/components/dashboard/hit-rate-card';
 import { KpiCard } from '@/components/dashboard/kpi-card';
 import { MiniSparkline } from '@/components/dashboard/mini-sparkline';
@@ -18,11 +19,12 @@ import { Health } from '@/src/api/types';
 import { useAuth } from '@/src/auth/AuthContext';
 import { useDashboardKpis } from '@/src/hooks/useDashboardKpis';
 import { useHitRate } from '@/src/hooks/useHitRate';
+import { useHitRateByVeracity } from '@/src/hooks/useHitRateByVeracity';
 import { useTick } from '@/src/hooks/use-tick';
 import { useTopHeadlines } from '@/src/hooks/useTopHeadlines';
 import { timeAgo } from '@/src/utils/time';
 
-const APP_VERSION = '0.5.4';
+const APP_VERSION = '0.5.5';
 
 const HEALTH_REFRESH_INTERVAL_MS = 30_000;
 
@@ -90,6 +92,9 @@ export default function HomeScreen() {
   const [hitRateHorizon, setHitRateHorizon] = useState<string>('swing');
   const [hitRateIncludeFlagged, setHitRateIncludeFlagged] = useState<boolean>(false);
   const hitRateState = useHitRate(hitRateEntity, hitRateHorizon, {
+    includeFlagged: hitRateIncludeFlagged,
+  });
+  const hitRateByVeracityState = useHitRateByVeracity(hitRateEntity, hitRateHorizon, {
     includeFlagged: hitRateIncludeFlagged,
   });
   useTick();
@@ -212,6 +217,14 @@ export default function HomeScreen() {
         onIncludeFlaggedChange={setHitRateIncludeFlagged}
         loading={hitRateState.loading}
         error={hitRateState.error}
+      />
+
+      <HitRateByVeracityCard
+        data={hitRateByVeracityState.data}
+        entityId={hitRateEntity}
+        horizon={hitRateHorizon}
+        loading={hitRateByVeracityState.loading}
+        error={hitRateByVeracityState.error}
       />
 
       <TopHeadlinesCard

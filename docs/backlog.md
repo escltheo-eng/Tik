@@ -269,3 +269,107 @@ mesure golden. Soit ~6 semaines calendaires depuis le démarrage.
 Mode shadow LLM strict obligatoire avant bascule active (ne pas répéter
 l'erreur de raisonner *"bah on verra ben"* — l'hypothèse hallucinée serait
 pire que template, cf. ADR-012 décision 3).
+
+---
+
+## 5. Vision Tik « conseiller financier macro/géopolitique » + refonte dashboard (post-J+14)
+
+**Date d'identification** : 2026-05-05 (en cours de Phase A.2-bis)
+
+**Contexte** : l'utilisatrice principale a clarifié sa vision long terme
+de Tik — *« je veux que tik soit également le meilleur conseiller financier,
+tous les secteurs d'activités BTC et gold qui sont liés à la geopolitique »*.
+La vision domain-agnostic est déjà documentée dans `CLAUDE.md` section 1
+(*« Périmètre futur : domain-agnostic — sport betting, politique, météo-finance,
+tout système décisionnel ayant besoin d'OSINT + scoring »*) et techniquement
+le pipeline est sur cette voie (GDELT géopolitique, FRED DXY, CFTC COT, pattern
+multi-overlay ADR-004 extensible). Mais aujourd'hui Tik est focalisé
+**trading direction (long/short/neutral)** et le dashboard est devenu
+**dense (9-10 cartes Home empilées)**. Pour passer de « MVP trading » à
+« plateforme de conseil financier macro », il manque 3 axes structurants
++ une refonte UX dashboard.
+
+### A — Élargissement scope « conseiller financier macro »
+
+3 chantiers (chacun ~1-2 sessions, à étaler sur 4-6 semaines post-J+14) :
+
+1. **Calendrier événementiel macro** (FOMC, NFP, CPI, GDP, élections,
+   sommets, sanctions) → c'est exactement la **Lacune B** prévue les 7-8
+   mai (cf. entry n°3 ci-dessus). **Brique pivot** — sans calendrier, on
+   ne peut pas anticiper les chocs macro.
+
+2. **Scope élargi des entities** — ajouter :
+   - `US_DEBT` (dette US, watch sur crisis liquidity)
+   - `OIL` (Brent + WTI, géopolitique Moyen-Orient)
+   - `EUR_USD` (paire FX majeure, watch BCE/Fed)
+   - `EM_RISK` (marchés émergents, risk-off)
+   - `GEOPOLITICAL_RISK` (entity composite agrégeant GDELT + sanctions + élections)
+
+   Chaque nouvelle entity = ses sources (FRED, CFTC pour la plupart, ICE pour Brent),
+   son scoring multi-overlay. **L'archi le supporte sans refacto** (ADR-004).
+   Coût estimé : ~1 session par entity (~5h).
+
+3. **Format de signaux narratifs élargi** (au-delà du long/short/neutral) — pour
+   coller au format « conseiller » :
+   - *« rotation actions → cash si VIX > 30 »* (signal conditionnel)
+   - *« scénario or +5 % si tensions Taiwan persistent »* (signal probabiliste)
+   - *« risk-off généralisé, 4 sources alignées »* (signal qualitatif)
+
+   C'est la **Phase 2 ADR-015** déjà tracée entry n°4 (post-J+30 après calibration LLM).
+
+### B — Refonte dashboard (simplification visuelle + accès aux outils)
+
+**Constat 2026-05-05** : la Home empile aujourd'hui 9-10 cartes (État du core,
+Veracity, Stats LLM, Hit rate, Hit rate par veracity, Top headlines, Activité 24h,
+Dernier signal par actif, Tendance veracity, Roadmap Paquet 3, Version box).
+**Trop dense pour l'utilisatrice principale** qui n'a jamais codé.
+
+4 leviers évalués pour/contre/verdict :
+
+| Levier | Pour | Contre | Score |
+|---|---|---|---|
+| **A. Hiérarchiser** : "Avant trade" essentiel vs "Diagnostic" collapsed par défaut vs "Détail" via tap | Découverte progressive, scroll réduit | Effort moyen, risque de masquer des infos utiles | 7/10 |
+| **B. Tabs internes Home** : `Marché` / `Système` / `Calibration` | Réduit la longueur de scroll, structure claire | 2 clics pour accéder à un info | 7/10 |
+| **C. Mode contextuel** : avant J+14 = focus calibration, après = focus marché live | Adapté à l'usage réel | Complexité runtime, risque de bugs | 5/10 |
+| **D. Élaguer obsolète** (Roadmap Paquet 3 livrée, Version box → footer App) | Quick win, ~30 min | Cosmétique, pas structurel | 6/10 |
+
+**Verdict envisagé** : combiner **B (tabs) + D (élagage)**. Tabs `Marché / Calibration / Système` :
+- **Marché** : Top headlines (en haut) + Veracity globale + Dernier signal par actif + Activité 24h
+- **Calibration** : Hit rate live + Hit rate par veracity + Tendance veracity + Stats LLM
+- **Système** : État du core + Bouton refresh + Version box + lien vers Config/Bots/Alerts
+
+L'écran d'accueil devient **« Marché »** par défaut (= ce dont tu as besoin avant un trade).
+**Calibration** devient une vue d'audit séparée qu'on consulte en début de
+journée. **Système** disparaît dans un menu secondaire.
+
+### Pourquoi attendre post-J+14 — décision paranoïa contrôlée
+
+1. **Tu as appris** le dashboard actuel pendant 4 jours (du 1er au 5 mai). Le
+   re-shuffler avant J+14 = re-apprentissage forcé + risque de bugs visuels
+   à un moment où ta concentration doit être sur le marché.
+2. **Une refonte UX honnête** (3-4h cumulées) mérite : audit toutes pages +
+   maquettes + livraison incrémentale (1 page à la fois, pas tout d'un coup).
+   Minimum 2-3 sessions, jamais à la va-vite avant un trade.
+3. **L'élargissement scope** (Levier A) demande de nouveaux ingesters
+   (ICE Brent, FRED rates, etc.) qui ne s'écrivent pas en 1h.
+
+### Quick win possible avant J+14 (optionnel)
+
+**Just élaguer la Roadmap Paquet 3** (~30 min, 1 fichier modifié `index.tsx`)
+si l'utilisatrice trouve que ça encombre. Quick win pur, zéro risque de
+régression structurelle.
+
+### Quand l'attaquer
+
+**Post-J+14** (après les premières semaines de trading manuel). L'ordre proposé :
+1. Élagage obsolète (~30 min) — n'importe quand
+2. Tabs internes Home (~2-3h) — semaine du 15-22 mai
+3. Élargissement scope entities (~5h × 4 entities) — sur 2-3 semaines
+4. Format signaux narratifs (Phase 2 ADR-015) — post-J+30, après 2-3 semaines
+   de trading manuel et calibration LLM hypothesis
+
+**Coût estimé total** : ~3-4 semaines calendaires post-J+14.
+
+**Risque rappelé** : Garde-fou 1 inchangé (Tik shadow vs Zeta), ADR-003
+inchangé (Tik ne crée jamais d'ordre), ADR-004 (multi-overlay) inchangé.
+Tous les nouveaux scopes/formats = ajouts non destructifs.

@@ -129,3 +129,31 @@ export interface HitRate {
   computed_at: string;
   cache_hit: boolean;
 }
+
+// ----- Hit rate by veracity (Phase A.2-bis) -----
+
+export interface HitRateByVeracityBucket {
+  bucket_label: string;
+  veracity_min: number;
+  veracity_max: number;
+  n_evaluated: number;
+  n_skipped: number;
+  n_success: number;
+  hit_rate: number;
+  avg_gain_pct: number;
+}
+
+export interface HitRateByVeracity {
+  entity_id: string;
+  horizon: string;
+  since_days: number;
+  threshold_pct: number;
+  measure_hours: number;
+  n_total_eligible: number;
+  n_flagged_excluded: number;
+  include_flagged: boolean;
+  buckets: HitRateByVeracityBucket[];
+  sample_warning: string | null;
+  computed_at: string;
+  cache_hit: boolean;
+}

@@ -231,6 +231,45 @@ class HitRateOut(BaseModel):
         return iso_utc(value) or ""
 
 
+class HitRateByVeracityBucket(BaseModel):
+    """Une tranche de veracity dans le rapport hit_rate_by_veracity."""
+
+    bucket_label: str  # ex: "0.90-0.94"
+    veracity_min: float = Field(ge=0, le=1)
+    veracity_max: float = Field(gt=0)  # peut être 1.01 (cf. compute logic)
+    n_evaluated: int
+    n_skipped: int
+    n_success: int
+    hit_rate: float = Field(ge=0, le=1)
+    avg_gain_pct: float
+
+
+class HitRateByVeracityOut(BaseModel):
+    """Hit rate segmenté par tranche de veracity (Phase A.2-bis J+10).
+
+    L'insight clé du backtest 2026-05-05 : sur 156 signaux 5j, hit rate
+    global 24% mais 67% sur veracity 0.95+. Cette carte rend visible le
+    bénéfice du filtre veracity côté dashboard pour calibrer le sizing.
+    """
+
+    entity_id: str
+    horizon: str
+    since_days: int
+    threshold_pct: float
+    measure_hours: float
+    n_total_eligible: int
+    n_flagged_excluded: int
+    include_flagged: bool
+    buckets: list[HitRateByVeracityBucket]
+    sample_warning: str | None = None
+    computed_at: datetime
+    cache_hit: bool = False
+
+    @field_serializer("computed_at", when_used="json")
+    def _ser_computed_at(self, value: datetime) -> str:
+        return iso_utc(value) or ""
+
+
 # ----- Health -----
 
 class HealthOut(BaseModel):

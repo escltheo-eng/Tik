@@ -174,3 +174,77 @@ def make_cache_key(
         f"tik.metrics.hit_rate.{entity_id}.{horizon}.{since_days}."
         f"{threshold_pct:.2f}.{flagged_part}"
     )
+
+
+# ----- Hit rate par tranche de veracity (Phase A.2-bis) -----
+
+# Buckets cohérents avec les paliers natifs Tik (cf. comprendre_tik.md
+# section 6 et les insights backtest 2026-05-05).
+VERACITY_BUCKETS: list[tuple[float, float, str]] = [
+    (0.70, 0.80, "0.70-0.79"),
+    (0.80, 0.90, "0.80-0.89"),
+    (0.90, 0.95, "0.90-0.94"),
+    (0.95, 1.01, "0.95-1.00"),  # 1.01 pour inclure 1.00 strictement (< vmax)
+]
+
+
+def compute_hit_rate_by_veracity(
+    signals: list[Signal],
+    *,
+    horizon: str,
+    threshold_pct: float,
+    btc_history: list[tuple[int, float]],
+    gold_history: list[tuple[int, float]],
+) -> list[dict]:
+    """Calcule le hit rate segmenté par tranche de veracity.
+
+    Retourne une liste de dicts (1 par bucket VERACITY_BUCKETS), même si
+    un bucket est vide (n_evaluated=0). Permet à l'UI d'afficher tous les
+    paliers même les non-peuplés (transparence — pattern OSINT pro).
+
+    Réutilise compute_hit_rate sur chaque sous-ensemble. Pas d'optim
+    prématurée — la complexité est O(n_signals × n_buckets) = 4n acceptable.
+    """
+    if horizon not in HORIZON_MEASURE_HOURS:
+        raise ValueError(f"Unknown horizon: {horizon}")
+
+    results: list[dict] = []
+    for vmin, vmax, label in VERACITY_BUCKETS:
+        bucket_signals = [
+            s for s in signals
+            if s.veracity is not None and vmin <= float(s.veracity) < vmax
+        ]
+        stats = compute_hit_rate(
+            bucket_signals,
+            horizon=horizon,
+            threshold_pct=threshold_pct,
+            btc_history=btc_history,
+            gold_history=gold_history,
+        )
+        results.append({
+            "bucket_label": label,
+            "veracity_min": vmin,
+            "veracity_max": vmax,
+            "n_evaluated": stats["n_evaluated"],
+            "n_skipped": stats["n_skipped"],
+            "n_success": stats["n_success"],
+            "hit_rate": stats["hit_rate"],
+            "avg_gain_pct": stats["avg_gain_pct"],
+        })
+    return results
+
+
+def make_cache_key_by_veracity(
+    *,
+    entity_id: str,
+    horizon: str,
+    since_days: int,
+    threshold_pct: float,
+    include_flagged: bool,
+) -> str:
+    """Clé Redis pour le cache du résultat hit rate par veracity."""
+    flagged_part = "all" if include_flagged else "clean"
+    return (
+        f"tik.metrics.hit_rate_by_veracity.{entity_id}.{horizon}.{since_days}."
+        f"{threshold_pct:.2f}.{flagged_part}"
+    )

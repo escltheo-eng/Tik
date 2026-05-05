@@ -35,13 +35,19 @@ from tik_core.metrics.hit_rate import (
     HORIZON_DEFAULT_THRESHOLD_PCT,
     HORIZON_MEASURE_HOURS,
     compute_hit_rate,
+    compute_hit_rate_by_veracity,
     filter_signals_for_horizon,
     make_cache_key,
+    make_cache_key_by_veracity,
 )
 from tik_core.scripts.backtest import fetch_btc_history, fetch_gold_history
 from tik_core.storage.database import get_session
 from tik_core.storage.models import Signal
-from tik_core.storage.schemas import HitRateOut
+from tik_core.storage.schemas import (
+    HitRateByVeracityBucket,
+    HitRateByVeracityOut,
+    HitRateOut,
+)
 from tik_core.utils.time import now_utc, now_utc_naive
 
 log = structlog.get_logger()
@@ -222,6 +228,170 @@ async def get_hit_rate(
             )
         except Exception as exc:  # noqa: BLE001
             log.warning("metrics.hit_rate.cache_write_error", error=str(exc))
+
+        return out
+    finally:
+        await redis.close()
+
+
+@router.get("/hit_rate_by_veracity", response_model=HitRateByVeracityOut)
+async def get_hit_rate_by_veracity(
+    entity_id: str = Query(..., description="Identifiant entity Tik (ex: BTC, GOLD). Domain-agnostic."),
+    horizon: str = Query(
+        ...,
+        pattern="^(flash|swing|macro)$",
+        description="Horizon Tik. flash=mesure 1h, swing=mesure 5j, macro=mesure 30j.",
+    ),
+    since_days: int = Query(30, ge=1, le=90, description="Fenêtre temporelle en jours (1-90)."),
+    threshold_pct: float | None = Query(
+        None,
+        ge=0.01,
+        le=10.0,
+        description=(
+            "Seuil de variation (%%) pour considérer un signal long/short comme réussi. "
+            "Si non fourni, utilise le défaut par horizon."
+        ),
+    ),
+    include_flagged: bool = Query(
+        False,
+        description="Si false (défaut), exclut les signaux flagués anti fake-news.",
+    ),
+    session: AsyncSession = Depends(get_session),
+    _ctx: AuthContext = Depends(require_scope("read:signals")),
+) -> HitRateByVeracityOut:
+    """Hit rate segmenté par tranche de veracity (Phase A.2-bis J+10).
+
+    Insight clé du backtest 2026-05-05 : le hit rate global brut est
+    trompeur. Sur 156 signaux 5j, global=24% mais veracity 0.95+=67%.
+    Cette mesure rend le filtre veracity exploitable pour calibrer le
+    sizing avant un trade manuel.
+
+    Buckets veracity (cohérents `comprendre_tik.md` section 6) :
+    0.70-0.79 / 0.80-0.89 / 0.90-0.94 / 0.95-1.00.
+
+    Cache Redis TTL 15 min sur la combinaison
+    (entity, horizon, since_days, threshold_pct, include_flagged).
+
+    Limites assumées (en plus de celles de /hit_rate) :
+    - Buckets très peu peuplés (N<10) → hit rate volatile, marqué dans
+      l'UI par un drapeau "échantillon faible".
+    - Période bullish/bearish biaise toujours globalement (même filtre).
+    """
+    effective_threshold = (
+        threshold_pct
+        if threshold_pct is not None
+        else HORIZON_DEFAULT_THRESHOLD_PCT[horizon]
+    )
+
+    settings = get_settings()
+    redis = aioredis.from_url(settings.redis_url, decode_responses=True)
+    cache_key = make_cache_key_by_veracity(
+        entity_id=entity_id,
+        horizon=horizon,
+        since_days=since_days,
+        threshold_pct=effective_threshold,
+        include_flagged=include_flagged,
+    )
+
+    try:
+        try:
+            cached = await redis.get(cache_key)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("metrics.hit_rate_by_veracity.cache_read_error", error=str(exc))
+            cached = None
+
+        if cached:
+            try:
+                data = json.loads(cached)
+                data["cache_hit"] = True
+                return HitRateByVeracityOut(**data)
+            except (TypeError, ValueError, KeyError) as exc:
+                log.warning("metrics.hit_rate_by_veracity.cache_parse_error", error=str(exc))
+
+        now = now_utc_naive()
+        cutoff_recent = now - timedelta(days=since_days)
+        result = await session.execute(
+            select(Signal)
+            .where(Signal.timestamp >= cutoff_recent)
+            .order_by(Signal.timestamp.desc())
+        )
+        all_signals = list(result.scalars().all())
+
+        eligible, n_flagged_excluded = filter_signals_for_horizon(
+            all_signals,
+            horizon=horizon,
+            entity_id=entity_id,
+            since_days=since_days,
+            now=now,
+            include_flagged=include_flagged,
+        )
+
+        btc_history: list[tuple[int, float]] = []
+        gold_history: list[tuple[int, float]] = []
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                if entity_id == "BTC":
+                    btc_history = await fetch_btc_history(client)
+                elif entity_id == "GOLD":
+                    gold_history = await fetch_gold_history(client)
+        except Exception as exc:  # noqa: BLE001
+            log.error(
+                "metrics.hit_rate_by_veracity.history_fetch_error",
+                entity_id=entity_id,
+                error=str(exc),
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=(
+                    f"Impossible de récupérer l'historique de prix {entity_id} "
+                    f"(Binance/Yahoo Finance temporairement indisponible)."
+                ),
+            ) from exc
+
+        bucket_dicts = compute_hit_rate_by_veracity(
+            eligible,
+            horizon=horizon,
+            threshold_pct=effective_threshold,
+            btc_history=btc_history,
+            gold_history=gold_history,
+        )
+        buckets = [HitRateByVeracityBucket(**b) for b in bucket_dicts]
+
+        total_evaluated = sum(b.n_evaluated for b in buckets)
+        sample_warning: str | None = None
+        if total_evaluated == 0:
+            sample_warning = (
+                "Aucun signal éligible — fenêtre trop courte ou prix indisponibles."
+            )
+        elif total_evaluated < 30:
+            sample_warning = (
+                f"Échantillon faible (total {total_evaluated} signaux, "
+                f"30 mini recommandé)."
+            )
+
+        out = HitRateByVeracityOut(
+            entity_id=entity_id,
+            horizon=horizon,
+            since_days=since_days,
+            threshold_pct=effective_threshold,
+            measure_hours=HORIZON_MEASURE_HOURS[horizon],
+            n_total_eligible=len(eligible),
+            n_flagged_excluded=n_flagged_excluded,
+            include_flagged=include_flagged,
+            buckets=buckets,
+            sample_warning=sample_warning,
+            computed_at=now_utc(),
+            cache_hit=False,
+        )
+
+        try:
+            await redis.set(
+                cache_key,
+                out.model_dump_json(),
+                ex=HIT_RATE_CACHE_TTL_SECONDS,
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.warning("metrics.hit_rate_by_veracity.cache_write_error", error=str(exc))
 
         return out
     finally:

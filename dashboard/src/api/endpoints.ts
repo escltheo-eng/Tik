@@ -14,6 +14,7 @@ import {
   Headline,
   Health,
   HitRate,
+  HitRateByVeracity,
   Signal,
   SourceVeracity,
   VeracityStatus,
@@ -145,6 +146,21 @@ export async function getHitRate(
   params: HitRateParams = {},
 ): Promise<HitRate> {
   return client.get<HitRate>('/metrics/hit_rate', {
+    entity_id: entityId,
+    horizon,
+    since_days: params.sinceDays ?? 30,
+    threshold_pct: params.thresholdPct,
+    include_flagged: params.includeFlagged ?? false,
+  });
+}
+
+export async function getHitRateByVeracity(
+  client: HttpClient,
+  entityId: string,
+  horizon: string,
+  params: HitRateParams = {},
+): Promise<HitRateByVeracity> {
+  return client.get<HitRateByVeracity>('/metrics/hit_rate_by_veracity', {
     entity_id: entityId,
     horizon,
     since_days: params.sinceDays ?? 30,
