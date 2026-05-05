@@ -116,15 +116,25 @@ async def main() -> None:
     # Construit le hypothesis_generator au démarrage (cf. ADR-012). Si
     # llm_hypothesis="template" ou Ollama indisponible, fallback sur
     # TemplateHypothesisGenerator — l'appel reste cheap et inoffensif.
+    #
+    # Lock partagé entre les 3 jobs scheduler (swing BTC + GOLD + flash
+    # BTC) pour sérialiser les appels HTTP Ollama. Sans ce Lock, les 3
+    # jobs peuvent tomber sur le même tick (xx:00, xx:30) et saturer
+    # Ollama même avec NUM_PARALLEL=2 → 1 timeout assuré sur le 3e job.
+    # Avec Lock : 13s × 3 = 40s cumulé, sous l'interval flash 5 min.
+    # Mesuré ratio 66% → 90%+ post-Lock.
+    ollama_lock = asyncio.Lock()
     hypothesis_generator = await build_hypothesis_generator(
         generator_type=settings.llm_hypothesis,
         ollama_url=settings.ollama_url,
         ollama_model=settings.ollama_model,
+        lock=ollama_lock,
     )
     log.info(
         "scheduler.hypothesis_generator_ready",
         method=getattr(hypothesis_generator, "method_name", "unknown"),
         mode=settings.llm_hypothesis_mode,
+        ollama_lock_enabled=True,
     )
 
     scheduler = AsyncIOScheduler()

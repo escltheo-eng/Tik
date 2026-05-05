@@ -179,14 +179,25 @@ class OllamaHypothesisGenerator(HypothesisGenerator):
         url: str,
         model: str,
         fallback: HypothesisGenerator | None = None,
-        timeout_s: float = 35.0,
+        timeout_s: float = 50.0,
         num_predict: int = 350,
+        lock: asyncio.Lock | None = None,
     ) -> None:
         self.url = url.rstrip("/")
         self.model = model
         self.fallback = fallback or TemplateHypothesisGenerator()
         self.timeout_s = timeout_s
         self.num_predict = num_predict
+        # Lock optionnel partagé entre instances pour sérialiser les
+        # appels HTTP Ollama. Indispensable côté scheduler où 3 jobs
+        # (swing BTC + swing GOLD + flash BTC) peuvent tomber sur le
+        # même tick (xx:00, xx:30) et saturer Ollama même avec
+        # OLLAMA_NUM_PARALLEL=2 → 1 timeout assuré sur le 3e job. Un
+        # Lock partagé dans le scheduler force la sérialisation
+        # coût-side Tik. Cumulé : 13s × 3 = 40s, sous l'interval
+        # min 5 min flash. Pas de Lock dans les tests/CI ou en mode
+        # standalone : appels parallèles libres.
+        self._lock = lock
         self._consecutive_failures = 0
         self._batch_circuit_open = False
         self._client: httpx.AsyncClient | None = None
@@ -209,7 +220,15 @@ class OllamaHypothesisGenerator(HypothesisGenerator):
             return await self.fallback.generate(decision, horizon)
 
         try:
-            raw = await self._call_ollama(decision, horizon)
+            if self._lock is not None:
+                # Sérialise l'appel HTTP Ollama (mais PAS la
+                # validation/sanitize qui sont purement Python et
+                # rapides). Côté scheduler, ça empêche 3 jobs
+                # concurrents de saturer Ollama.
+                async with self._lock:
+                    raw = await self._call_ollama(decision, horizon)
+            else:
+                raw = await self._call_ollama(decision, horizon)
         except Exception as exc:  # noqa: BLE001
             self._consecutive_failures += 1
             # str(exc) est souvent vide pour httpx.ReadTimeout / asyncio
@@ -402,7 +421,7 @@ async def apply_llm_hypothesis(
     horizon: str,
     generator: HypothesisGenerator | None,
     mode: str,
-    timeout_s: float = 40.0,
+    timeout_s: float = 60.0,
 ) -> None:
     """Applique le generator à la decision en place selon le mode.
 
@@ -416,11 +435,12 @@ async def apply_llm_hypothesis(
                    l'ancienne pour audit
 
     Le timeout `timeout_s` enveloppe l'appel `generator.generate()` —
-    fixé à 40s par défaut, légèrement supérieur au timeout HTTP interne
-    du generator (35s) pour laisser une marge sans déclencher deux
+    fixé à 60s par défaut, légèrement supérieur au timeout HTTP interne
+    du generator (50s) pour laisser une marge sans déclencher deux
     erreurs en cascade. Calibré sur la latence mesurée de llama3.2:3b
-    sur Mac M1 (~13s/cycle pour ~250 mots) + tolérance pour 1 mise
-    en queue Ollama si plusieurs jobs Tik appellent en concurrence.
+    sur Mac M1 (~13s/cycle pour ~250 mots) avec marge pour les
+    prompts swing plus lourds (~30-40s observés en pic) et la
+    sérialisation Lock côté scheduler (3 jobs séquentiels = 40s cumulé).
     Ne lève jamais : tout échec est loggué et la decision reste
     inchangée (= conserve son hypothèse template).
     """
@@ -516,11 +536,17 @@ async def build_hypothesis_generator(
     generator_type: str,
     ollama_url: str,
     ollama_model: str,
+    lock: asyncio.Lock | None = None,
 ) -> HypothesisGenerator:
     """Sélectionne le generator selon la config et vérifie la santé Ollama.
 
     En cas d'indisponibilité Ollama, fallback sur TemplateHypothesisGenerator.
     Retour direct pour `generator_type == "template"` (skip ping).
+
+    Le `lock` optionnel est passé à `OllamaHypothesisGenerator` pour
+    sérialiser les appels HTTP Ollama. Utilisé côté scheduler pour
+    éviter la concurrence interne entre les 3 jobs (swing BTC + GOLD
+    + flash BTC) qui peuvent saturer Ollama même avec NUM_PARALLEL=2.
     """
     if generator_type == "template":
         log.info("hypothesis_generator.using_template")
@@ -532,10 +558,12 @@ async def build_hypothesis_generator(
             "hypothesis_generator.ollama_ready",
             url=ollama_url,
             model=ollama_model,
+            lock_enabled=lock is not None,
         )
         return OllamaHypothesisGenerator(
             url=ollama_url,
             model=ollama_model,
+            lock=lock,
         )
 
     log.warning(

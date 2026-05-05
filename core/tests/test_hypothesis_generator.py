@@ -640,3 +640,133 @@ async def test_build_ollama_model_missing_falls_back(monkeypatch):
         ollama_model="llama3.2:3b",
     )
     assert isinstance(gen, TemplateHypothesisGenerator)
+
+
+# ===== Lock asyncio (sérialisation des appels Ollama côté scheduler) =====
+
+
+async def test_ollama_no_lock_allows_parallel_calls(monkeypatch):
+    """Sans Lock, plusieurs generate() peuvent overlapper en parallèle."""
+    gen = OllamaHypothesisGenerator(url="http://x", model="llama3.2:3b")
+
+    active = [0]
+    max_active = [0]
+    valid_text = "Long position recommended on BTC " * 15
+
+    async def fake_call(decision, horizon):
+        active[0] += 1
+        max_active[0] = max(max_active[0], active[0])
+        await asyncio.sleep(0.05)
+        active[0] -= 1
+        return valid_text
+
+    monkeypatch.setattr(gen, "_call_ollama", fake_call)
+    decisions = [_rich_decision() for _ in range(4)]
+    await asyncio.gather(*[gen.generate(d, "swing") for d in decisions])
+
+    # Sans Lock, les 4 appels overlappent → max_active > 1
+    assert max_active[0] > 1, (
+        f"Expected parallel execution without lock, max_active={max_active[0]}"
+    )
+
+
+async def test_ollama_lock_serializes_parallel_calls(monkeypatch):
+    """Avec Lock, generate() force la sérialisation : 1 seul appel à la fois."""
+    lock = asyncio.Lock()
+    gen = OllamaHypothesisGenerator(
+        url="http://x", model="llama3.2:3b", lock=lock,
+    )
+
+    active = [0]
+    max_active = [0]
+    valid_text = "Long position recommended on BTC " * 15
+
+    async def fake_call(decision, horizon):
+        active[0] += 1
+        max_active[0] = max(max_active[0], active[0])
+        await asyncio.sleep(0.05)
+        active[0] -= 1
+        return valid_text
+
+    monkeypatch.setattr(gen, "_call_ollama", fake_call)
+    decisions = [_rich_decision() for _ in range(4)]
+    await asyncio.gather(*[gen.generate(d, "swing") for d in decisions])
+
+    # Avec Lock, max_active doit être strictement 1 (sérialisation totale)
+    assert max_active[0] == 1, (
+        f"Expected serial execution with lock, max_active={max_active[0]}"
+    )
+
+
+async def test_ollama_shared_lock_serializes_across_instances(monkeypatch):
+    """Un Lock partagé entre 2 instances OllamaHypothesisGenerator
+    sérialise leurs appels — c'est exactement le cas du scheduler où
+    swing/swing/flash partagent UNE seule instance, mais on vérifie
+    aussi le partage entre instances multiples au cas où ce pattern
+    serait utilisé plus tard (ex: 2 modèles Ollama distincts)."""
+    shared_lock = asyncio.Lock()
+    gen_a = OllamaHypothesisGenerator(
+        url="http://x", model="m1", lock=shared_lock,
+    )
+    gen_b = OllamaHypothesisGenerator(
+        url="http://x", model="m2", lock=shared_lock,
+    )
+
+    active = [0]
+    max_active = [0]
+    valid_text = "Long position recommended on BTC " * 15
+
+    async def fake_call(decision, horizon):
+        active[0] += 1
+        max_active[0] = max(max_active[0], active[0])
+        await asyncio.sleep(0.05)
+        active[0] -= 1
+        return valid_text
+
+    monkeypatch.setattr(gen_a, "_call_ollama", fake_call)
+    monkeypatch.setattr(gen_b, "_call_ollama", fake_call)
+    decisions = [_rich_decision() for _ in range(6)]
+    await asyncio.gather(
+        *[gen_a.generate(d, "swing") for d in decisions[:3]],
+        *[gen_b.generate(d, "swing") for d in decisions[3:]],
+    )
+
+    assert max_active[0] == 1, (
+        f"Expected serial execution across instances, max_active={max_active[0]}"
+    )
+
+
+async def test_build_factory_propagates_lock(monkeypatch):
+    """La factory passe bien le Lock à OllamaHypothesisGenerator."""
+    fake_data = {"models": [{"name": "llama3.2:3b"}]}
+
+    class _MockResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return fake_data
+
+    class _MockClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def get(self, url):
+            return _MockResponse()
+
+    monkeypatch.setattr(httpx, "AsyncClient", _MockClient)
+    lock = asyncio.Lock()
+    gen = await build_hypothesis_generator(
+        generator_type="ollama",
+        ollama_url="http://x",
+        ollama_model="llama3.2:3b",
+        lock=lock,
+    )
+    assert isinstance(gen, OllamaHypothesisGenerator)
+    assert gen._lock is lock
