@@ -187,7 +187,16 @@ class FredCalendarIngester(BaseIngester):
     async def _fetch_release_dates(
         self, client: httpx.AsyncClient, spec: FredReleaseSpec
     ) -> list[str]:
-        """Fetch les dates calendaires d'un release_id FRED. Best-effort."""
+        """Fetch les dates calendaires d'un release_id FRED. Best-effort.
+
+        ⚠️ `sort_order=desc` est **obligatoire** : FRED `/release/dates`
+        retourne l'historique complet du release (pour NFP : 867 dates
+        depuis 1776). Avec `sort_order=asc&limit=200`, on récupèrerait
+        les 200 PREMIÈRES dates (toutes dans les années 1900) et aucune
+        date future. Avec `desc`, on récupère les `limit` dernières
+        publications, qui incluent les ~8-12 dates futures programmées
+        grâce à `realtime_end=9999-12-31`.
+        """
         try:
             r = await client.get(
                 FRED_BASE,
@@ -197,8 +206,8 @@ class FredCalendarIngester(BaseIngester):
                     "file_type": "json",
                     "realtime_end": "9999-12-31",
                     "include_release_dates_with_no_data": "true",
-                    "sort_order": "asc",
-                    "limit": 200,
+                    "sort_order": "desc",
+                    "limit": 50,
                 },
                 timeout=15.0,
             )
