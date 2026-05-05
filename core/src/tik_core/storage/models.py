@@ -201,6 +201,55 @@ class SourceCredibilityHistory(Base):
     # "unchanged" | "penalty" | "reward"
 
 
+class MacroEvent(Base):
+    """Événement macro-économique programmé (FOMC, NFP, CPI, etc.).
+
+    Lacune B Phase B1 du plan trading manuel J+10 (cf. ADR-017).
+
+    Source : FRED Releases API (US gov officiel) pour les 7 releases
+    (NFP, CPI, PPI, GDP, Retail Sales, Industrial Production, Initial Claims)
+    + fichier statique pour les FOMC meeting dates (Fed publie son calendrier
+    1 an à l'avance, IDs FRED ne couvrent pas le statement+press conference
+    proprement).
+
+    Idempotence : UNIQUE (event_code, scheduled_for) — l'ingester upsert
+    chaque jour, pas de doublons même si la date est ré-fetchée.
+
+    Pattern OSINT pro : sources officielles transparentes, importance
+    documentée par whitelist auditable (ADR-017), pas de scraping fragile.
+    """
+
+    __tablename__ = "macro_events"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid4())
+    )
+    event_code: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    # ex: "FOMC_MEETING", "NFP", "CPI", "PPI", "GDP", "RETAIL_SALES",
+    # "INDUSTRIAL_PRODUCTION", "INITIAL_CLAIMS"
+    event_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    # ex: "FOMC Statement & Press Conference", "Employment Situation (NFP)"
+    scheduled_for: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, index=True
+    )
+    importance: Mapped[str] = mapped_column(
+        String(16), nullable=False, index=True
+    )
+    # "HIGH" | "MEDIUM" | "LOW"
+    assets_impacted: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    # ex: ["BTC", "GOLD"]
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    # "fred" | "fed_static"
+    release_id: Mapped[int | None] = mapped_column(Integer)
+    # Pour les events FRED uniquement (None pour FOMC statique)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=now_utc_naive, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=now_utc_naive, onupdate=now_utc_naive, nullable=False
+    )
+
+
 class HeadlineRecord(Base):
     """Titre OSINT brut persisté pour audit historique (Lacune A, Phase 1.1 J+10).
 

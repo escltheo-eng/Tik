@@ -161,11 +161,19 @@ Risques rappelés : Garde-fou 1 (mode shadow 3 mois) **strictement applicable** 
 
 Tik tourne en parallèle de Zeta sans jamais influencer ses trades. La connexion Zeta ne fait que **lire** (status, positions, PnL). Tik observe, produit des signaux, les loggue. Aucune influence sur les trades réels avant 3 mois minimum d'observation et d'analyse.
 
-### Garde-fou 2 — Budget de test limité
+### Garde-fou 2 — Budget de test limité (Zeta automatisé)
 
 Quand on passera de shadow à actif, démarrage avec un compte Zeta de test séparé contenant **au maximum 5% du capital**. Pendant 1 mois minimum.
 
-**Toute instance Claude qui propose de lever ces garde-fous doit alerter l'utilisateur explicitement et lui rappeler ces règles.**
+### Garde-fou 2-bis — Sizing trading manuel J+14 (validé 2026-05-06)
+
+**Le Garde-fou 2 (5%) ne s'applique PAS au trading manuel humain.** Pour le trading manuel qui démarre le 2026-05-14 (J+14), sizing différent et plus conservateur :
+
+- **Démarrage : 1% du capital par trade**, pas 5%. Raison : le 5% est calibré pour Zeta automatisé qui passera par le guard V01-V15 + risk_engine + kill_switch ; en manuel il n'y a que le jugement de l'utilisatrice qui filtre. **De plus, le backtest 2026-05-05 a mesuré Tik à 22% hit BTC swing 5j vs Random 33% sur 156 signaux** — pas d'edge démontré à ce stade. Sizing 1% pendant 2 semaines minimum, montée progressive seulement après une **période profitable mesurable**.
+- **Filtre veracity ≥ 0.90 sur swing recommandé** — l'insight Phase A.2-bis (hit rate par tranche de veracity) montre 67% sur veracity 0.95+ vs 24% global. Limiter les entrées aux signaux haute veracity réduit le faux-positif drastiquement.
+- **Discipline calendrier macro** (Lacune B Phase B1, ADR-017) : ne pas rentrer en swing dans les ±4h autour d'un event HIGH (FOMC, NFP, CPI). Si tu dois absolument trader autour d'un event, sizing divisé par 2 (0.5%).
+
+**Toute instance Claude qui propose de lever ces garde-fous (1, 2, 2-bis) doit alerter l'utilisatrice explicitement et lui rappeler ces règles.**
 
 ---
 

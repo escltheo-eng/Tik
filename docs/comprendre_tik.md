@@ -715,7 +715,80 @@ Décalage planning : les ~6-7h de Phase 1.1 décalent Phase A.2 (hit rate) d'env
 
 ---
 
-## 17. Pour résumer
+## 17. Le calendrier macro/géopolitique (Lacune B Phase B1, 2026-05-06)
+
+À l'approche du **trading manuel J+10** (2026-05-14), une question concrète s'impose : *« Si je rentre en swing BTC long et qu'un FOMC tombe dans 4h, je risque de me faire balayer par la décision Fed. Comment je le sais à l'avance ? »*. C'est exactement le rôle de la nouvelle carte **Calendrier macro** sur Home.
+
+### Pourquoi cette carte est arrivée maintenant
+
+Le backtest 2026-05-05 a mesuré que Tik **n'a pas démontré d'edge mesurable** (22% hit BTC swing vs 33% Random sur 156 signaux 5j). Pendant cette phase d'observation au démarrage trading manuel, **éviter les chocs macro** est une discipline simple qui réduit le drawdown sans rien demander au scoring. Le calendrier devient un **outil de risk management**, pas un outil de prise de décision.
+
+### Ce que la carte affiche
+
+- **1 ligne mise en avant** pour le **prochain event** : badge importance (HIGH rouge / MEDIUM orange / LOW gris), label court (« FOMC », « NFP (emploi US) », « CPI (inflation US) »), countdown précis (*« dans 4 j 22 h »*), heure locale et assets impactés.
+- **3 events suivants** en liste compacte (point coloré + label + countdown).
+- Bouton **« Voir tout le calendrier »** → route plein écran avec filtres importance HIGH/MEDIUM/LOW et 14 jours de lookahead.
+
+### Sources et transparence
+
+**Pattern OSINT pro respecté** — sources officielles citées, zéro scraping fragile :
+
+- **FRED Releases API** (Fed Reserve Bank of St. Louis, US gov officiel) pour 7 releases majeurs : NFP, CPI, PPI, GDP, Retail Sales, Industrial Production, Initial Claims. Clé API gratuite déjà configurée dans Tik. C'est la même source que Bloomberg/Refinitiv utilisent en backend.
+- **Federal Reserve calendar** (statique, mis à jour annuellement) pour les FOMC meetings 2026-2027. Le Fed publie son calendrier 1 an à l'avance — les dates sont stables et auditables.
+
+Pas de scraping de ForexFactory ni d'autres sites non officiels. Pas de service tiers payant.
+
+### Comment la carte gère le DST automatiquement
+
+Toutes les heures release sont stockées en **US/Eastern Time** (8:30 ET pour BLS/BEA, 14:00 ET pour FOMC). La conversion vers UTC est faite via `zoneinfo` qui gère automatiquement le passage été/hiver :
+
+- Un NFP à **8h30 ET en juin** → 12h30 UTC
+- Un NFP à **8h30 ET en janvier** → 13h30 UTC
+- Un FOMC à **14h00 ET en juillet** → 18h00 UTC
+- Un FOMC à **14h00 ET en décembre** → 19h00 UTC
+
+L'utilisatrice voit toujours l'heure dans son fuseau local (Paris CET/CEST), correctement décalée.
+
+### Périmètre Phase B1 vs Phase B2
+
+**Phase B1 livrée aujourd'hui = US-only** — couvre 80 % de l'impact BTC/GOLD (Fed pivot + inflation + emploi US drivent le DXY qui drive l'or et le risk-on/off crypto).
+
+**Phase B2 (post-J+14)** étendra à : ECB rate decision, BoJ intervention, BoE rate decision, China CPI/PMI, élections US 2026 mid-terms, sommets G7/G20.
+
+### Importance hardcodée par convention trader US
+
+| Niveau | Events | Pourquoi |
+|---|---|---|
+| **HIGH** | FOMC, NFP, CPI | Mouvements brutaux 1-3 % sur BTC/GOLD en quelques minutes |
+| **MEDIUM** | PPI, GDP, Retail Sales | Impact réel mais plus lissé sur quelques heures |
+| **LOW** | Initial Claims, Industrial Production | Mouvements modérés sauf surprise extrême |
+
+Calibration recalibrable post-J+30 si la mesure empirique apporte une vraie info au-delà de la convention.
+
+### Ce que la carte ne fait PAS
+
+- ❌ **Pas de signal trading généré** — uniquement de la donnée brute datée.
+- ❌ **Pas de modification automatique des signaux Tik** — l'humain fait le lien mentalement entre un signal et un event proche. Si l'utilisatrice demande après quelques jours un flag persisté dans le signal (« FOMC dans 4h, importance HIGH »), ce sera Phase B1.5.
+- ❌ **Pas de notification push** — pour Phase B3 si besoin (l'infra Expo Push est déjà câblée).
+
+### Comment l'utiliser intelligemment
+
+1. **Avant chaque trade**, regarder la carte : si un event HIGH tombe dans 24h sur l'asset que tu trades → soit reporter l'entrée après le release, soit réduire le sizing à 0.5 % (vs 1 % sizing nominal du Garde-fou 2-bis).
+2. **Le matin**, ouvrir l'app : si NFP à 12h30 UTC, planifier sa journée autour de cette fenêtre.
+3. **Un FOMC à 18-19h UTC** : généralement éviter de tenir un swing BTC long pendant le 14h-15h ET (bouge violemment 30 min après le statement).
+
+### Pourquoi c'est conforme aux standards OSINT pro
+
+- **Sources officielles citées** (FRED + Fed Reserve)
+- **Transparence sur l'importance** (whitelist documentée auditable)
+- **Calendrier rolling auto-mis-à-jour** (cycle daily 06:00 UTC)
+- **Audit historique** dispo via endpoint `/macro_events/history` (cohérent Lacune A Paquet 9)
+
+C'est exactement ce que Bloomberg / Refinitiv / Trading Economics affichent à leurs clients — modulo le périmètre US-only en Phase B1 et l'absence de prévision (« actual » / « consensus » / « previous ») qui demanderait une source payante type Econoday.
+
+---
+
+## 18. Pour résumer
 
 ### Ce que Tik fait pour chaque signal
 
@@ -742,7 +815,7 @@ Décalage planning : les ~6-7h de Phase 1.1 décalent Phase A.2 (hit rate) d'env
 
 ---
 
-## 18. État actuel et pistes futures
+## 19. État actuel et pistes futures
 
 ### Ce qui marche aujourd'hui
 

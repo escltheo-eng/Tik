@@ -190,10 +190,12 @@ LLM enrichi reportée post-J+30).
 
 | Jour | Feature | Effort | Valeur trading |
 |---|---|---|---|
-| **J+1-2** | **Phase 1 — Carte "Top headlines aujourd'hui"** dashboard. Réutilise les news déjà ingérées (Google News BTC/GOLD + CryptoCompare + Reddit + GDELT). 5-10 titres affichés bruts avec source, sentiment et heure. Tri par crédibilité × récence. | ~½ session (1 endpoint API + 1 carte Tsx) | Contexte rapide brut. Tu vois les news qui motivent les sentiments avant de regarder les signaux. **Zéro risque LLM hallucination** — c'est de la donnée brute citant ses sources. Pattern OSINT pro classique (Recorded Future, Bellingcat). |
-| **J+3-4** | **Carte Home "Hit rate live"** — pourcentage de signaux Tik corrects sur les 30 derniers jours par horizon (flash 1h / swing 7j) et asset (BTC/GOLD). Réutilise `core/src/tik_core/scripts/backtest.py` déjà livré, expose en endpoint API + carte Home. | ~1 session | Calibre ta confiance. Si swing BTC est à 65% sur 30j, tu trades avec sizing X. Si à 45%, tu skip ou tu réduis. **C'est la feature N°1 d'un outil de signal pour démarrer un live trading.** |
-| **J+5-6** | **Vue "Track record signal"** dans le détail signal. Pour chaque signal historique, affiche le delta de prix après 1h/6h/24h/5j (multi-horizon, cohérent avec le pipeline calibration Session 4 Paquet 4). Badges visuels ✓ correct / ✗ raté / ⚠ neutre. | ~1 session | Tu apprends à reconnaître les types de signaux qui marchent vs ceux qui ratent. Ton oeil se forme avant le live. |
-| **J+7-8** | **Workflow "Watchlist post-trade"** — bouton "j'ai pris ce trade" sur le détail signal qui ajoute le signal à une watchlist persistée (AsyncStorage, pattern déjà déployé pour Alerts cf. bug A résolu 2026-05-04). Onglet Watchlist dédié. | ~1 session | Discipline opérationnelle. Tu sais quel signal a déclenché quel trade. Indispensable pour tirer des leçons après. |
+| **J+1-2** | ✅ **Phase A.1 — Carte "Top headlines aujourd'hui"** dashboard (livrée 2026-05-05). Réutilise les news déjà ingérées (Google News BTC/GOLD + CryptoCompare + Reddit). 5-10 titres affichés bruts avec source, sentiment et heure. Tri par crédibilité × récence. | ~½ session ✅ | Contexte rapide brut. Tu vois les news qui motivent les sentiments avant de regarder les signaux. **Zéro risque LLM hallucination** — c'est de la donnée brute citant ses sources. Pattern OSINT pro classique (Recorded Future, Bellingcat). |
+| | ✅ **Phase 1.1 — Lacunes OSINT pro essentielles A+G+C** (livrée 2026-05-05). Persistance DB titres + flag anti fake-news visible + cache Redis sentiment 7j. | ~6-7h ✅ | Audit historique + sentiment stable + transparence anti fake-news. |
+| **J+3-4** | ✅ **Carte Home "Hit rate live"** (livrée 2026-05-04 soir, Phase A.2 + A.2-bis). Pourcentage de signaux Tik corrects sur les 30 derniers jours par horizon × asset, hit rate par tranche de veracity. | ~1 session ✅ | Calibre ta confiance. Insight clé : 67% sur veracity 0.95+ vs 24% global → filtre veracity ≥ 0.90 recommandé. |
+| **J+5-6** | ✅ **Lacune B Phase B1 — Calendrier macro/géopolitique** (livrée 2026-05-06, ADR-017). FRED Releases API + FOMC dates statiques + carte Home compact + route détail. | ~7-8h ✅ | Outil de risk management : éviter d'entrer en swing 4h avant un FOMC. Pendant la phase d'observation sans edge démontré, c'est la discipline simple qui réduit le drawdown. |
+| **J+7-8** | **Vue "Track record signal"** dans le détail signal. Pour chaque signal historique, affiche le delta de prix après 1h/6h/24h/5j. Badges visuels ✓ correct / ✗ raté / ⚠ neutre. | ~1 session | Tu apprends à reconnaître les types de signaux qui marchent vs ceux qui ratent. Ton oeil se forme avant le live. |
+| **J+8-9** | **Workflow "Watchlist post-trade"** — bouton "j'ai pris ce trade" sur le détail signal qui ajoute le signal à une watchlist persistée (AsyncStorage, pattern déjà déployé pour Alerts cf. bug A résolu 2026-05-04). Onglet Watchlist dédié. | ~1 session | Discipline opérationnelle. Tu sais quel signal a déclenché quel trade. Indispensable pour tirer des leçons après. |
 | **J+9-10** | **Run de validation finale + calibration mentale** — usage Tik en mode "préparation trading" pendant 2 jours sans prendre de trade pour de vrai. Identification des manques. | 0 dev | Calibration mentale avant le live. Identification des features manquantes pour itérer post-J+10. |
 
 ### Décisions structurantes prises
@@ -293,10 +295,10 @@ multi-overlay ADR-004 extensible). Mais aujourd'hui Tik est focalisé
 
 3 chantiers (chacun ~1-2 sessions, à étaler sur 4-6 semaines post-J+14) :
 
-1. **Calendrier événementiel macro** (FOMC, NFP, CPI, GDP, élections,
-   sommets, sanctions) → c'est exactement la **Lacune B** prévue les 7-8
-   mai (cf. entry n°3 ci-dessus). **Brique pivot** — sans calendrier, on
-   ne peut pas anticiper les chocs macro.
+1. ✅ **Calendrier événementiel macro** (FOMC, NFP, CPI, GDP, élections,
+   sommets, sanctions) → ✅ **Phase B1 livrée 2026-05-06** (ADR-017).
+   Couvre US-only via FRED Releases API + FOMC dates statiques. Phase B2
+   internationale (ECB, BoJ, BoE, élections) post-J+14.
 
 2. **Scope élargi des entities** — ajouter :
    - `US_DEBT` (dette US, watch sur crisis liquidity)

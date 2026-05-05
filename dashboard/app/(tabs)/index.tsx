@@ -4,6 +4,7 @@ import { ActivityIndicator, Platform, Pressable, StyleSheet } from 'react-native
 import { HitRateByVeracityCard } from '@/components/dashboard/hit-rate-by-veracity-card';
 import { HitRateCard } from '@/components/dashboard/hit-rate-card';
 import { KpiCard } from '@/components/dashboard/kpi-card';
+import { MacroEventsCard } from '@/components/dashboard/macro-events-card';
 import { MiniSparkline } from '@/components/dashboard/mini-sparkline';
 import { StatsLLMCard } from '@/components/dashboard/stats-llm-card';
 import { TopHeadlinesCard } from '@/components/dashboard/top-headlines-card';
@@ -22,9 +23,10 @@ import { useHitRate } from '@/src/hooks/useHitRate';
 import { useHitRateByVeracity } from '@/src/hooks/useHitRateByVeracity';
 import { useTick } from '@/src/hooks/use-tick';
 import { useTopHeadlines } from '@/src/hooks/useTopHeadlines';
+import { useUpcomingMacroEvents } from '@/src/hooks/useUpcomingMacroEvents';
 import { timeAgo } from '@/src/utils/time';
 
-const APP_VERSION = '0.5.5';
+const APP_VERSION = '0.5.6';
 
 const HEALTH_REFRESH_INTERVAL_MS = 30_000;
 
@@ -88,6 +90,10 @@ export default function HomeScreen() {
   const kpis = useDashboardKpis();
   const [headlinesEntity, setHeadlinesEntity] = useState<string>('BTC');
   const headlinesState = useTopHeadlines(headlinesEntity, { limit: 5 });
+  // Lacune B Phase B1 — calendrier macro/géopolitique 7 j à venir.
+  // Cap 4 events sur Home (1 mis en avant + 3 suivants), poll 5 min
+  // (cohérent TTL cache Redis 5 min).
+  const macroEventsState = useUpcomingMacroEvents({ hours: 7 * 24, limit: 4 });
   const [hitRateEntity, setHitRateEntity] = useState<string>('BTC');
   const [hitRateHorizon, setHitRateHorizon] = useState<string>('swing');
   const [hitRateIncludeFlagged, setHitRateIncludeFlagged] = useState<boolean>(false);
@@ -234,6 +240,13 @@ export default function HomeScreen() {
         displayLimit={5}
         loading={headlinesState.loading}
         error={headlinesState.error}
+      />
+
+      <MacroEventsCard
+        events={macroEventsState.events}
+        loading={macroEventsState.loading}
+        error={macroEventsState.error}
+        displayLimit={4}
       />
 
       <ThemedView style={styles.section}>

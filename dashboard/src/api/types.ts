@@ -109,6 +109,21 @@ export interface Headline {
   fetched_at: string;
 }
 
+// ----- Macro events (Lacune B Phase B1 trading manuel J+10) -----
+
+export type MacroImportance = 'HIGH' | 'MEDIUM' | 'LOW';
+
+export interface MacroEvent {
+  id: string;
+  event_code: string;  // "FOMC_MEETING" | "NFP" | "CPI" | …
+  event_name: string;
+  scheduled_for: string;
+  importance: string;
+  assets_impacted: string[];
+  source: string;  // "fred" | "fed_static"
+  release_id: number | null;
+}
+
 // ----- Hit rate (Phase A.2 trading manuel J+10) -----
 
 export interface HitRate {

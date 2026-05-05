@@ -13,6 +13,7 @@ from tik_core.aggregator.binance_ingester import BinanceTradesIngester
 from tik_core.aggregator.cftc_cot_ingester import CftcCotIngester
 from tik_core.aggregator.cryptocompare_ingester import CryptoCompareIngester
 from tik_core.aggregator.fear_greed_ingester import FearGreedIngester
+from tik_core.aggregator.fred_calendar_ingester import FredCalendarIngester
 from tik_core.aggregator.fred_ingester import FredIngester
 from tik_core.aggregator.gdelt_ingester import GdeltIngester
 from tik_core.aggregator.google_news_ingester import GoogleNewsIngester
@@ -133,6 +134,15 @@ async def main() -> None:
             interval_s=1800,
         ),
         CftcCotIngester(redis, interval_s=24 * 3600),
+        # Lacune B Phase B1 J+10 — Calendrier macro/géopolitique (ADR-017).
+        # Polling daily des release_dates FRED + upsert FOMC dates statiques.
+        # Pas de Redis injecté : la persistance DB est suffisante (cycle daily
+        # vs cache Redis 5 min via l'endpoint qui est largement assez frais).
+        FredCalendarIngester(
+            api_key=settings.fred_api_key,
+            session_maker=session_maker,
+            interval_s=24 * 3600,
+        ),
     ]
 
     for ing in ingesters:

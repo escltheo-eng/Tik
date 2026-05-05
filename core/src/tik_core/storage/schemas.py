@@ -199,6 +199,35 @@ class HeadlineHistoryOut(BaseModel):
         return iso_utc(value)
 
 
+# ----- Macro events (Lacune B Phase B1 J+10) -----
+
+
+class MacroEventOut(BaseModel):
+    """Événement macro programmé exposé via l'API.
+
+    Cf. ADR-017 — Calendrier macro/géopolitique.
+
+    Pattern OSINT pro : sources officielles citées (FRED Releases API ou
+    Fed Reserve calendar), importance documentée, assets impactés
+    transparents. L'humain interprète, pas de signal trading généré.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    event_code: str  # "FOMC_MEETING" | "NFP" | "CPI" | …
+    event_name: str  # libellé humain
+    scheduled_for: datetime
+    importance: str  # "HIGH" | "MEDIUM" | "LOW"
+    assets_impacted: list[str]
+    source: str  # "fred" | "fed_static"
+    release_id: int | None = None
+
+    @field_serializer("scheduled_for", when_used="json")
+    def _ser_dt(self, value: datetime) -> str:
+        return iso_utc(value) or ""
+
+
 # ----- Metrics -----
 
 class HitRateOut(BaseModel):

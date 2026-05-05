@@ -15,6 +15,7 @@ import {
   Health,
   HitRate,
   HitRateByVeracity,
+  MacroEvent,
   Signal,
   SourceVeracity,
   VeracityStatus,
@@ -129,6 +130,39 @@ export async function getTopHeadlines(
       sort: params.sort ?? 'credibility_recency',
     },
   );
+}
+
+// ----- Macro events (Lacune B Phase B1 trading manuel J+10) -----
+
+export interface MacroEventsParams {
+  hours?: number;
+  importance?: ('HIGH' | 'MEDIUM' | 'LOW')[];
+  entityId?: string;
+  limit?: number;
+}
+
+export async function getUpcomingMacroEvents(
+  client: HttpClient,
+  params: MacroEventsParams = {},
+): Promise<MacroEvent[]> {
+  return client.get<MacroEvent[]>('/macro_events/upcoming', {
+    hours: params.hours ?? 168,
+    importance: params.importance?.join(','),
+    entity_id: params.entityId,
+    limit: params.limit ?? 50,
+  });
+}
+
+export async function getMacroEventsHistory(
+  client: HttpClient,
+  params: { sinceDays?: number; importance?: ('HIGH' | 'MEDIUM' | 'LOW')[]; entityId?: string; limit?: number } = {},
+): Promise<MacroEvent[]> {
+  return client.get<MacroEvent[]>('/macro_events/history', {
+    since_days: params.sinceDays ?? 30,
+    importance: params.importance?.join(','),
+    entity_id: params.entityId,
+    limit: params.limit ?? 200,
+  });
 }
 
 // ----- Hit rate (Phase A.2 trading manuel J+10) -----
