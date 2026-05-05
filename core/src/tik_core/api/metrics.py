@@ -40,6 +40,7 @@ from tik_core.metrics.hit_rate import (
     make_cache_key,
     make_cache_key_by_veracity,
 )
+from tik_core.metrics.signal_track_record import compute_track_record
 from tik_core.scripts.backtest import fetch_btc_history, fetch_gold_history
 from tik_core.storage.database import get_session
 from tik_core.storage.models import Signal
@@ -47,6 +48,8 @@ from tik_core.storage.schemas import (
     HitRateByVeracityBucket,
     HitRateByVeracityOut,
     HitRateOut,
+    SignalTrackRecordOut,
+    TrackRecordRow,
 )
 from tik_core.utils.time import now_utc, now_utc_naive
 
@@ -58,6 +61,11 @@ router = APIRouter(prefix="/metrics")
 # fraîcheur (les nouveaux signaux apparaissent dans la mesure rapidement) et
 # économie de fetch Binance/Yahoo répétés sous charge dashboard.
 HIT_RATE_CACHE_TTL_SECONDS = 15 * 60
+
+# TTL du cache Redis pour un track record individuel. 6h : les horizons passés
+# ne changent plus, les horizons futurs seront recalculés naturellement quand
+# le cache expire.
+TRACK_RECORD_CACHE_TTL_SECONDS = 6 * 3600
 
 
 @router.get("/hit_rate", response_model=HitRateOut)
@@ -392,6 +400,108 @@ async def get_hit_rate_by_veracity(
             )
         except Exception as exc:  # noqa: BLE001
             log.warning("metrics.hit_rate_by_veracity.cache_write_error", error=str(exc))
+
+        return out
+    finally:
+        await redis.close()
+
+
+@router.get("/signal_track_record/{signal_id}", response_model=SignalTrackRecordOut)
+async def get_signal_track_record(
+    signal_id: str,
+    session: AsyncSession = Depends(get_session),
+    _ctx: AuthContext = Depends(require_scope("read:signals")),
+) -> SignalTrackRecordOut:
+    """Track record d'un signal individuel sur 4 horizons (1h / 6h / 24h / 5j).
+
+    Pour chaque horizon, compare la direction prédite au mouvement de prix
+    observé et retourne un badge :
+    - correct          : direction validée par le marché
+    - raté             : direction invalidée
+    - en_attente       : horizon dans le futur
+    - données_manquantes : historique de prix insuffisant (signal > 41j)
+
+    Cache Redis TTL 6h : stable pour les horizons passés, rafraîchi
+    naturellement quand les horizons futurs deviennent disponibles.
+
+    Phase A.3 du plan trading manuel J+10 (cf. docs/backlog.md entry n°3).
+    Garde-fous : Garde-fou 1 inchangé, ADR-003 inchangé (lecture seule),
+    ADR-004 inchangé.
+    """
+    settings = get_settings()
+    redis = aioredis.from_url(settings.redis_url, decode_responses=True)
+    cache_key = f"tik.track_record.{signal_id}"
+
+    try:
+        try:
+            cached = await redis.get(cache_key)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("metrics.track_record.cache_read_error", error=str(exc))
+            cached = None
+
+        if cached:
+            try:
+                data = json.loads(cached)
+                data["cache_hit"] = True
+                return SignalTrackRecordOut(**data)
+            except (TypeError, ValueError, KeyError) as exc:
+                log.warning("metrics.track_record.cache_parse_error", error=str(exc))
+
+        signal = await session.get(Signal, signal_id)
+        if signal is None:
+            raise HTTPException(status_code=404, detail="Signal not found")
+
+        btc_history: list[tuple[int, float]] = []
+        gold_history: list[tuple[int, float]] = []
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                if signal.entity_id == "BTC":
+                    btc_history = await fetch_btc_history(client)
+                elif signal.entity_id == "GOLD":
+                    gold_history = await fetch_gold_history(client)
+        except Exception as exc:  # noqa: BLE001
+            log.error(
+                "metrics.track_record.history_fetch_error",
+                entity_id=signal.entity_id,
+                error=str(exc),
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=(
+                    f"Impossible de récupérer l'historique de prix {signal.entity_id} "
+                    "(Binance/Yahoo Finance temporairement indisponible)."
+                ),
+            ) from exc
+
+        now = now_utc_naive()
+        rows_dicts = compute_track_record(
+            signal_timestamp=signal.timestamp,
+            signal_direction=signal.direction,
+            entity_id=signal.entity_id,
+            btc_history=btc_history,
+            gold_history=gold_history,
+            now=now,
+        )
+        rows = [TrackRecordRow(**r) for r in rows_dicts]
+
+        out = SignalTrackRecordOut(
+            signal_id=signal.id,
+            entity_id=signal.entity_id,
+            direction=signal.direction,
+            horizon=signal.horizon,
+            rows=rows,
+            computed_at=now_utc(),
+            cache_hit=False,
+        )
+
+        try:
+            await redis.set(
+                cache_key,
+                out.model_dump_json(),
+                ex=TRACK_RECORD_CACHE_TTL_SECONDS,
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.warning("metrics.track_record.cache_write_error", error=str(exc))
 
         return out
     finally:

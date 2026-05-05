@@ -7,12 +7,12 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { getSignal } from '@/src/api/endpoints';
+import { getSignal, getSignalTrackRecord } from '@/src/api/endpoints';
 import { TikError } from '@/src/api/errors';
-import { Signal } from '@/src/api/types';
+import { Signal, SignalTrackRecord, TrackRecordRow } from '@/src/api/types';
 import { useAuth } from '@/src/auth/AuthContext';
 import { isLlmCandidateValid } from '@/src/utils/llm';
-import { formatLocal } from '@/src/utils/time';
+import { formatLocal, parseUtcIso } from '@/src/utils/time';
 
 function directionColor(direction: string): string {
   switch (direction) {
@@ -23,6 +23,121 @@ function directionColor(direction: string): string {
     default:
       return '#7f8c8d';
   }
+}
+
+function timeUntil(targetIso: string): string {
+  const target = parseUtcIso(targetIso);
+  const diffMs = target.getTime() - Date.now();
+  if (diffMs <= 0) return '';
+  const totalMin = Math.floor(diffMs / 60_000);
+  const days = Math.floor(totalMin / (60 * 24));
+  const hours = Math.floor((totalMin % (60 * 24)) / 60);
+  const mins = totalMin % 60;
+  if (days > 0) return `dans ${days}j ${hours}h`;
+  if (hours > 0) return `dans ${hours}h ${mins}min`;
+  return `dans ${mins}min`;
+}
+
+function TrackRecordBadge({ row }: { row: TrackRecordRow }) {
+  switch (row.badge) {
+    case 'correct':
+      return (
+        <View style={[trStyles.badge, { backgroundColor: '#27ae60' }]}>
+          <ThemedText style={trStyles.badgeText}>✓</ThemedText>
+        </View>
+      );
+    case 'raté':
+      return (
+        <View style={[trStyles.badge, { backgroundColor: '#c0392b' }]}>
+          <ThemedText style={trStyles.badgeText}>✗</ThemedText>
+        </View>
+      );
+    case 'en_attente':
+      return (
+        <View style={[trStyles.badge, { backgroundColor: '#7f8c8d' }]}>
+          <ThemedText style={trStyles.badgeText}>⏳</ThemedText>
+        </View>
+      );
+    default:
+      // données_manquantes
+      return (
+        <View style={[trStyles.badge, { backgroundColor: '#95a5a6' }]}>
+          <ThemedText style={trStyles.badgeText}>?</ThemedText>
+        </View>
+      );
+  }
+}
+
+function TrackRecordSection({
+  signalId,
+  client,
+  borderColor,
+}: {
+  signalId: string;
+  client: unknown;
+  borderColor: string;
+}) {
+  const [record, setRecord] = useState<SignalTrackRecord | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const data = await getSignalTrackRecord(client as any, signalId);
+        if (!cancelled) setRecord(data);
+      } catch {
+        // Échec silencieux : le track record est une feature optionnelle
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [signalId, client]);
+
+  const cardStyle = [trStyles.card, { borderColor }];
+
+  if (loading) {
+    return (
+      <ThemedView style={cardStyle}>
+        <ThemedText type="subtitle">Track record</ThemedText>
+        <ActivityIndicator size="small" style={{ marginTop: 8 }} />
+      </ThemedView>
+    );
+  }
+
+  if (!record) return null;
+
+  return (
+    <ThemedView style={cardStyle}>
+      <ThemedText type="subtitle">Track record</ThemedText>
+      <ThemedText style={trStyles.subtitle}>
+        Direction {record.direction.toUpperCase()} · horizon {record.horizon}
+      </ThemedText>
+      {record.rows.map((row) => (
+        <View key={row.label} style={trStyles.row}>
+          <ThemedText style={trStyles.label}>{row.label}</ThemedText>
+          <TrackRecordBadge row={row} />
+          <ThemedText style={trStyles.value}>
+            {row.badge === 'en_attente'
+              ? timeUntil(row.target_iso)
+              : row.badge === 'données_manquantes'
+              ? 'données non disponibles'
+              : row.delta_pct != null
+              ? `${row.delta_pct >= 0 ? '+' : ''}${row.delta_pct.toFixed(2)}%`
+              : '—'}
+          </ThemedText>
+          {row.badge === 'correct' || row.badge === 'raté' ? (
+            <ThemedText style={trStyles.threshold}>seuil {row.threshold_pct}%</ThemedText>
+          ) : null}
+        </View>
+      ))}
+      <ThemedText style={trStyles.note}>
+        Seuils : 1h/6h ±{record.rows[0]?.threshold_pct}% · 24h/5j ±{record.rows[2]?.threshold_pct}%
+      </ThemedText>
+    </ThemedView>
+  );
 }
 
 export default function SignalDetailScreen() {
@@ -126,6 +241,11 @@ export default function SignalDetailScreen() {
         ) : null}
         <AntiFakeNewsBadge status={signal.circuit_breaker_status} />
       </ThemedView>
+
+      {/* Track record — chargé lazily après la hero card (Phase A.3 J+10) */}
+      {id ? (
+        <TrackRecordSection signalId={id} client={client} borderColor={palette.icon} />
+      ) : null}
 
       {signal.hypothesis ? (
         <ThemedView style={cardStyle}>
@@ -250,6 +370,60 @@ export default function SignalDetailScreen() {
   );
 }
 
+// ----- Styles track record -----
+
+const trStyles = StyleSheet.create({
+  card: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 16,
+    gap: 8,
+  },
+  subtitle: {
+    fontSize: 12,
+    opacity: 0.6,
+    marginBottom: 2,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 4,
+  },
+  label: {
+    width: 32,
+    fontWeight: '600',
+    fontSize: 13,
+  },
+  badge: {
+    width: 24,
+    height: 24,
+    borderRadius: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  badgeText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  value: {
+    flex: 1,
+    fontSize: 14,
+  },
+  threshold: {
+    fontSize: 11,
+    opacity: 0.5,
+  },
+  note: {
+    fontSize: 11,
+    opacity: 0.45,
+    marginTop: 4,
+  },
+});
+
+// ----- Styles principaux -----
+
 const styles = StyleSheet.create({
   scroll: {
     padding: 16,
@@ -352,8 +526,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   llmCard: {
-    // Léger fond gris-bleu pour distinguer visuellement la carte
-    // secondaire de validation. Border identique aux autres cartes.
     backgroundColor: 'rgba(127, 140, 141, 0.06)',
   },
   llmHeader: {

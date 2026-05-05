@@ -299,6 +299,42 @@ class HitRateByVeracityOut(BaseModel):
         return iso_utc(value) or ""
 
 
+# ----- Track record (Phase A.3 trading manuel J+10) -----
+
+class TrackRecordRow(BaseModel):
+    """Une ligne du track record : résultat d'un signal à un horizon donné."""
+
+    label: str           # "1h" | "6h" | "24h" | "5j"
+    measure_hours: float
+    threshold_pct: float
+    available: bool      # horizon dans le passé
+    target_iso: str      # ISO UTC absolu de la cible (pour calcul "dans X" côté client)
+    p0: float | None     # prix au moment du signal
+    p1: float | None     # prix à t0 + horizon
+    delta_pct: float | None
+    success: bool | None
+    badge: str           # "correct" | "raté" | "données_manquantes" | "en_attente"
+
+
+class SignalTrackRecordOut(BaseModel):
+    """Track record d'un signal sur 4 horizons (1h / 6h / 24h / 5j).
+
+    Phase A.3 du plan trading manuel J+10 (cf. docs/backlog.md entry n°3).
+    """
+
+    signal_id: str
+    entity_id: str
+    direction: str
+    horizon: str
+    rows: list[TrackRecordRow]
+    computed_at: datetime
+    cache_hit: bool = False
+
+    @field_serializer("computed_at", when_used="json")
+    def _ser_dt(self, value: datetime) -> str:
+        return iso_utc(value) or ""
+
+
 # ----- Health -----
 
 class HealthOut(BaseModel):

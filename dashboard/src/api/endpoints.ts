@@ -17,6 +17,7 @@ import {
   HitRateByVeracity,
   MacroEvent,
   Signal,
+  SignalTrackRecord,
   SourceVeracity,
   VeracityStatus,
 } from './types';
@@ -201,4 +202,15 @@ export async function getHitRateByVeracity(
     threshold_pct: params.thresholdPct,
     include_flagged: params.includeFlagged ?? false,
   });
+}
+
+// ----- Track record (Phase A.3 trading manuel J+10) -----
+
+export async function getSignalTrackRecord(
+  client: HttpClient,
+  signalId: string,
+): Promise<SignalTrackRecord> {
+  return client.get<SignalTrackRecord>(
+    `/metrics/signal_track_record/${encodeURIComponent(signalId)}`,
+  );
 }

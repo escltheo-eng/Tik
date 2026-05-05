@@ -172,3 +172,30 @@ export interface HitRateByVeracity {
   computed_at: string;
   cache_hit: boolean;
 }
+
+// ----- Track record (Phase A.3 trading manuel J+10) -----
+
+export type TrackRecordBadge = 'correct' | 'raté' | 'données_manquantes' | 'en_attente';
+
+export interface TrackRecordRow {
+  label: string;          // "1h" | "6h" | "24h" | "5j"
+  measure_hours: number;
+  threshold_pct: number;
+  available: boolean;
+  target_iso: string;     // ISO UTC absolu de la cible (pour calcul "dans X")
+  p0: number | null;
+  p1: number | null;
+  delta_pct: number | null;
+  success: boolean | null;
+  badge: string;          // TrackRecordBadge
+}
+
+export interface SignalTrackRecord {
+  signal_id: string;
+  entity_id: string;
+  direction: string;
+  horizon: string;
+  rows: TrackRecordRow[];
+  computed_at: string;
+  cache_hit: boolean;
+}
