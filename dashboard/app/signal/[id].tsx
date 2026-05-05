@@ -13,6 +13,7 @@ import { Signal, SignalTrackRecord, TrackRecordRow } from '@/src/api/types';
 import { useAuth } from '@/src/auth/AuthContext';
 import { isLlmCandidateValid } from '@/src/utils/llm';
 import { formatLocal, parseUtcIso } from '@/src/utils/time';
+import { useWatchlist } from '@/src/watchlist/WatchlistContext';
 
 function directionColor(direction: string): string {
   switch (direction) {
@@ -145,10 +146,18 @@ export default function SignalDetailScreen() {
   const { client } = useAuth();
   const colorScheme = useColorScheme() ?? 'light';
   const palette = Colors[colorScheme];
+  const { isWatched, add, remove } = useWatchlist();
 
   const [signal, setSignal] = useState<Signal | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+
+  const watched = signal ? isWatched(signal.id) : false;
+  const toggleWatch = useCallback(() => {
+    if (!signal) return;
+    if (watched) remove(signal.id);
+    else add(signal);
+  }, [signal, watched, add, remove]);
 
   const fetchSignal = useCallback(async () => {
     if (!id) return;
@@ -240,6 +249,25 @@ export default function SignalDetailScreen() {
           </ThemedText>
         ) : null}
         <AntiFakeNewsBadge status={signal.circuit_breaker_status} />
+
+        <Pressable
+          onPress={toggleWatch}
+          style={({ pressed }) => [
+            styles.watchBtn,
+            {
+              borderColor: watched ? '#f1c40f' : palette.icon,
+              backgroundColor: watched
+                ? 'rgba(241, 196, 15, 0.12)'
+                : 'transparent',
+              opacity: pressed ? 0.6 : 1,
+            },
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel={watched ? 'Retirer de la watchlist' : 'Ajouter à la watchlist'}>
+          <ThemedText style={[styles.watchLabel, { color: watched ? '#b07d0a' : palette.text }]}>
+            {watched ? '★ Suivi' : '☆ Suivre'}
+          </ThemedText>
+        </Pressable>
       </ThemedView>
 
       {/* Track record — chargé lazily après la hero card (Phase A.3 J+10) */}
@@ -543,5 +571,18 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '600',
     letterSpacing: 0.4,
+  },
+  watchBtn: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  watchLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    letterSpacing: 0.3,
   },
 });

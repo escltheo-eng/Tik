@@ -8,6 +8,7 @@ import 'react-native-reanimated';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { AlertsProvider } from '@/src/alerts/AlertsContext';
 import { AuthProvider, useAuth } from '@/src/auth/AuthContext';
+import { WatchlistProvider } from '@/src/watchlist/WatchlistContext';
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -47,12 +48,14 @@ function RootLayoutNav() {
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <AuthGate />
       <AlertsProvider>
-        <Stack>
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen name="login" options={{ headerShown: false }} />
-          <Stack.Screen name="signal/[id]" options={{ title: 'Détail signal' }} />
-          <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-        </Stack>
+        <WatchlistProvider>
+          <Stack>
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+            <Stack.Screen name="login" options={{ headerShown: false }} />
+            <Stack.Screen name="signal/[id]" options={{ title: 'Détail signal' }} />
+            <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+          </Stack>
+        </WatchlistProvider>
       </AlertsProvider>
       <StatusBar style="auto" />
     </ThemeProvider>
