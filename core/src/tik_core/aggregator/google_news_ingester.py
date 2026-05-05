@@ -32,9 +32,11 @@ import feedparser
 import httpx
 import structlog
 from redis.asyncio import Redis
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tik_core.aggregator.base import BaseIngester
 from tik_core.aggregator.news_classifier import NewsClassifier
+from tik_core.storage.headlines_repo import persist_headlines
 
 log = structlog.get_logger()
 
@@ -61,6 +63,7 @@ class GoogleNewsIngester(BaseIngester):
         query: str,
         interval_s: int = 1800,
         limit: int = 50,
+        session_maker: async_sessionmaker[AsyncSession] | None = None,
     ) -> None:
         self.redis = redis
         self.classifier = classifier
@@ -68,6 +71,7 @@ class GoogleNewsIngester(BaseIngester):
         self.query = query
         self.interval_s = interval_s
         self.limit = limit
+        self.session_maker = session_maker
         self._running = False
         self._task: asyncio.Task | None = None
 
@@ -267,6 +271,15 @@ class GoogleNewsIngester(BaseIngester):
                     key = REDIS_KEY_TPL.format(entity=self.entity_id.lower())
                     await self.redis.setex(key, REDIS_TTL_S, payload)
                     await self.redis.publish(key, payload)
+                    # Lacune A J+10 — persistance DB des titres bruts pour
+                    # audit historique. Best-effort, non bloquant.
+                    n_persisted = await persist_headlines(
+                        self.session_maker,
+                        entity_id=self.entity_id,
+                        source="google_news_rss",
+                        credibility=0.70,
+                        headlines=point["headlines"],
+                    )
                     top = (
                         point["top_publishers"][0]["name"]
                         if point["top_publishers"]
@@ -281,6 +294,7 @@ class GoogleNewsIngester(BaseIngester):
                         n_bearish=point["n_bearish"],
                         n_neutral=point["n_neutral"],
                         n_headlines=len(point["headlines"]),
+                        n_persisted=n_persisted,
                         top_publisher=top,
                     )
                 await asyncio.sleep(self.interval_s)

@@ -29,9 +29,11 @@ from datetime import datetime, timezone
 import httpx
 import structlog
 from redis.asyncio import Redis
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tik_core.aggregator.base import BaseIngester
 from tik_core.aggregator.news_classifier import NewsClassifier
+from tik_core.storage.headlines_repo import persist_headlines
 
 log = structlog.get_logger()
 
@@ -58,6 +60,7 @@ class RedditIngester(BaseIngester):
         interval_s: int = 1800,
         limit_per_sub: int = 50,
         min_score: int = MIN_SCORE_THRESHOLD,
+        session_maker: async_sessionmaker[AsyncSession] | None = None,
     ) -> None:
         self.redis = redis
         self.classifier = classifier
@@ -66,6 +69,7 @@ class RedditIngester(BaseIngester):
         self.interval_s = interval_s
         self.limit_per_sub = limit_per_sub
         self.min_score = min_score
+        self.session_maker = session_maker
         self._running = False
         self._task: asyncio.Task | None = None
 
@@ -294,6 +298,14 @@ class RedditIngester(BaseIngester):
                     key = REDIS_KEY_TPL.format(entity=self.entity_id.lower())
                     await self.redis.setex(key, REDIS_TTL_S, payload)
                     await self.redis.publish(key, payload)
+                    # Lacune A J+10 — persistance DB des titres bruts.
+                    n_persisted = await persist_headlines(
+                        self.session_maker,
+                        entity_id=self.entity_id,
+                        source="reddit_btc",
+                        credibility=0.65,
+                        headlines=point["headlines"],
+                    )
                     top = (
                         point["top_subreddits"][0]["name"]
                         if point["top_subreddits"]
@@ -309,6 +321,7 @@ class RedditIngester(BaseIngester):
                         n_bearish=point["n_bearish"],
                         n_neutral=point["n_neutral"],
                         n_headlines=len(point["headlines"]),
+                        n_persisted=n_persisted,
                         top_sub=top,
                     )
                 await asyncio.sleep(self.interval_s)

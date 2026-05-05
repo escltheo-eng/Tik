@@ -630,11 +630,92 @@ Différence vs eux : Tik est **gratuit, hostable localement, et combine cette co
 
 ### Limite documentée à connaître
 
-Le LLM 3B utilisé pour classifier le sentiment **n'est pas 100 % déterministe** sur les titres ambigus. À deux cycles d'écart (30 min), un même titre légèrement borderline (genre *« Bitcoin holds support »*) peut basculer entre bull et neutral. Le score net agrégé reste stable à ±5 % mais les classifications individuelles peuvent changer. Une amélioration prévue en backlog : persister le sentiment par hash du titre (TTL 7 jours) pour réutiliser le verdict au lieu de re-classifier — bénéfice : stabilité totale + économie de calcul.
+Le LLM 3B utilisé pour classifier le sentiment **n'était pas 100 % déterministe** sur les titres ambigus. À deux cycles d'écart (30 min), un même titre légèrement borderline (genre *« Bitcoin holds support »*) pouvait basculer entre bull et neutral. Le score net agrégé restait stable à ±5 % mais les classifications individuelles changeaient.
+
+**Cette limite a été résolue le 2026-05-05** par un cache Redis (cf. section 16 ci-dessous, Lacune C).
 
 ---
 
-## 16. Pour résumer
+## 16. Améliorations OSINT pro Phase 1.1 (2026-05-05)
+
+Après la livraison de la carte « Top headlines » (section 15), trois lacunes vs le standard OSINT pro (Bloomberg, Recorded Future, Refinitiv) ont été identifiées et livrées en bloc avant de continuer le plan trading manuel J+10. Tik passe d'un MVP OSINT à une plateforme OSINT pro robuste sur les axes **audit historique + sentiment stable + transparence anti fake-news**.
+
+### Lacune G — Anti fake-news visible dashboard
+
+**Avant** : quand Tik flagait un signal en `circuit_breaker_status: degraded` ou `tripped` (cross-validation ADR-011 a détecté que les sources se contredisaient fortement), le badge affiché côté dashboard était cryptique :
+
+- Sur le détail signal : un bandeau rouge avec le texte « Circuit breaker : degraded » en franglais
+- Sur la liste Signals : une pastille rouge « CB » indifférenciée
+
+Tu voyais qu'il y avait quelque chose d'anormal mais sans comprendre quoi ni quoi en faire.
+
+**Après** : un composant unifié `AntiFakeNewsBadge` qui distingue clairement :
+
+- 🟧 **`degraded`** (orange) : drapeau de prudence. Le signal est émis avec direction inchangée, mais à interpréter avec prudence. Texte affiché : *« Anti fake-news : sources en désaccord — au moins 2 sources de sentiment divergent fortement sur ce signal. »*
+- 🟥 **`tripped`** (rouge) : bloquant. La direction a été forcée à `neutral` par sécurité, et le signal original est conservé dans l'hypothèse pour audit. Texte affiché : *« Anti fake-news : bloqué — outliers détectés ou désaccord critique. »*
+
+Le badge est visible aux **deux endroits** (mode compact dans la liste Signals, mode complet dans le détail signal), ce qui permet de repérer un signal flagué d'un coup d'œil sans devoir l'ouvrir.
+
+### Lacune C — Sentiment stable via cache Redis
+
+**Avant** : à chaque cycle ingester (toutes les 30 min), Tik re-classifiait tous les titres via Ollama. Comme le LLM 3B n'est pas 100 % déterministe sur les cas ambigus, **un même titre pouvait basculer entre bull/neutral/bear entre deux cycles**. UX confusante (« comment ça se fait alors que c'est les mêmes articles ? »).
+
+**Après** : un cache Redis indexé par hash du titre (SHA-256 normalisé tronqué à 16 caractères, clé `tik.sentiment.cache.{model}.{asset}.{hash}`, TTL 7 jours). Comportement :
+
+1. Avant chaque appel Ollama, Tik vérifie si ce titre a déjà été classifié dans les 7 derniers jours
+2. Si oui → retourne directement le verdict cached **sans appeler le LLM**
+3. Si non → appelle Ollama, parse le verdict, et stocke le label canonique (BULLISH/BEARISH/NEUTRAL) dans Redis
+
+**Bénéfices** :
+- **Stabilité totale** : un titre vu hier garde son sentiment original aujourd'hui
+- **Économie Ollama** : ~80 % des titres réapparaissent à chaque cycle de polling, donc ~80 % d'appels LLM économisés
+- **Best-effort sur les erreurs Redis** : si Redis plante, on retombe sur l'ancien comportement (re-classification systématique) au lieu de bloquer le pipeline
+
+**Subtilité** : la clé inclut le **modèle Ollama** et l'**asset** (Bitcoin vs Gold). Si on change de modèle (passage 3B → 7B) ou si le même titre est classifié pour un autre asset, le cache est invalidé naturellement — pas de mélange.
+
+### Lacune A — Persistance DB des titres pour audit historique
+
+**Avant** : les titres OSINT étaient stockés uniquement dans Redis avec un TTL de 2 heures. Une fois expirés, ils étaient perdus définitivement. Pas d'audit possible (« le 4 mai à 22 h, qu'est-ce qui se disait sur BTC ? »), pas de retro-analyse, pas de feature data pour Totem ML.
+
+**C'est précisément ce qui sépare un MVP OSINT d'une plateforme OSINT pro** : Bloomberg garde 10+ ans de news, Recorded Future maintient des archives interrogeables. Tik ne pouvait pas converger vers ce standard sans persistance long terme.
+
+**Après** : nouvelle table SQL `headlines` qui stocke chaque titre brut en parallèle de Redis. À chaque cycle ingester, après avoir publié l'agrégat dans Redis, l'ingester insère les 25 titres bruts en base avec leur métadonnées complètes (source, sentiment, crédibilité, URL, dates, hash unique).
+
+**Nouveau endpoint** `GET /api/v1/headlines/history/{entity_id}` qui permet la **retro-analyse jusqu'à 30 jours** (vs 24 h max côté Redis live) :
+
+- Filtres : `since_hours` (1-720), `limit` (1-500), `source` (optionnel)
+- Tri DESC par date d'ingestion
+- Format identique à l'endpoint live + un `id` UUID stable pour référence future
+
+**Cas d'usage débloqués** :
+- Audit forensic : comprendre rétrospectivement quel narratif circulait à un instant T
+- Mesure de qualité du classifier sur le temps long (corrélation sentiment/marché)
+- Recalibration `SOURCE_SCORES` (ADR-011) sur la base du contenu réel et pas juste des signaux dérivés
+- Feature data pour Totem ML (à venir post-J+30)
+- Convergence vers le standard OSINT pro
+
+**Best-effort sur les erreurs DB** : si Postgres est down ou en contention, l'écriture des titres est skippée silencieusement. L'ingester continue son cycle. Le seul effet est qu'on perd les titres du cycle (récupérables au cycle suivant si Redis n'a pas expiré).
+
+### Convergence mesurable vers le standard OSINT pro
+
+| Axe | Avant Phase 1.1 | Après Phase 1.1 | Bloomberg/Recorded Future |
+|---|---|---|---|
+| Audit historique des titres | ❌ TTL 2h Redis seul | ✅ DB SQL, retro-analyse 30j | ✅ 10+ ans |
+| Stabilité du sentiment | ❌ LLM 3B non-déterministe | ✅ Cache Redis 7j par hash titre | ✅ NLP propriétaire |
+| Transparence anti fake-news | ⚠️ Badge cryptique « CB » | ✅ Badge clair degraded/tripped + explication | ✅ Tags catégoriels |
+| Volume de sources | ⚠️ ~75 titres/24h | ⚠️ Inchangé | ✅ Milliers/jour |
+
+Tik converge sur 3 axes sur 4. Le volume reste un écart structurel (APIs payantes Bloomberg/Reuters), mais les 3 axes critiques pour un trading manuel sérieux sont au standard pro.
+
+### Pourquoi avoir fait Phase 1.1 AVANT Phase A.2 (hit rate live)
+
+Pour faire passer Tik d'un MVP à une plateforme OSINT pro robuste **avant** que l'utilisatrice trade manuellement avec son capital. Les 3 lacunes scorées (A 9/10 + G 8/10 + C 7/10) sont les fondations qu'on aurait regrettées de ne pas avoir au moment de prendre une vraie décision basée sur Tik.
+
+Décalage planning : les ~6-7h de Phase 1.1 décalent Phase A.2 (hit rate) d'environ 1 jour. Tradeoff jugé positif : meilleur de trader avec un Tik solide qu'avec un Tik à la dernière mode mais bancal.
+
+---
+
+## 17. Pour résumer
 
 ### Ce que Tik fait pour chaque signal
 
@@ -661,7 +742,7 @@ Le LLM 3B utilisé pour classifier le sentiment **n'est pas 100 % déterministe*
 
 ---
 
-## 17. État actuel et pistes futures
+## 18. État actuel et pistes futures
 
 ### Ce qui marche aujourd'hui
 

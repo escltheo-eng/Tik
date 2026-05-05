@@ -7,6 +7,7 @@ import asyncio
 
 import redis.asyncio as aioredis
 import structlog
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from tik_core.aggregator.binance_ingester import BinanceTradesIngester
 from tik_core.aggregator.cftc_cot_ingester import CftcCotIngester
@@ -27,6 +28,20 @@ async def main() -> None:
     settings = get_settings()
     redis = aioredis.from_url(settings.redis_url, decode_responses=True)
 
+    # Engine + session_maker dédiés aux ingesters (Lacune A J+10).
+    # Persistance DB des titres bruts pour audit historique. Séparé du
+    # session_maker du core (qui est dans l'autre process), donc pas de
+    # conflit de pool. Pool size modeste : 3 ingesters × ~1 INSERT par
+    # cycle de 30 min = très peu de connexions concurrentes.
+    db_engine = create_async_engine(
+        settings.database_url,
+        echo=False,
+        pool_size=5,
+        max_overflow=5,
+        pool_pre_ping=True,
+    )
+    session_maker = async_sessionmaker(db_engine, expire_on_commit=False)
+
     # ADR-008/009 — un classifier par ingester pour isoler les circuit breakers
     # Ollama. Construits en parallèle (4 pings simultanés) pour économiser
     # ~3 s au boot vs construction séquentielle.
@@ -41,24 +56,28 @@ async def main() -> None:
             ollama_url=settings.ollama_url,
             ollama_model=settings.ollama_model,
             asset_name="Bitcoin",
+            redis=redis,
         ),
         build_news_classifier(
             classifier_type=settings.news_classifier,
             ollama_url=settings.ollama_url,
             ollama_model=settings.ollama_model,
             asset_name="Bitcoin",
+            redis=redis,
         ),
         build_news_classifier(
             classifier_type=settings.news_classifier,
             ollama_url=settings.ollama_url,
             ollama_model=settings.ollama_model,
             asset_name="Gold",
+            redis=redis,
         ),
         build_news_classifier(
             classifier_type=settings.news_classifier,
             ollama_url=settings.ollama_url,
             ollama_model=settings.ollama_model,
             asset_name="Bitcoin",
+            redis=redis,
         ),
     )
 
@@ -73,6 +92,7 @@ async def main() -> None:
             classifier=cc_btc_classifier,
             currency="BTC",
             interval_s=3600,
+            session_maker=session_maker,
         ),
         GoogleNewsIngester(
             redis,
@@ -81,6 +101,7 @@ async def main() -> None:
             query="Bitcoin",
             interval_s=1800,
             limit=50,
+            session_maker=session_maker,
         ),
         GoogleNewsIngester(
             redis,
@@ -89,6 +110,7 @@ async def main() -> None:
             query='"gold price"',
             interval_s=1800,
             limit=50,
+            session_maker=session_maker,
         ),
         RedditIngester(
             redis,
@@ -97,6 +119,7 @@ async def main() -> None:
             subreddits=["Bitcoin", "CryptoMarkets"],
             interval_s=1800,
             limit_per_sub=50,
+            session_maker=session_maker,
         ),
         # ADR-010 — pas de classifier injecté : GDELT consomme le tone brut
         # calculé par GDELT (NLP scientifique non-LLM), première source de
@@ -125,6 +148,7 @@ async def main() -> None:
         for ing in ingesters:
             await ing.stop()
         await redis.close()
+        await db_engine.dispose()
 
 
 if __name__ == "__main__":

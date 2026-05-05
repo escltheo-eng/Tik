@@ -18,13 +18,28 @@ Sélection via la factory `build_news_classifier(...)`.
 
 from __future__ import annotations
 
+import hashlib
 import re
 from abc import ABC, abstractmethod
 
 import httpx
 import structlog
+from redis.asyncio import Redis
 
 log = structlog.get_logger()
+
+
+# Cache Redis du sentiment classifié par Ollama (Lacune C, Phase 1.1 J+10).
+# Évite la ré-classification du même titre à chaque cycle ingester (30 min)
+# et stabilise la sortie : un titre déjà vu garde son sentiment original
+# pendant TTL_S (7 jours), au lieu de se faire reclassifier par un LLM 3B
+# non-déterministe sur les cas ambigus.
+#
+# Clé : `tik.sentiment.cache.{model}.{asset_lower}.{sha256[:16]}`
+# Valeur : "BULLISH" | "BEARISH" | "NEUTRAL" (label canonique parsé)
+# TTL : 7 jours (cohérent avec l'horizon swing 5j + marge)
+CACHE_KEY_TPL = "tik.sentiment.cache.{model}.{asset}.{hash16}"
+CACHE_TTL_S = 7 * 86400
 
 
 # === Listes de mots-clés (déplacées de cryptocompare_ingester.py) ===
@@ -150,12 +165,14 @@ class OllamaClassifier(NewsClassifier):
         asset_name: str = "Bitcoin",
         fallback: NewsClassifier | None = None,
         timeout_s: float = 10.0,
+        redis: Redis | None = None,
     ) -> None:
         self.url = url.rstrip("/")
         self.model = model
         self.asset_name = asset_name
         self.fallback = fallback or KeywordClassifier()
         self.timeout_s = timeout_s
+        self.redis = redis
         self._consecutive_failures = 0
         self._batch_circuit_open = False
         self._client: httpx.AsyncClient | None = None
@@ -176,6 +193,15 @@ class OllamaClassifier(NewsClassifier):
     async def classify(self, title: str | None) -> tuple[int, int]:
         if not title:
             return 0, 0
+
+        # 1. Cache lookup (Lacune C — stabilité sentiment).
+        # Si on a déjà classifié ce titre dans les 7 derniers jours, on
+        # réutilise le verdict canonique sans re-appeler Ollama. Stabilise
+        # la sortie + économise du calcul (~80% des titres réapparaissent).
+        cached_label = await self._cache_lookup(title)
+        if cached_label is not None:
+            return self._label_to_counts(cached_label)
+
         if self._batch_circuit_open:
             return await self.fallback.classify(title)
 
@@ -199,7 +225,113 @@ class OllamaClassifier(NewsClassifier):
             return await self.fallback.classify(title)
 
         self._consecutive_failures = 0
-        return self._verdict_to_counts(verdict, title)
+
+        # 2. Parse + cache si verdict valide. On stocke le label canonique
+        # (BULLISH / BEARISH / NEUTRAL) plutôt que la réponse brute, ce qui :
+        # - rend le cache compact (10 chars max)
+        # - rend la lecture déterministe (`_label_to_counts` est trivial)
+        # - évite de cacher des réponses Ollama mal formées (parse échec → pas de cache)
+        label = self._parse_verdict_label(verdict)
+        if label is not None:
+            await self._cache_store(title, label)
+            return self._label_to_counts(label)
+
+        log.warning(
+            "news_classifier.ollama_unparsable_response",
+            response=verdict[:80],
+            title=title[:80],
+        )
+        return 0, 0
+
+    # ----- Cache Redis (Lacune C) -----
+
+    def _cache_key(self, title: str) -> str:
+        """Calcule la clé Redis unique pour (model, asset, title).
+
+        Le titre est normalisé (strip + lowercase) avant hash pour matcher
+        les variations de casing. SHA-256 tronqué à 16 hex chars (64 bits)
+        — collision improbable sur ~75 titres/jour, lecture humaine compacte.
+        """
+        normalized = title.strip().lower().encode("utf-8")
+        h = hashlib.sha256(normalized).hexdigest()[:16]
+        return CACHE_KEY_TPL.format(
+            model=self.model,
+            asset=self.asset_name.lower(),
+            hash16=h,
+        )
+
+    async def _cache_lookup(self, title: str) -> str | None:
+        """Lookup le label cached. Retourne `None` si miss / erreur Redis.
+
+        En cas d'erreur Redis (Redis down, parse invalide, etc.), on log un
+        warning et on retourne None — le caller fera l'appel Ollama frais
+        comme si le cache était vide. Pas de blocage par défaut.
+        """
+        if self.redis is None:
+            return None
+        try:
+            value = await self.redis.get(self._cache_key(title))
+        except Exception as exc:  # noqa: BLE001
+            log.warning(
+                "news_classifier.cache_read_error",
+                error=str(exc),
+                asset=self.asset_name,
+            )
+            return None
+        if value is None:
+            return None
+        # Normalise éventuels bytes vs str selon decode_responses du client Redis.
+        label = value.decode() if isinstance(value, bytes) else str(value)
+        if label not in ("BULLISH", "BEARISH", "NEUTRAL"):
+            # Cache corrompu ou ancienne version : on ignore
+            return None
+        return label
+
+    async def _cache_store(self, title: str, label: str) -> None:
+        """Persiste le label dans Redis avec TTL `CACHE_TTL_S`.
+
+        Best-effort : en cas d'erreur Redis, on log et on laisse passer
+        — le caller a déjà obtenu son verdict, le seul effet de bord est
+        que le titre sera re-classifié au prochain cycle.
+        """
+        if self.redis is None:
+            return
+        if label not in ("BULLISH", "BEARISH", "NEUTRAL"):
+            return
+        try:
+            await self.redis.setex(self._cache_key(title), CACHE_TTL_S, label)
+        except Exception as exc:  # noqa: BLE001
+            log.warning(
+                "news_classifier.cache_write_error",
+                error=str(exc),
+                asset=self.asset_name,
+            )
+
+    @staticmethod
+    def _parse_verdict_label(verdict: str) -> str | None:
+        """Parse tolérant : retourne le 1er label canonique trouvé, ou None.
+
+        Cohérent avec `_verdict_to_counts` (gardé pour rétrocompat tests)
+        mais retourne le label brut au lieu des comptes — utile pour le cache.
+        """
+        upper = verdict.upper()
+        positions: dict[str, int] = {}
+        for label in ("BULLISH", "BEARISH", "NEUTRAL"):
+            idx = upper.find(label)
+            if idx >= 0:
+                positions[label] = idx
+        if not positions:
+            return None
+        return min(positions.items(), key=lambda kv: kv[1])[0]
+
+    @staticmethod
+    def _label_to_counts(label: str) -> tuple[int, int]:
+        """Mappe un label canonique vers (n_bull, n_bear)."""
+        if label == "BULLISH":
+            return 1, 0
+        if label == "BEARISH":
+            return 0, 1
+        return 0, 0  # NEUTRAL ou autre
 
     async def _call_ollama(self, title: str) -> str:
         prompt = self.PROMPT_TEMPLATE.format(
@@ -253,6 +385,7 @@ async def build_news_classifier(
     ollama_url: str,
     ollama_model: str,
     asset_name: str = "Bitcoin",
+    redis: Redis | None = None,
 ) -> NewsClassifier:
     """Sélectionne le classifier selon la config et vérifie la santé d'Ollama
     si demandé. En cas d'indisponibilité d'Ollama, fallback sur keywords.
@@ -261,6 +394,10 @@ async def build_news_classifier(
     le prompt au LLM précise pour quel asset on classifie le sentiment.
     Pour le `KeywordClassifier` (analyse par mots-clés agnostique), le
     paramètre est loggué mais n'a pas d'effet sur la classification.
+
+    `redis` (optionnel) est propagé à `OllamaClassifier` pour activer le
+    cache de stabilité du sentiment (Lacune C, Phase 1.1 J+10). Si `None`,
+    le classifier ré-appelle Ollama à chaque cycle (comportement historique).
     """
     if classifier_type == "keywords":
         log.info("news_classifier.using_keywords", asset=asset_name)
@@ -273,11 +410,13 @@ async def build_news_classifier(
             url=ollama_url,
             model=ollama_model,
             asset=asset_name,
+            cache_enabled=redis is not None,
         )
         return OllamaClassifier(
             url=ollama_url,
             model=ollama_model,
             asset_name=asset_name,
+            redis=redis,
         )
 
     log.warning(

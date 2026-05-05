@@ -173,6 +173,32 @@ class HeadlineOut(BaseModel):
         return iso_utc(value)
 
 
+class HeadlineHistoryOut(BaseModel):
+    """Titre OSINT historique persisté en DB (Lacune A, Phase 1.1 J+10).
+
+    Identique à `HeadlineOut` + l'`id` UUID de la row pour permettre des
+    références futures (linking signal↔titres si on faisait ADR-016 plus
+    tard, audit forensic, etc.).
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    entity_id: str
+    title: str
+    url: str | None = None
+    publisher: str
+    source: str
+    credibility: float = Field(ge=0, le=1)
+    sentiment: str
+    published_at: datetime | None = None
+    fetched_at: datetime
+
+    @field_serializer("published_at", "fetched_at", when_used="json")
+    def _ser_dt(self, value: datetime | None) -> str | None:
+        return iso_utc(value)
+
+
 # ----- Health -----
 
 class HealthOut(BaseModel):

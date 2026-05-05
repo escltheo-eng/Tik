@@ -28,12 +28,19 @@ from math import exp
 import redis.asyncio as aioredis
 import structlog
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from tik_core.auth import AuthContext, require_scope
 from tik_core.config import get_settings
 from tik_core.scoring.source_credibility import get_effective_score
 from tik_core.scoring.swing_engine import SOURCE_SCORES
-from tik_core.storage.schemas import HeadlineOut
+from tik_core.storage.database import get_session
+from tik_core.storage.headlines_repo import (
+    cutoff_from_hours,
+    fetch_headlines_history,
+)
+from tik_core.storage.models import HeadlineRecord
+from tik_core.storage.schemas import HeadlineHistoryOut, HeadlineOut
 from tik_core.utils.time import now_utc
 
 log = structlog.get_logger()
@@ -249,3 +256,41 @@ async def get_top_headlines(
         return [HeadlineOut(**h) for h in finalized]
     finally:
         await redis.close()
+
+
+@router.get("/history/{entity_id}", response_model=list[HeadlineHistoryOut])
+async def get_headlines_history(
+    entity_id: str,
+    since_hours: int = Query(168, ge=1, le=720),
+    limit: int = Query(100, ge=1, le=500),
+    source: str | None = Query(
+        None,
+        description="Filtrer par source (ex: google_news_rss). Optional.",
+    ),
+    session: AsyncSession = Depends(get_session),
+    _ctx: AuthContext = Depends(require_scope("read:signals")),
+) -> list[HeadlineRecord]:
+    """Retourne les titres OSINT historiques persistés en DB (Lacune A J+10).
+
+    Distinct de `/headlines/{entity_id}` (Redis live, fenêtre 24 h max) :
+    cet endpoint consulte la table `headlines` pour permettre la
+    retro-analyse jusqu'à 30 jours en arrière (limite `since_hours` à 720 h).
+
+    - `entity_id` : domain-agnostic (BTC, GOLD, futurs domaines)
+    - `since_hours` : fenêtre 1-720 h (1 mois max), défaut 168 h (7 j)
+    - `limit` : 1-500, défaut 100
+    - `source` : filtre optionnel par ingester (`google_news_rss`,
+      `cryptocompare_news`, `reddit_btc`)
+
+    Tri DESC par `fetched_at`. Pas de dédup automatique : un même titre
+    ingéré 30 min plus tard apparaîtra deux fois (cohérent avec la nature
+    "audit log" de la table).
+    """
+    cutoff = cutoff_from_hours(since_hours)
+    return await fetch_headlines_history(
+        session,
+        entity_id=entity_id,
+        since=cutoff,
+        limit=limit,
+        source=source,
+    )

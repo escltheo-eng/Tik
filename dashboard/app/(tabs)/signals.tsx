@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { AntiFakeNewsBadge } from '@/components/dashboard/anti-fake-news-badge';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Colors } from '@/constants/theme';
@@ -112,11 +113,8 @@ export default function SignalsScreen() {
             <ThemedText style={styles.directionLabel}>{item.direction.toUpperCase()}</ThemedText>
           </View>
           <ThemedText style={styles.horizonLabel}>{item.horizon}</ThemedText>
-          {item.circuit_breaker_status !== 'ok' ? (
-            <View style={[styles.alertBadge, { backgroundColor: '#c0392b' }]}>
-              <ThemedText style={styles.alertLabel}>CB</ThemedText>
-            </View>
-          ) : null}
+          <AntiFakeNewsBadge status={item.circuit_breaker_status} compact />
+
         </ThemedView>
 
         <ThemedView style={[styles.rowFooter, { backgroundColor: 'transparent' }]}>

@@ -201,6 +201,41 @@ class SourceCredibilityHistory(Base):
     # "unchanged" | "penalty" | "reward"
 
 
+class HeadlineRecord(Base):
+    """Titre OSINT brut persisté pour audit historique (Lacune A, Phase 1.1 J+10).
+
+    Stocké aux côtés des agrégats Redis (TTL 2 h) pour permettre :
+    - retro-analyse (« le 4 mai à 22 h, qu'est-ce qui se disait sur BTC ? »)
+    - mesure de la qualité du classifier sur le temps long
+    - feature data pour Totem ML (à venir post-J+30)
+    - convergence vers le standard OSINT pro (Bloomberg/Refinitiv archivent
+      les news pendant des années, pas seulement quelques heures)
+
+    Cohérent avec ADR-013 (timezone-aware) : `fetched_at` et `published_at`
+    sont stockés en `TIMESTAMP WITHOUT TIMEZONE` (sémantiquement UTC) et le
+    helper d'insertion strippe la tzinfo des inputs aware. Le `field_serializer`
+    Pydantic ré-attache `Z` à la sortie côté API.
+    """
+
+    __tablename__ = "headlines"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid4())
+    )
+    entity_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    source: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    title_hash: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    url: Mapped[str | None] = mapped_column(Text)
+    publisher: Mapped[str] = mapped_column(String(128), default="unknown", nullable=False)
+    sentiment: Mapped[str] = mapped_column(String(16), nullable=False)
+    credibility: Mapped[float] = mapped_column(Float, nullable=False)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime)
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime, default=now_utc_naive, nullable=False, index=True
+    )
+
+
 class ApiKey(Base):
     """Clé API pour authentification des SDK clients.
 

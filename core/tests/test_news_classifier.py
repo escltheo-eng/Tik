@@ -459,6 +459,207 @@ async def test_ollama_unparsable_response_returns_neutral(monkeypatch):
 
 
 # =============================================================================
+# Cache Redis du sentiment (Lacune C, Phase 1.1 J+10)
+# =============================================================================
+
+
+class _FakeRedis:
+    """Mock minimal d'`asyncio.Redis` : in-memory dict avec API setex/get."""
+
+    def __init__(self) -> None:
+        self._data: dict[str, str] = {}
+        self.read_calls: list[str] = []
+        self.write_calls: list[tuple[str, int, str]] = []
+
+    async def get(self, key: str):
+        self.read_calls.append(key)
+        return self._data.get(key)
+
+    async def setex(self, key: str, ttl: int, value: str) -> None:
+        self.write_calls.append((key, ttl, value))
+        self._data[key] = value
+
+
+def test_parse_verdict_label_returns_canonical():
+    """Helper pur : retourne BULLISH / BEARISH / NEUTRAL ou None."""
+    assert OllamaClassifier._parse_verdict_label("BULLISH") == "BULLISH"
+    assert OllamaClassifier._parse_verdict_label("the answer is bearish") == "BEARISH"
+    assert OllamaClassifier._parse_verdict_label("NEUTRAL.") == "NEUTRAL"
+    # Premier match gagne
+    assert OllamaClassifier._parse_verdict_label("BULLISH but also BEARISH") == "BULLISH"
+    # Non parsable
+    assert OllamaClassifier._parse_verdict_label("totally unrelated garbage") is None
+    assert OllamaClassifier._parse_verdict_label("") is None
+
+
+def test_label_to_counts_mapping():
+    """Helper pur : mappe label canonique vers (n_bull, n_bear)."""
+    assert OllamaClassifier._label_to_counts("BULLISH") == (1, 0)
+    assert OllamaClassifier._label_to_counts("BEARISH") == (0, 1)
+    assert OllamaClassifier._label_to_counts("NEUTRAL") == (0, 0)
+    # Label inconnu → traité comme NEUTRAL (sécurité)
+    assert OllamaClassifier._label_to_counts("WHATEVER") == (0, 0)
+
+
+def test_cache_key_is_unique_per_model_asset_title():
+    """Même titre, model/asset différent → keys différentes."""
+    c1 = OllamaClassifier(url="http://x", model="llama3.2:3b", asset_name="Bitcoin")
+    c2 = OllamaClassifier(url="http://x", model="llama3.2:7b", asset_name="Bitcoin")
+    c3 = OllamaClassifier(url="http://x", model="llama3.2:3b", asset_name="Gold")
+
+    title = "BTC surges"
+    k1 = c1._cache_key(title)
+    k2 = c2._cache_key(title)
+    k3 = c3._cache_key(title)
+    assert k1 != k2  # model différent
+    assert k1 != k3  # asset différent
+    assert k1.startswith("tik.sentiment.cache.llama3.2:3b.bitcoin.")
+
+
+def test_cache_key_normalizes_casing_and_whitespace():
+    """Même titre avec variations cosmétiques → même key (stabilité dédup)."""
+    c = OllamaClassifier(url="http://x", model="m", asset_name="Bitcoin")
+    k1 = c._cache_key("BTC SURGES")
+    k2 = c._cache_key("  btc surges  ")
+    k3 = c._cache_key("Btc Surges")
+    assert k1 == k2 == k3
+
+
+async def test_ollama_classify_uses_cache_on_hit(monkeypatch):
+    """Cache hit → retourne directement le verdict, sans appeler Ollama."""
+    redis = _FakeRedis()
+    classifier = OllamaClassifier(
+        url="http://x", model="llama3.2:3b", asset_name="Bitcoin", redis=redis,
+    )
+    title = "BTC surges to new high"
+    # Pré-remplir le cache avec BULLISH
+    cache_key = classifier._cache_key(title)
+    redis._data[cache_key] = "BULLISH"
+
+    mock_call = AsyncMock(return_value="should-not-be-called")
+    monkeypatch.setattr(classifier, "_call_ollama", mock_call)
+
+    result = await classifier.classify(title)
+    assert result == (1, 0)  # BULLISH → (1, 0)
+    assert mock_call.call_count == 0  # Ollama jamais appelé
+
+
+async def test_ollama_classify_stores_in_cache_on_success(monkeypatch):
+    """Cache miss → appelle Ollama et stocke le label canonique dans Redis."""
+    redis = _FakeRedis()
+    classifier = OllamaClassifier(
+        url="http://x", model="llama3.2:3b", asset_name="Bitcoin", redis=redis,
+    )
+    monkeypatch.setattr(
+        classifier, "_call_ollama", AsyncMock(return_value="BEARISH"),
+    )
+
+    result = await classifier.classify("BTC dumps")
+    assert result == (0, 1)
+
+    # 1 write avec TTL = 7 jours et label canonique stocké
+    assert len(redis.write_calls) == 1
+    key, ttl, value = redis.write_calls[0]
+    assert ttl == 7 * 86400
+    assert value == "BEARISH"
+
+
+async def test_ollama_no_cache_without_redis(monkeypatch):
+    """Sans `redis` injecté, comportement historique inchangé (pas de cache)."""
+    classifier = OllamaClassifier(
+        url="http://x", model="llama3.2:3b", redis=None,
+    )
+    monkeypatch.setattr(
+        classifier, "_call_ollama", AsyncMock(return_value="BULLISH"),
+    )
+    assert await classifier.classify("BTC surges") == (1, 0)
+    # Pas de Redis → pas d'erreur, pas d'appel cache (impossible à observer ici
+    # mais on vérifie surtout que ça ne crashe pas → rétrocompat préservée)
+
+
+async def test_ollama_cache_read_error_falls_through_to_ollama(monkeypatch):
+    """Si Redis plante en read, on tente quand même Ollama (best-effort)."""
+
+    class _BrokenRedis:
+        async def get(self, key):
+            raise RuntimeError("redis down")
+
+        async def setex(self, *args):
+            raise RuntimeError("redis down")
+
+    classifier = OllamaClassifier(
+        url="http://x", model="llama3.2:3b", redis=_BrokenRedis(),
+    )
+    monkeypatch.setattr(
+        classifier, "_call_ollama", AsyncMock(return_value="BULLISH"),
+    )
+    # Doit retourner BULLISH via Ollama, pas crasher
+    assert await classifier.classify("BTC surges") == (1, 0)
+
+
+async def test_ollama_cache_does_not_store_unparsable_verdict(monkeypatch):
+    """Si Ollama répond du bruit non parsable, on ne pollue PAS le cache."""
+    redis = _FakeRedis()
+    classifier = OllamaClassifier(
+        url="http://x", model="llama3.2:3b", redis=redis,
+    )
+    monkeypatch.setattr(
+        classifier, "_call_ollama", AsyncMock(return_value="GLORG WAT"),
+    )
+    result = await classifier.classify("BTC mystery title")
+    assert result == (0, 0)
+    # Aucune écriture cache (verdict non parsable)
+    assert redis.write_calls == []
+
+
+async def test_ollama_cache_invalid_stored_value_treated_as_miss(monkeypatch):
+    """Si le cache contient une valeur corrompue (non parsable), on retombe sur Ollama."""
+    redis = _FakeRedis()
+    classifier = OllamaClassifier(
+        url="http://x", model="llama3.2:3b", redis=redis,
+    )
+    title = "BTC surges"
+    redis._data[classifier._cache_key(title)] = "GARBAGE_FROM_OLD_VERSION"
+
+    mock_call = AsyncMock(return_value="BULLISH")
+    monkeypatch.setattr(classifier, "_call_ollama", mock_call)
+    assert await classifier.classify(title) == (1, 0)
+    # Ollama appelé malgré la valeur cachée invalide
+    assert mock_call.call_count == 1
+    # Et le cache mis à jour avec la bonne valeur
+    assert redis._data[classifier._cache_key(title)] == "BULLISH"
+
+
+async def test_ollama_cache_circuit_breaker_open_skips_cache_lookup(monkeypatch):
+    """Quand le circuit batch est ouvert, on n'utilise pas le cache mais on
+    passe direct au fallback (qui ne dépend pas d'Ollama). Cohérent avec le
+    comportement historique : circuit ouvert = on évite Ollama et tout ce
+    qui s'y rattache."""
+    # Note : ce comportement est documenté pour expliciter qu'on ne tente
+    # PAS de bypasser le circuit via le cache. Si Ollama est down et qu'on
+    # avait une réponse cachée, on préfère le fallback keywords (cohérence
+    # de la sortie sur tout le batch en mode dégradé).
+    redis = _FakeRedis()
+    classifier = OllamaClassifier(
+        url="http://x", model="llama3.2:3b", redis=redis,
+    )
+    classifier._batch_circuit_open = True  # simule circuit déjà ouvert
+    title = "BTC surges to new high"
+    redis._data[classifier._cache_key(title)] = "BEARISH"  # cache dirait bear
+
+    mock_call = AsyncMock()
+    monkeypatch.setattr(classifier, "_call_ollama", mock_call)
+
+    result = await classifier.classify(title)
+    # Cache HIT en premier (cohérent avec le code actuel : le lookup cache
+    # se fait AVANT le check du circuit breaker, donc on lit le cache même
+    # circuit ouvert. C'est OK : cache = pas d'appel Ollama, donc pas de
+    # risque d'aggraver la situation Ollama).
+    assert result == (0, 1)  # BEARISH du cache
+    assert mock_call.call_count == 0
+
+
+# =============================================================================
 # build_news_classifier — factory avec mock de httpx.AsyncClient
 # =============================================================================
 

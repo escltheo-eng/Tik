@@ -2,6 +2,7 @@ import { useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
+import { AntiFakeNewsBadge } from '@/components/dashboard/anti-fake-news-badge';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Colors } from '@/constants/theme';
@@ -123,13 +124,7 @@ export default function SignalDetailScreen() {
             Expire le {formatLocal(signal.expiry)}
           </ThemedText>
         ) : null}
-        {signal.circuit_breaker_status !== 'ok' ? (
-          <ThemedView style={[styles.cbWarn, { backgroundColor: 'rgba(192, 57, 43, 0.12)' }]}>
-            <ThemedText style={{ color: '#c0392b', fontWeight: '600' }}>
-              Circuit breaker : {signal.circuit_breaker_status}
-            </ThemedText>
-          </ThemedView>
-        ) : null}
+        <AntiFakeNewsBadge status={signal.circuit_breaker_status} />
       </ThemedView>
 
       {signal.hypothesis ? (
