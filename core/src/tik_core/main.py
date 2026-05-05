@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 
 from tik_core import __version__
-from tik_core.api import entities, feedback, headlines, health, signals, veracity, ws
+from tik_core.api import entities, feedback, headlines, health, metrics, signals, veracity, ws
 from tik_core.config import get_settings
 from tik_core.storage.database import close_engine, init_engine
 
@@ -87,6 +87,7 @@ def create_app() -> FastAPI:
     app.include_router(veracity.router, prefix=prefix, tags=["veracity"])
     app.include_router(feedback.router, prefix=prefix, tags=["feedback"])
     app.include_router(headlines.router, prefix=prefix, tags=["headlines"])
+    app.include_router(metrics.router, prefix=prefix, tags=["metrics"])
     app.include_router(ws.router, prefix=prefix, tags=["websocket"])
 
     def custom_openapi() -> dict:

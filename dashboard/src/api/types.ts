@@ -108,3 +108,24 @@ export interface Headline {
   published_at: string | null;
   fetched_at: string;
 }
+
+// ----- Hit rate (Phase A.2 trading manuel J+10) -----
+
+export interface HitRate {
+  entity_id: string;
+  horizon: string;
+  since_days: number;
+  threshold_pct: number;
+  measure_hours: number;
+  n_total: number;
+  n_evaluated: number;
+  n_skipped: number;
+  n_success: number;
+  n_flagged_excluded: number;
+  include_flagged: boolean;
+  hit_rate: number;
+  avg_gain_pct: number;
+  sample_warning: string | null;
+  computed_at: string;
+  cache_hit: boolean;
+}

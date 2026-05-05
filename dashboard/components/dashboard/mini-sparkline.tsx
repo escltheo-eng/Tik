@@ -14,6 +14,8 @@ export interface MiniSparklineProps {
   thresholds?: number[];
   thresholdColor?: string;
   emptyMessage?: string;
+  autoScale?: boolean;
+  minAmplitude?: number;
 }
 
 export function MiniSparkline({
@@ -27,6 +29,8 @@ export function MiniSparkline({
   thresholds,
   thresholdColor = 'rgba(127, 140, 141, 0.3)',
   emptyMessage = 'Pas assez de points pour tracer',
+  autoScale = false,
+  minAmplitude = 0.1,
 }: MiniSparklineProps) {
   if (values.length < 2) {
     return (
@@ -36,15 +40,32 @@ export function MiniSparkline({
     );
   }
 
-  const range = Math.max(yMax - yMin, Number.EPSILON);
+  let effectiveMin = yMin;
+  let effectiveMax = yMax;
+  if (autoScale) {
+    const refs = thresholds ? [...values, ...thresholds] : values;
+    const dataMin = Math.min(...refs);
+    const dataMax = Math.max(...refs);
+    const span = Math.max(dataMax - dataMin, minAmplitude);
+    const pad = span * 0.1;
+    effectiveMin = Math.max(0, dataMin - pad);
+    effectiveMax = Math.min(1, dataMax + pad);
+    if (effectiveMax - effectiveMin < minAmplitude) {
+      const center = (effectiveMin + effectiveMax) / 2;
+      effectiveMin = Math.max(0, center - minAmplitude / 2);
+      effectiveMax = Math.min(1, center + minAmplitude / 2);
+    }
+  }
+
+  const range = Math.max(effectiveMax - effectiveMin, Number.EPSILON);
   const padding = strokeWidth + 1;
   const innerW = width - padding * 2;
   const innerH = height - padding * 2;
 
   const project = (v: number, i: number) => {
     const x = padding + (i / (values.length - 1)) * innerW;
-    const clamped = Math.max(yMin, Math.min(yMax, v));
-    const norm = (clamped - yMin) / range;
+    const clamped = Math.max(effectiveMin, Math.min(effectiveMax, v));
+    const norm = (clamped - effectiveMin) / range;
     const y = padding + (1 - norm) * innerH;
     return { x, y };
   };
@@ -60,7 +81,8 @@ export function MiniSparkline({
     <View style={{ width, height }}>
       <Svg width={width} height={height}>
         {thresholds?.map((t, i) => {
-          const norm = (Math.max(yMin, Math.min(yMax, t)) - yMin) / range;
+          if (t < effectiveMin || t > effectiveMax) return null;
+          const norm = (t - effectiveMin) / range;
           const y = padding + (1 - norm) * innerH;
           return (
             <Line

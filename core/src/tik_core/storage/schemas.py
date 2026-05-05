@@ -199,6 +199,38 @@ class HeadlineHistoryOut(BaseModel):
         return iso_utc(value)
 
 
+# ----- Metrics -----
+
+class HitRateOut(BaseModel):
+    """Hit rate live des signaux Tik sur une fenêtre temporelle.
+
+    Phase A.2 du plan trading manuel J+10 (cf. `docs/backlog.md` entry n°3).
+    Mesure la performance des décisions Tik par horizon × entity sur
+    les `since_days` derniers jours.
+    """
+
+    entity_id: str
+    horizon: str  # "flash" | "swing" | "macro"
+    since_days: int
+    threshold_pct: float
+    measure_hours: float  # durée canonique de mesure du delta prix
+    n_total: int  # signaux totaux trouvés (avant filtrage)
+    n_evaluated: int  # signaux pour lesquels on a pu calculer un delta prix
+    n_skipped: int  # signaux dont le prix n'était pas disponible
+    n_success: int  # signaux corrects
+    n_flagged_excluded: int  # signaux degraded/tripped exclus (si include_flagged=False)
+    include_flagged: bool
+    hit_rate: float = Field(ge=0, le=1)
+    avg_gain_pct: float
+    sample_warning: str | None = None  # ex: "Échantillon faible (12 signaux, 30 mini recommandé)"
+    computed_at: datetime
+    cache_hit: bool = False  # diagnostic : valeur servie depuis le cache Redis
+
+    @field_serializer("computed_at", when_used="json")
+    def _ser_computed_at(self, value: datetime) -> str:
+        return iso_utc(value) or ""
+
+
 # ----- Health -----
 
 class HealthOut(BaseModel):

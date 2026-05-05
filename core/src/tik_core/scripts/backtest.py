@@ -30,6 +30,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from tik_core.config import get_settings
 from tik_core.storage.models import BacktestRun, Signal
+from tik_core.utils.time import now_utc_naive
 
 log = structlog.get_logger()
 

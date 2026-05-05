@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, StyleSheet } from 'react-native';
 
+import { HitRateCard } from '@/components/dashboard/hit-rate-card';
 import { KpiCard } from '@/components/dashboard/kpi-card';
 import { MiniSparkline } from '@/components/dashboard/mini-sparkline';
 import { StatsLLMCard } from '@/components/dashboard/stats-llm-card';
@@ -16,11 +17,12 @@ import { TikError } from '@/src/api/errors';
 import { Health } from '@/src/api/types';
 import { useAuth } from '@/src/auth/AuthContext';
 import { useDashboardKpis } from '@/src/hooks/useDashboardKpis';
+import { useHitRate } from '@/src/hooks/useHitRate';
 import { useTick } from '@/src/hooks/use-tick';
 import { useTopHeadlines } from '@/src/hooks/useTopHeadlines';
 import { timeAgo } from '@/src/utils/time';
 
-const APP_VERSION = '0.5.3';
+const APP_VERSION = '0.5.4';
 
 const HEALTH_REFRESH_INTERVAL_MS = 30_000;
 
@@ -84,6 +86,12 @@ export default function HomeScreen() {
   const kpis = useDashboardKpis();
   const [headlinesEntity, setHeadlinesEntity] = useState<string>('BTC');
   const headlinesState = useTopHeadlines(headlinesEntity, { limit: 5 });
+  const [hitRateEntity, setHitRateEntity] = useState<string>('BTC');
+  const [hitRateHorizon, setHitRateHorizon] = useState<string>('swing');
+  const [hitRateIncludeFlagged, setHitRateIncludeFlagged] = useState<boolean>(false);
+  const hitRateState = useHitRate(hitRateEntity, hitRateHorizon, {
+    includeFlagged: hitRateIncludeFlagged,
+  });
   useTick();
 
   const statusLabel: Record<HealthState['status'], string> = {
@@ -194,6 +202,18 @@ export default function HomeScreen() {
         error={kpis.signals24hError}
       />
 
+      <HitRateCard
+        data={hitRateState.data}
+        entityId={hitRateEntity}
+        horizon={hitRateHorizon}
+        includeFlagged={hitRateIncludeFlagged}
+        onEntityChange={setHitRateEntity}
+        onHorizonChange={setHitRateHorizon}
+        onIncludeFlaggedChange={setHitRateIncludeFlagged}
+        loading={hitRateState.loading}
+        error={hitRateState.error}
+      />
+
       <TopHeadlinesCard
         headlines={headlinesState.headlines}
         entityId={headlinesEntity}
@@ -229,11 +249,25 @@ export default function HomeScreen() {
       </ThemedView>
 
       <ThemedView style={[styles.card, { borderColor: palette.icon }]}>
-        <ThemedText type="defaultSemiBold">Tendance veracity (12 derniers)</ThemedText>
+        <ThemedText type="defaultSemiBold">Tendance veracity</ThemedText>
+        {kpis.veracitySeries.length >= 2 ? (
+          <>
+            <ThemedText style={styles.veracityStats}>
+              min {(Math.min(...kpis.veracitySeries) * 100).toFixed(0)}% · actuelle{' '}
+              {(kpis.veracitySeries[kpis.veracitySeries.length - 1] * 100).toFixed(0)}% · max{' '}
+              {(Math.max(...kpis.veracitySeries) * 100).toFixed(0)}%
+            </ThemedText>
+            <ThemedText style={styles.veracitySubtitle}>
+              {kpis.veracitySeries.length} derniers signaux · ~24 dernières heures
+            </ThemedText>
+          </>
+        ) : null}
         <MiniSparkline
           values={kpis.veracitySeries}
+          height={80}
           color={Colors.light.tint}
           thresholds={[0.7, 0.85]}
+          autoScale
           emptyMessage="Pas assez de signaux pour tracer"
         />
         <ThemedView style={styles.legendRow}>
@@ -339,6 +373,16 @@ const styles = StyleSheet.create({
   legendItem: {
     fontSize: 11,
     opacity: 0.5,
+  },
+  veracityStats: {
+    fontSize: 13,
+    opacity: 0.85,
+    marginTop: 2,
+  },
+  veracitySubtitle: {
+    fontSize: 11,
+    opacity: 0.5,
+    marginBottom: 4,
   },
   versionBox: {
     marginTop: 24,

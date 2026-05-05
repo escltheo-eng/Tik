@@ -13,6 +13,7 @@ import {
   Entity,
   Headline,
   Health,
+  HitRate,
   Signal,
   SourceVeracity,
   VeracityStatus,
@@ -127,4 +128,27 @@ export async function getTopHeadlines(
       sort: params.sort ?? 'credibility_recency',
     },
   );
+}
+
+// ----- Hit rate (Phase A.2 trading manuel J+10) -----
+
+export interface HitRateParams {
+  sinceDays?: number;
+  thresholdPct?: number;
+  includeFlagged?: boolean;
+}
+
+export async function getHitRate(
+  client: HttpClient,
+  entityId: string,
+  horizon: string,
+  params: HitRateParams = {},
+): Promise<HitRate> {
+  return client.get<HitRate>('/metrics/hit_rate', {
+    entity_id: entityId,
+    horizon,
+    since_days: params.sinceDays ?? 30,
+    threshold_pct: params.thresholdPct,
+    include_flagged: params.includeFlagged ?? false,
+  });
 }
