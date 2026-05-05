@@ -131,6 +131,40 @@ Cette décision **NE modifie pas** :
 - **Garde-fou 2 (budget test 5%)** rappelé pour mémoire au moment du switch shadow → actif Zeta.
 - **Section 6 paranoïa contrôlée** : maintenue. Ce fix est purement technique (timezone), pas décisionnel.
 
+## Amendement post-livraison — Bug 9 régression DB asyncpg (2026-05-04)
+
+**Prémisse erronée corrigée** : la décision 4 (« pas de migration Alembic vers TIMESTAMPTZ ») reposait initialement sur l'idée qu'asyncpg accepterait silencieusement un datetime aware en colonne `TIMESTAMP WITHOUT TIME ZONE` en strippant la tzinfo. Le commentaire d'`utils/time.py:18` reflétait cette croyance (« asyncpg strippe silencieusement la tz d'un aware mais autant garder la cohérence »).
+
+**Réalité observée runtime** : asyncpg lève `asyncpg.exceptions.DataError: invalid input for query argument $2: ... (can't subtract offset-naive and offset-aware datetimes)` sur un INSERT vers `signals.timestamp` ou `signals.expiry`. Conséquence : entre 13:09 UTC et 17:11 UTC le 2026-05-04, **aucun signal n'est arrivé en DB** — les engines tournaient, le LLM produisait ses candidates, l'INSERT échouait (logué côté scheduler mais sans crash, le job continuait son cycle suivant). ~4 heures de cycles perdus avant détection. **Bug invisible en CI** car les tests pytest utilisent SQLite qui accepte aware sans broncher.
+
+**Workaround chirurgical** (commit `6a5e102`) : strip explicite de la `tzinfo` au moment de l'INSERT dans `core/src/tik_core/scoring/publisher.py:_publish_signal`. 2 lignes ajoutées :
+
+```python
+timestamp_naive = (
+    decision.timestamp.replace(tzinfo=None)
+    if decision.timestamp.tzinfo is not None
+    else decision.timestamp
+)
+expiry = (now_utc() + EXPIRY_BY_HORIZON[horizon]).replace(tzinfo=None)
+```
+
+**Pourquoi pas une refonte plus large** :
+
+| Option | Pour | Contre | Verdict |
+|---|---|---|---|
+| Migration TIMESTAMPTZ | Élimine définitivement le problème | Lourde sur hypertable Timescale, risquée en prod | Rejetée (cohérence avec décision 4) |
+| `now_utc()` → `now_utc_naive()` dans 5 sites engines | Évite le strip dans publisher | Casse la sémantique « aware partout en mémoire » | Rejetée |
+| Workaround chirurgical publisher.py | 2 lignes, isolé, conserve sémantique aware en mémoire + sérialisation `Z` côté Pydantic intacte | Strip doit être maintenu si un nouveau canal d'INSERT est ajouté | **Retenu** |
+
+**Conséquences sur l'ADR** :
+
+- Décision 3 (helper `utils/time.py`) inchangée.
+- Décision 4 (pas de migration TIMESTAMPTZ) inchangée mais **maintenant explicitement justifiée par le coût de migration sur hypertable**, plus par la croyance asyncpg-permissif.
+- Commentaire `utils/time.py:18` corrigé en : « asyncpg lève `DataError` sur un datetime aware passé à une telle colonne (régression bug 9 du 2026-05-04...) ».
+- Test pytest Postgres bout-en-bout en CI **toujours à ajouter** comme dette technique tracée — éviterait qu'une régression DB-spécifique invisible en SQLite repasse en prod (cf. section 9 CLAUDE.md).
+
+**Validation runtime post-fix** : 3 cycles complets en 90 secondes le 2026-05-04 17:11 UTC (swing BTC 138 mots / swing GOLD 105 mots / flash BTC 103 mots), aucune erreur `scheduler.*.error` depuis. Bug 9 résolu côté code.
+
 ## Glissement de la réservation ADR-013
 
 ADR-012 ligne 57 réservait à l'origine ADR-013 pour la traduction FR des signaux. Avec cette décision, ADR-013 = timezone fix, et la traduction FR glisse à **ADR-014** (à rédiger plus tard). Mises à jour effectuées :

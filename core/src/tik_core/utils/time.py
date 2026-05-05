@@ -14,8 +14,11 @@ Deux fonctions distinctes :
   `tzinfo=None`). À utiliser pour :
     1. les `default=` des colonnes SQLAlchemy `DateTime` (sans
        `timezone=True`) — Postgres stocke en TIMESTAMP WITHOUT TIME
-       ZONE, asyncpg strippe silencieusement la tz d'un aware mais
-       autant garder la cohérence ;
+       ZONE, et asyncpg lève `DataError` sur un datetime aware passé
+       à une telle colonne (régression bug 9 du 2026-05-04 découverte
+       après ADR-013 ; workaround chirurgical dans
+       `publisher._publish_signal` qui strippe la tzinfo avant l'INSERT.
+       Cf. section 9 CLAUDE.md pour le diagnostic complet) ;
     2. les comparaisons SQL `Signal.timestamp >= since` où la colonne
        est naïve — éviter les `DeprecationWarning` SQLAlchemy 2.
 
