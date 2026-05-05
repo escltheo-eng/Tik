@@ -7,8 +7,11 @@ services:
       POSTGRES_DB: ${TIK_DB_NAME:-tik}
       POSTGRES_USER: ${TIK_DB_USER:-tik}
       POSTGRES_PASSWORD: ${TIK_DB_PASSWORD:-tik_dev}
+    # Bind sur 127.0.0.1 pour ne PAS exposer Postgres au LAN/tailnet —
+    # Tik core accède via le réseau Docker interne (postgres:5432).
+    # Cf. CLAUDE.md Paquet 14 polish + audit Tailscale 2026-05-05.
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - tik_postgres_data:/var/lib/postgresql/data
       - ./migrations/init:/docker-entrypoint-initdb.d:ro
@@ -22,8 +25,11 @@ services:
     image: redis:7-alpine
     container_name: tik-redis
     restart: unless-stopped
+    # Bind sur 127.0.0.1 pour ne PAS exposer Redis au LAN/tailnet —
+    # Tik core/ingesters/scheduler accèdent via le réseau Docker interne (redis:6379).
+    # Cf. CLAUDE.md Paquet 14 polish + audit Tailscale 2026-05-05.
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - tik_redis_data:/data
     healthcheck:
