@@ -387,16 +387,19 @@ class TestComputeTrackRecordEdgeCases:
 # ----- Tests dispatch signal_horizon → bonnes specs -----
 
 class TestSignalHorizonDispatch:
-    def test_flash_returns_15min_to_4h(self):
+    def test_flash_returns_15min_to_1h(self):
+        # Flash reste dans la fenêtre TTL signal (1h max) — cohérent avec
+        # EXPIRY_BY_HORIZON["flash"] = 1h et HORIZON_MEASURE_HOURS["flash"] = 1.0
+        # (hit rate Paquet 10).
         rows = compute_track_record(
             signal_timestamp=_10D_AGO, signal_direction="long",
             signal_horizon="flash",
             entity_id="BTC", btc_history=[], gold_history=[],
             now=_NOW,
         )
-        assert [r["label"] for r in rows] == ["15min", "30min", "1h", "4h"]
-        assert [r["measure_hours"] for r in rows] == [0.25, 0.5, 1.0, 4.0]
-        assert [r["threshold_pct"] for r in rows] == [0.10, 0.15, 0.30, 0.40]
+        assert [r["label"] for r in rows] == ["15min", "30min", "45min", "1h"]
+        assert [r["measure_hours"] for r in rows] == [0.25, 0.5, 0.75, 1.0]
+        assert [r["threshold_pct"] for r in rows] == [0.10, 0.15, 0.20, 0.30]
 
     def test_swing_returns_1h_to_5j(self):
         rows = compute_track_record(
@@ -444,17 +447,18 @@ class TestFlashTrackRecord:
         )
         assert rows[0]["target_iso"] == "2026-04-25T12:15:00Z"   # +15min
         assert rows[1]["target_iso"] == "2026-04-25T12:30:00Z"   # +30min
-        assert rows[2]["target_iso"] == "2026-04-25T13:00:00Z"   # +1h
-        assert rows[3]["target_iso"] == "2026-04-25T16:00:00Z"   # +4h
+        assert rows[2]["target_iso"] == "2026-04-25T12:45:00Z"   # +45min
+        assert rows[3]["target_iso"] == "2026-04-25T13:00:00Z"   # +1h
 
     def test_flash_long_correct_when_price_rises_just_above_thresholds(self):
         # Prix monte juste au-dessus de chaque seuil flash.
-        # Klines 15m × 50 = 12.5h → couvre largement les 4h max.
-        prices = [95_000.0] * 50
-        prices[1]  = 95_104.5   # +0.110% > 0.10% (seuil 15min) → correct
-        prices[2]  = 95_152.0   # +0.160% > 0.15% (seuil 30min) → correct
-        prices[4]  = 95_294.5   # +0.310% > 0.30% (seuil 1h)    → correct
-        prices[16] = 95_389.5   # +0.410% > 0.40% (seuil 4h)    → correct
+        # Klines 15m × 10 = 2.5h → couvre largement les 1h max.
+        # Indices klines 15m : 0=ts, 1=+15min, 2=+30min, 3=+45min, 4=+1h.
+        prices = [95_000.0] * 10
+        prices[1] = 95_104.5   # +0.110% > 0.10% (seuil 15min) → correct
+        prices[2] = 95_152.0   # +0.160% > 0.15% (seuil 30min) → correct
+        prices[3] = 95_199.5   # +0.210% > 0.20% (seuil 45min) → correct
+        prices[4] = 95_294.5   # +0.310% > 0.30% (seuil 1h)    → correct
         history = _make_history(_10D_AGO, prices, interval_h=0.25)
         rows = compute_track_record(
             signal_timestamp=_10D_AGO, signal_direction="long",
@@ -466,11 +470,11 @@ class TestFlashTrackRecord:
 
     def test_flash_long_raté_when_price_below_threshold(self):
         # +0.05% partout : sous tous les seuils flash → pas correct pour long.
-        prices = [95_000.0] * 50
-        prices[1]  = 95_047.5   # +0.05% < 0.10%
-        prices[2]  = 95_047.5
-        prices[4]  = 95_047.5
-        prices[16] = 95_047.5
+        prices = [95_000.0] * 10
+        prices[1] = 95_047.5   # +0.05% < 0.10%
+        prices[2] = 95_047.5
+        prices[3] = 95_047.5
+        prices[4] = 95_047.5
         history = _make_history(_10D_AGO, prices, interval_h=0.25)
         rows = compute_track_record(
             signal_timestamp=_10D_AGO, signal_direction="long",
@@ -480,9 +484,9 @@ class TestFlashTrackRecord:
         )
         assert all(r["badge"] == "raté" for r in rows)
 
-    def test_flash_signal_45min_old_first_two_available(self):
-        # Signal émis il y a 45 min → 15min et 30min disponibles, 1h/4h pas encore.
-        now = datetime(2026, 5, 5, 12, 45, 0)
+    def test_flash_signal_35min_old_first_two_available(self):
+        # Signal émis il y a 35 min → 15min et 30min disponibles, 45min/1h pas encore.
+        now = datetime(2026, 5, 5, 12, 35, 0)
         ts  = datetime(2026, 5, 5, 12,  0, 0)
         rows = compute_track_record(
             signal_timestamp=ts, signal_direction="long",
@@ -491,16 +495,16 @@ class TestFlashTrackRecord:
         )
         assert rows[0]["available"] is True   # 15min
         assert rows[1]["available"] is True   # 30min
-        assert rows[2]["available"] is False  # 1h
-        assert rows[3]["available"] is False  # 4h
+        assert rows[2]["available"] is False  # 45min
+        assert rows[3]["available"] is False  # 1h
 
     def test_flash_neutral_correct_when_micro_movement(self):
         # +0.05% partout : neutral réussit (delta sous tous les seuils flash).
-        prices = [95_000.0] * 50
-        prices[1]  = 95_047.5  # +0.05% < 0.10%
-        prices[2]  = 95_047.5  # +0.05% < 0.15%
-        prices[4]  = 95_047.5  # +0.05% < 0.30%
-        prices[16] = 95_047.5  # +0.05% < 0.40%
+        prices = [95_000.0] * 10
+        prices[1] = 95_047.5  # +0.05% < 0.10%
+        prices[2] = 95_047.5  # +0.05% < 0.15%
+        prices[3] = 95_047.5  # +0.05% < 0.20%
+        prices[4] = 95_047.5  # +0.05% < 0.30%
         history = _make_history(_10D_AGO, prices, interval_h=0.25)
         rows = compute_track_record(
             signal_timestamp=_10D_AGO, signal_direction="neutral",

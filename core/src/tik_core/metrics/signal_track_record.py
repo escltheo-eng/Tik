@@ -3,13 +3,22 @@
 La granularité des horizons mesurés s'adapte à l'horizon contractuel du
 signal (Paquet 17 — P5 du plan stratégique post-audit fiabilité signaux) :
 
-  flash → 15min / 30min / 1h / 4h     (resserré sur la fenêtre flash)
-  swing → 1h / 6h / 24h / 5j          (calibration historique Paquet 12)
-  macro → 1j / 7j / 30j / 90j         (mesure du cycle long)
+  flash → 15min / 30min / 45min / 1h   (dans la fenêtre TTL signal Tik)
+  swing → 1h / 6h / 24h / 5j           (calibration historique Paquet 12)
+  macro → 1j / 7j / 30j / 90j          (mesure du cycle long)
 
 Ce dispatch évite à un signal flash de perdre 75 % de son track record sur
 des horizons hors-fenêtre contractuelle (24h/5j inutiles pour flash) et
 améliore la précision de calibration source-credibility (P4 du plan).
+
+Choix flash 1h max (et non 4h comme la fenêtre d'analyse klines 1m × 240) :
+le horizon flash dans le pipeline Tik est défini par EXPIRY_BY_HORIZON[
+"flash"] = 1h (TTL signal) ET HORIZON_MEASURE_HOURS["flash"] = 1.0 (hit
+rate Phase A.2 Paquet 10). Mesurer le track record dans cette fenêtre
+maintient la cohérence inter-cartes du dashboard. Le scalping 5min n'est
+pas couvert (klines 15m natives insuffisamment fines, bruit microstructure
+sous le seuil — un futur ADR "flash micro-scalping" devrait fetch klines
+1m si on veut y aller).
 
 Les seuils directionnalité sont calibrés au pifomètre raisonné — plus
 l'horizon est court, plus la volatilité absolue typique est faible →
@@ -40,8 +49,8 @@ HORIZON_SPECS_BY_SIGNAL_HORIZON: dict[str, dict] = {
         "rows": [
             {"label": "15min", "hours": 0.25, "threshold_pct": 0.10},
             {"label": "30min", "hours": 0.50, "threshold_pct": 0.15},
+            {"label": "45min", "hours": 0.75, "threshold_pct": 0.20},
             {"label": "1h",    "hours": 1.00, "threshold_pct": 0.30},
-            {"label": "4h",    "hours": 4.00, "threshold_pct": 0.40},
         ],
         "price_match_tolerance_ms": 30 * 60 * 1000,
     },
