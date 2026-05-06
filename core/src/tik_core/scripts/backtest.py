@@ -41,14 +41,24 @@ UA = "Mozilla/5.0 (compatible; TikBot/0.1)"
 
 # ----- Fetch des historiques -----
 
-async def fetch_btc_history(client: httpx.AsyncClient) -> list[tuple[int, float]]:
-    """Récupère les 1000 dernières klines 1h BTCUSDT (~41 jours).
+async def fetch_btc_history(
+    client: httpx.AsyncClient,
+    *,
+    interval: str = "1h",
+    limit: int = 1000,
+) -> list[tuple[int, float]]:
+    """Récupère les klines BTCUSDT depuis Binance.
+
+    Args:
+        interval: granularité Binance (1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 6h,
+            12h, 1d, …). Défaut "1h" — comportement historique inchangé.
+        limit: nombre de klines (max 1000 côté Binance). Défaut 1000.
 
     Retourne une liste [(timestamp_ms, close_price), ...] triée chronologiquement.
     """
     r = await client.get(
         BINANCE_KLINES,
-        params={"symbol": "BTCUSDT", "interval": "1h", "limit": 1000},
+        params={"symbol": "BTCUSDT", "interval": interval, "limit": limit},
         timeout=30.0,
     )
     r.raise_for_status()
@@ -56,15 +66,25 @@ async def fetch_btc_history(client: httpx.AsyncClient) -> list[tuple[int, float]
     return [(int(d[0]), float(d[4])) for d in raw]
 
 
-async def fetch_gold_history(client: httpx.AsyncClient) -> list[tuple[int, float]]:
-    """Récupère les klines 1h GOLD (GC=F) sur 60 jours via Yahoo.
+async def fetch_gold_history(
+    client: httpx.AsyncClient,
+    *,
+    interval: str = "1h",
+    range_param: str = "60d",
+) -> list[tuple[int, float]]:
+    """Récupère les klines GOLD (GC=F) via Yahoo Finance.
+
+    Args:
+        interval: granularité Yahoo (1m, 5m, 15m, 30m, 60m, 1h, 1d, …).
+            Défaut "1h" — comportement historique inchangé.
+        range_param: fenêtre historique Yahoo (60d, 1y, 2y, …). Défaut "60d".
 
     Retourne une liste [(timestamp_ms, close_price), ...] triée chronologiquement.
     """
     url = YAHOO_CHART.format(symbol="GC=F")
     r = await client.get(
         url,
-        params={"interval": "1h", "range": "60d"},
+        params={"interval": interval, "range": range_param},
         headers={"User-Agent": UA},
         timeout=30.0,
     )
@@ -81,10 +101,20 @@ async def fetch_gold_history(client: httpx.AsyncClient) -> list[tuple[int, float
     return out
 
 
-def find_closest_price(history: list[tuple[int, float]], target: datetime) -> float | None:
+def find_closest_price(
+    history: list[tuple[int, float]],
+    target: datetime,
+    *,
+    max_diff_ms: int = 6 * 3600 * 1000,
+) -> float | None:
     """Cherche dans l'historique le prix dont le timestamp est le plus proche.
 
-    Retourne None si l'écart est > 6 heures (donnée trop éloignée → peu fiable).
+    Args:
+        max_diff_ms: tolérance max (ms) entre target et le kline le plus proche.
+            Défaut 6h — adapté aux klines 1h. À élargir pour klines 1d (24h)
+            ou resserrer pour klines 15m (30min).
+
+    Retourne None si l'écart dépasse `max_diff_ms` (donnée trop éloignée).
     """
     if not history:
         return None
@@ -98,7 +128,7 @@ def find_closest_price(history: list[tuple[int, float]], target: datetime) -> fl
             best = (ts_ms, price)
     if best is None:
         return None
-    if best_diff > 6 * 3600 * 1000:  # plus de 6h → trop loin
+    if best_diff > max_diff_ms:
         return None
     return best[1]
 

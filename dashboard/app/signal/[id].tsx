@@ -134,9 +134,20 @@ function TrackRecordSection({
           ) : null}
         </View>
       ))}
-      <ThemedText style={trStyles.note}>
-        Seuils : 1h/6h ±{record.rows[0]?.threshold_pct}% · 24h/5j ±{record.rows[2]?.threshold_pct}%
-      </ThemedText>
+      {/* Footer min-max dynamique : adapté aux 3 horizons (flash/swing/macro)
+          dont les seuils diffèrent. Affiche "Seuil : X %" si min === max,
+          sinon "Seuils : X % à Y % selon l'horizon mesuré". */}
+      {(() => {
+        const thresholds = record.rows.map((r) => r.threshold_pct);
+        if (thresholds.length === 0) return null;
+        const min = Math.min(...thresholds);
+        const max = Math.max(...thresholds);
+        const text =
+          min === max
+            ? `Seuil : ±${min}%`
+            : `Seuils : ±${min}% à ±${max}% selon l'horizon mesuré`;
+        return <ThemedText style={trStyles.note}>{text}</ThemedText>;
+      })()}
     </ThemedView>
   );
 }

@@ -68,6 +68,26 @@ HIT_RATE_CACHE_TTL_SECONDS = 15 * 60
 TRACK_RECORD_CACHE_TTL_SECONDS = 6 * 3600
 
 
+# Paramètres de fetch klines selon l'horizon contractuel du signal (P5 plan
+# fiabilité 2026-05-06 — refactor Paquet 12). La granularité s'adapte pour
+# que les horizons mesurés (cf. HORIZON_SPECS_BY_SIGNAL_HORIZON) tombent sur
+# des klines suffisamment fines.
+#   flash → klines 15m × 96  ≈ 24h (mesure 15min/30min/1h/4h)
+#   swing → klines 1h  × 1000 ≈ 41j (mesure 1h/6h/24h/5j — historique)
+#   macro → klines 1d  × 365 = 1y  (mesure 1j/7j/30j/90j)
+TRACK_RECORD_BINANCE_PARAMS: dict[str, dict] = {
+    "flash": {"interval": "15m", "limit": 96},
+    "swing": {"interval": "1h",  "limit": 1000},
+    "macro": {"interval": "1d",  "limit": 365},
+}
+TRACK_RECORD_YAHOO_PARAMS: dict[str, dict] = {
+    # Pas de flash GOLD (cf. ADR-005 — Yahoo a 15 min de délai, incompatible
+    # avec l'horizon flash). L'endpoint fail-fast HTTP 400 si on tente.
+    "swing": {"interval": "1h", "range_param": "60d"},
+    "macro": {"interval": "1d", "range_param": "1y"},
+}
+
+
 @router.get("/hit_rate", response_model=HitRateOut)
 async def get_hit_rate(
     entity_id: str = Query(..., description="Identifiant entity Tik (ex: BTC, GOLD). Domain-agnostic."),
@@ -412,25 +432,39 @@ async def get_signal_track_record(
     session: AsyncSession = Depends(get_session),
     _ctx: AuthContext = Depends(require_scope("read:signals")),
 ) -> SignalTrackRecordOut:
-    """Track record d'un signal individuel sur 4 horizons (1h / 6h / 24h / 5j).
+    """Track record d'un signal individuel sur 4 horizons adaptés.
+
+    La granularité des horizons mesurés s'adapte à l'horizon contractuel
+    du signal (P5 plan fiabilité 2026-05-06 — refactor Paquet 12) :
+      flash → 15min / 30min / 1h / 4h
+      swing → 1h / 6h / 24h / 5j
+      macro → 1j / 7j / 30j / 90j
 
     Pour chaque horizon, compare la direction prédite au mouvement de prix
     observé et retourne un badge :
     - correct          : direction validée par le marché
     - raté             : direction invalidée
     - en_attente       : horizon dans le futur
-    - données_manquantes : historique de prix insuffisant (signal > 41j)
+    - données_manquantes : historique de prix insuffisant
 
     Cache Redis TTL 6h : stable pour les horizons passés, rafraîchi
     naturellement quand les horizons futurs deviennent disponibles.
 
+    Erreurs :
+    - 400 : signal flash sur GOLD (cf. ADR-005 — Yahoo 15 min de délai
+      incompatible avec l'horizon flash, pas de track record possible).
+    - 404 : signal_id introuvable.
+    - 503 : historique de prix Binance/Yahoo temporairement indisponible.
+
     Phase A.3 du plan trading manuel J+10 (cf. docs/backlog.md entry n°3).
     Garde-fous : Garde-fou 1 inchangé, ADR-003 inchangé (lecture seule),
-    ADR-004 inchangé.
+    ADR-004 inchangé, ADR-005 (flash GOLD interdit) renforcé par fail-fast.
     """
     settings = get_settings()
     redis = aioredis.from_url(settings.redis_url, decode_responses=True)
-    cache_key = f"tik.track_record.{signal_id}"
+    # Version v2 dans la clé : invalide les caches Paquet 12 au déploiement
+    # (le format des rows change avec les nouveaux horizons flash/macro).
+    cache_key = f"tik.track_record.v2.{signal_id}"
 
     try:
         try:
@@ -451,18 +485,53 @@ async def get_signal_track_record(
         if signal is None:
             raise HTTPException(status_code=404, detail="Signal not found")
 
+        # Validation de l'horizon (cas DB corrompu : valeurs hors enum).
+        if signal.horizon not in TRACK_RECORD_BINANCE_PARAMS:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Horizon non supporté pour le track record : {signal.horizon!r}. "
+                    "Valeurs attendues : flash, swing, macro."
+                ),
+            )
+
+        # Fail-fast ADR-005 : pas de track record flash GOLD (Yahoo 15 min
+        # de délai → incompatible avec mesure 15min/30min).
+        if signal.horizon == "flash" and signal.entity_id == "GOLD":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "Track record flash GOLD non disponible (cf. ADR-005). "
+                    "Yahoo Finance a 15 min de délai sur GOLD, incompatible avec "
+                    "la mesure flash. Pas de signaux flash GOLD émis par Tik."
+                ),
+            )
+
+        btc_params = TRACK_RECORD_BINANCE_PARAMS[signal.horizon]
+        # Yahoo n'a pas de flash → garde le branch sur swing/macro uniquement.
+        gold_params = TRACK_RECORD_YAHOO_PARAMS.get(signal.horizon)
+
         btc_history: list[tuple[int, float]] = []
         gold_history: list[tuple[int, float]] = []
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 if signal.entity_id == "BTC":
-                    btc_history = await fetch_btc_history(client)
-                elif signal.entity_id == "GOLD":
-                    gold_history = await fetch_gold_history(client)
+                    btc_history = await fetch_btc_history(
+                        client,
+                        interval=btc_params["interval"],
+                        limit=btc_params["limit"],
+                    )
+                elif signal.entity_id == "GOLD" and gold_params is not None:
+                    gold_history = await fetch_gold_history(
+                        client,
+                        interval=gold_params["interval"],
+                        range_param=gold_params["range_param"],
+                    )
         except Exception as exc:  # noqa: BLE001
             log.error(
                 "metrics.track_record.history_fetch_error",
                 entity_id=signal.entity_id,
+                horizon=signal.horizon,
                 error=str(exc),
             )
             raise HTTPException(
@@ -477,6 +546,7 @@ async def get_signal_track_record(
         rows_dicts = compute_track_record(
             signal_timestamp=signal.timestamp,
             signal_direction=signal.direction,
+            signal_horizon=signal.horizon,
             entity_id=signal.entity_id,
             btc_history=btc_history,
             gold_history=gold_history,
