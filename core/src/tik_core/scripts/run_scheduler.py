@@ -170,6 +170,10 @@ async def main() -> None:
         coalesce=True,
     )
     # Recalibration scores sources : daily 03:00 UTC (ADR-011)
+    # misfire_grace_time=86400s (24h) : si le scheduler est restart entre
+    # 03:00 et 02:59 le lendemain, le run manqué est rattrapé. Sans ça,
+    # APScheduler skip le run et la recalibration ne tourne jamais (cf
+    # bug observé 2026-05-07 : 0 entries DB depuis le déploiement Paquet 5).
     scheduler.add_job(
         _run_recalibrate_sources,
         "cron",
@@ -179,6 +183,7 @@ async def main() -> None:
         id="recalibrate_sources",
         max_instances=1,
         coalesce=True,
+        misfire_grace_time=86400,
     )
 
     scheduler.start()
@@ -188,6 +193,11 @@ async def main() -> None:
     await _run_swing_btc(session_maker, redis, hypothesis_generator)
     await _run_swing_gold(session_maker, redis, settings.fred_api_key, hypothesis_generator)
     await _run_flash_btc(session_maker, redis, hypothesis_generator)
+    # Recalibration au boot : garantit qu'au moins 1× / déploiement, les
+    # scores sont rafraîchis. Idempotent (ré-écrit les mêmes scores si
+    # tourné le même jour). Combiné au misfire_grace_time, couvre tous
+    # les cas de restart Docker fréquents.
+    await _run_recalibrate_sources(session_maker, redis)
 
     try:
         while True:

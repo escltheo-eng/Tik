@@ -410,3 +410,100 @@ maintenant des signaux dont :
   appelée post-cross-validation
 - Garde-fou 2-bis (sizing 1 % capital, veracity ≥ 0.90 sur swing) :
   **inchangé** — règle stricte trading manuel J+14
+
+---
+
+## Amendement post-livraison — Bascule anticipée 2026-05-07
+
+### Contexte
+
+L'ADR-018 a été livré le **2026-05-07**, soit **7 jours avant** la date
+de démarrage du trading manuel J+14 (2026-05-14). Cette livraison est en
+divergence assumée avec la section *"Conditions d'activation"* qui
+exigeait :
+
+- *"Trading manuel J+14 démarré et stable (≥ 1 semaine de trading
+  effectif post-2026-05-14)"*
+- *"Hit rate Tik hybride mesuré empiriquement avec ≥ 30 trades manuels
+  réels"*
+- *"Réponses obtenues sur les 4 hypothèses"* (stratégie B2B, hit rate
+  Zeta, proportion signaux veracity ≥ 0.95, fréquence trading)
+
+**Aucune** de ces conditions n'était remplie le 2026-05-07.
+
+### Raison de la bascule anticipée
+
+Décision consciente de l'utilisatrice de **devancer le refactor** plutôt
+que de l'attendre post-J+14, pour permettre le démarrage du trading
+manuel **directement sur la nouvelle architecture** — sans avoir à
+re-apprendre la sémantique de `confidence` en cours de route.
+
+**Trade-off accepté** :
+
+| Pour bascule anticipée | Contre bascule anticipée |
+|---|---|
+| Une seule sémantique à apprendre (`confidence` = `\|combined_bias\|` uniforme) | Conditions d'activation ADR-018 non vérifiées empiriquement |
+| Pas de re-formation UX en cours de trading actif | Risque de découvrir un bug structurel pendant le trading réel |
+| 7 jours pré-J+14 disponibles pour validation runtime mode shadow | Mode shadow compressé (initialement prévu 1 semaine post-livraison) |
+| Tik et la trader « calibrent » ensemble dès le début | Perte du recul empirique sur l'ancienne version hybride |
+
+**Verdict** : la cohérence d'apprentissage UX a primé sur la rigueur des
+conditions d'activation. Décision raisonnée mais à valider runtime.
+
+### Mode shadow compressé
+
+Au lieu d'1 semaine de validation post-livraison comme prévu, on a
+**7 jours pré-J+14 + 1 semaine post-J+14** = ~14 jours de validation
+runtime. C'est en fait **plus** que ce qui était initialement prévu,
+mais coupé par le démarrage du trading réel. Donc la fenêtre
+*"observation pure sans risque"* est de 7 jours seulement.
+
+### Hypothèses ADR-018 toujours non vérifiées
+
+Les 4 hypothèses listées en section *"4 hypothèses à vérifier avant
+exécution"* restent **toutes non répondues** au 2026-05-07 :
+
+1. Stratégie B2B Tik — pas tranchée
+2. Hit rate Zeta réel — non mesuré (associé à interroger)
+3. Proportion signaux Tik veracity ≥ 0.95 sur 30 jours — partiellement
+   mesurée (3.37 % au moment du refactor, mais sur l'ancienne
+   architecture hybride, donc non comparable post-refactor)
+4. Fréquence trading manuel — projection seulement (à mesurer post-J+14)
+
+**Critère de bascule empirique défini complémentairement par
+l'utilisatrice (2026-05-07)** : si **< 3 signaux directionnels par
+semaine sur 2 semaines post-J+14**, alors bascule prévue vers
+intégration **Polymarket** (cf. P8 du plan stratégique fiabilité signaux,
+CLAUDE.md Paquet 18). Critère binaire mesurable directement en DB.
+
+### Limitations connues post-bascule anticipée
+
+1. **Hypothèses ADR-018 toujours à vérifier** post-J+14, le refactor a
+   été exécuté sur la base de la **conviction** qu'elles seraient
+   validées plutôt que sur leur **vérification empirique**.
+2. **Comparabilité hit rate avant/après** dégradée : le golden dataset
+   et les 156 signaux backtest sont sur l'ancienne architecture hybride.
+   La comparaison post-refactor nécessitera **une nouvelle accumulation
+   empirique** de 30+ jours.
+3. **Volume de signaux directionnels post-refactor inconnu** : le seuil
+   ±0.30 sur `combined_bias` est calibré au pifomètre. Le critère
+   Polymarket *< 3 signaux/semaine* sera l'indicateur empirique de
+   recalibration nécessaire.
+4. **Trading manuel sur architecture < 2 semaines de runtime** : c'est
+   inhabituellement court. Garde-fou 2-bis (sizing 1 %, veracity ≥ 0.90)
+   reste **strictement applicable** pour absorber ce risque.
+
+### Mémoire pour instances Claude futures
+
+Si une future session questionne pourquoi l'ADR-018 a été activé sans
+respect des conditions originales, **ne pas réécrire l'historique** :
+les conditions étaient explicites, la décision de devancer était
+consciente, le trade-off est documenté ici. La rigueur méthodologique
+exige de **distinguer** :
+
+- *Décision raisonnée d'enfreindre une règle qu'on s'était fixée*
+  (ce cas : raison cohérente, conséquences acceptées)
+- *Oubli d'une règle qu'on s'était fixée* (qui aurait justifié de
+  signaler une erreur)
+
+Cet amendement documente la première catégorie, pas la seconde.

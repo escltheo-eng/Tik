@@ -851,13 +851,123 @@ C'est exactement ce que Bloomberg / Refinitiv / Trading Economics affichent à l
 
 ---
 
+## 20. Le grand refactor : Tik devient une plateforme OSINT pure (2026-05-07)
+
+### Le problème qu'on a découvert
+
+Pendant un audit méthodique mené les 2026-05-06 et 07, on s'est rendu compte que **Tik n'était pas vraiment une plateforme OSINT pure**, contrairement à ce que la documentation laissait croire. Tik était en fait un **système hybride** :
+
+- **D'un côté** : Tik faisait de l'analyse technique (RSI, MACD, EMA — les indicateurs classiques) pour décider de la direction des signaux
+- **De l'autre côté** : Tik faisait de l'OSINT cross-validé (sentiment news, macro, géopolitique) pour ajuster la veracity
+
+Or l'analyse technique, c'est exactement ce que **Zeta** fait déjà (le bot d'exécution avec ses 5211 lignes calibrées) et ce que **MT5** affiche en natif sur ton écran. Donc Tik faisait double emploi sur sa partie technique, et le faisait probablement moins bien que les outils dédiés.
+
+### Ce que ce double emploi cachait
+
+L'audit a aussi révélé **3 bugs sémantiques** dans la logique technique :
+
+1. **La "confidence" avait deux significations différentes** selon le cas (long/short = score gagnant, neutral = écart minime). Tu pouvais lire "neutral conf 5%" et croire que Tik hésite, alors que c'était l'inverse (5% = écart microscopique = position neutral très ferme).
+2. **La veracity des signaux neutral était figée à 0.85** : 162 signaux neutral sur 30 jours, tous coincés dans le même bucket, peu importe ce que les sources disaient
+3. **La confidence plafonnait à 0.55** sur le swing (sur 437 signaux mesurés), à cause de la formule mathématique qui bornait le calcul
+
+### La décision : retirer l'analyse technique de Tik
+
+On a décidé de **refactorer Tik** pour qu'il devienne ce qu'il prétendait être : une plateforme OSINT pure.
+
+Concrètement :
+
+- **L'analyse technique reste calculée** (RSI, MACD, EMA) mais elle est **affichée pour information** dans les evidence et triggers, pas utilisée pour décider
+- **La direction est dérivée du combined_bias OSINT** : si les sources sentiment + macro convergent vers le bull, Tik dit "long". Si elles convergent vers le bear, Tik dit "short". Si elles sont partagées, Tik dit "neutral"
+- **Le label "Confidence" devient "Conviction OSINT"** dans le dashboard, avec un sous-titre explicatif "magnitude du biais cross-validé"
+- **La veracity mesure désormais la dispersion des sources** (à quel point elles sont alignées entre elles), pas la concordance technique vs sentiment
+
+### Ce que ça change pour toi quand tu lis un signal
+
+**Avant le refactor** :
+```
+BTC swing long, conf 55%, veracity 92%
+```
+(décision basée sur la technique, OSINT modulant la veracity)
+
+**Après le refactor** :
+```
+BTC swing long, conviction OSINT 62%, veracity 92%
+```
+(décision basée sur l'OSINT cross-validé, technique affichée pour audit)
+
+La conviction OSINT a maintenant une **sémantique uniforme** : haute = forte conviction directionnelle, basse = sources OSINT équilibrées. Plus de double sens. Et elle peut **atteindre 100%** désormais (vs plafonnée à 55% avant).
+
+### La conséquence inattendue : Tik émet plus de signaux "neutral"
+
+Ce qu'on a observé en runtime juste après le refactor : Tik émet beaucoup de signaux `direction=neutral conviction=0.0`. Pourquoi ?
+
+Parce que **les sources OSINT actuelles sont souvent en désaccord** :
+- Fear & Greed dit "neutral"
+- CryptoCompare news dit "bear léger"
+- Google News dit "bull"
+- Reddit dit "bear"
+
+Quand on moyenne ces 4 biais, on tombe près de 0. Donc Tik OSINT pur conclut : *"je ne décide pas, les sources se contredisent"*.
+
+C'est en fait **plus rigoureux** que l'ancien Tik qui forçait une direction technique dans ce cas-là. Mais ça veut dire moins de signaux directionnels exploitables — un trade-off à connaître.
+
+### Ce qui se passe si Tik n'a pas accès à ses sources OSINT
+
+Si Redis (la mémoire rapide où sont stockées les sources OSINT) est indisponible, ou si les ingesters de news sont en panne, Tik OSINT pur ne peut pas décider. Il émet alors :
+```
+direction=neutral conviction=0.0
+```
+
+C'est cohérent avec sa nouvelle philosophie : pas de décision sans OSINT cross-validé.
+
+### Et l'analyse technique alors, je la trouve où ?
+
+Sur **MetaTrader 5** (ton broker ActivTrades), qui affiche RSI/MACD/EMA en natif sur ton écran. Ou sur **Zeta** quand on connectera Tik à Zeta plus tard.
+
+Tik s'occupe de te dire *"voici ce que les sources OSINT pensent collectivement"*. Pour la lecture technique, tu utilises l'outil dédié (MT5 ou Zeta).
+
+### Pourquoi on a fait ça maintenant, à 7 jours du trading manuel J+14
+
+Parce que les bugs identifiés (sémantique double, veracity figée, confidence plafonnée) auraient continué à te tromper en lecture des signaux pendant le trading manuel. Mieux vaut résoudre la racine du problème **avant** que tu trades pour de vrai, plutôt que de patcher au fur et à mesure.
+
+Le refactor a coûté ~9 heures de dev (Sessions 1+2+3) et n'a cassé aucun des 834 tests existants (891 tests verts post-refactor).
+
+### Limites à connaître
+
+1. **Le seuil de direction ±0.30** sur le combined_bias est calibré au pifomètre raisonné. À réviser empiriquement après quelques semaines de trading
+2. **Tik est moins consommable seul** : pour avoir une direction technique complémentaire, regarde MT5
+3. **Le volume de signaux directionnels post-refactor est à mesurer empiriquement**. Si trop faible (<3 par semaine), on bascule vers Polymarket pour densifier les sources
+4. **Bugs #3 et #4 de l'audit non touchés** par ce refactor (recalibration sources flash, attribution hit rate) — à régler dans les priorités P6 et P7 du plan stratégique post-J+14
+
+### En résumé : ce qui a changé et ce qui n'a pas changé
+
+**Ce qui a changé** :
+- Tik est maintenant une plateforme OSINT pure (pas hybride)
+- La direction des signaux vient des sources OSINT cross-validées
+- Le label "Confidence" devient "Conviction OSINT" dans le dashboard
+- La sémantique de la conviction est uniforme (plus de double sens)
+- La veracity mesure la dispersion des sources OSINT entre elles
+
+**Ce qui n'a pas changé** :
+- Les sources OSINT (Fear & Greed, CryptoCompare, Google News, Reddit, GDELT, DXY, COT, FOMC calendar, etc.)
+- L'anti fake-news (Modified Z-score, ADR-011)
+- Le LLM hypothesis generator (ADR-012)
+- La paranoïa contrôlée (contre-scénarios, evidence, triggers)
+- La transparence (chaque signal expose ses preuves)
+- L'architecture multi-overlay (ADR-004), désormais renforcée comme cerveau principal de décision
+- ADR-003 inchangé : Tik ne crée toujours JAMAIS d'ordre, c'est sacré
+
+Voir `docs/adr/018-tik-pure-osint-refactor.md` pour le détail technique complet.
+
+---
+
 ## Glossaire des termes clés
 
 - **Signal** : un avis émis par Tik à un instant donné sur un actif
 - **Horizon** : la durée sur laquelle un signal est valide (flash / swing / macro)
 - **Direction** : le sens du signal (long = acheter, short = vendre, neutral = ne rien faire)
-- **Confidence** : le niveau de conviction technique du signal, entre 0 et 1
-- **Veracity** : le niveau de fiabilité du signal, calculé via la cross-validation, entre 0 et 1
+- **Confidence** / **Conviction OSINT** (post-refactor 2026-05-07, cf. section 20 et ADR-018) : la magnitude du biais OSINT cross-validé, entre 0 et 1. Sémantique uniforme : haute = forte conviction directionnelle, basse = sources équilibrées. Affiché sous le label "Conviction OSINT" dans le dashboard, le nom du champ JSON reste `confidence` pour rétrocompatibilité avec les signaux historiques pré-refactor
+- **Veracity** : le niveau de fiabilité du signal. Post-refactor 2026-05-07, mesure la **dispersion entre les sources OSINT** (à quel point elles sont alignées), entre 0.70 et 0.95. Plus la dispersion est faible, plus la veracity est haute
 - **Evidence** : les preuves factuelles (chiffres, indicateurs, valeurs) sur lesquelles le signal se base
 - **Triggers** : les éléments déclencheurs de la décision avec leur poids
 - **Counter-scenarios** : les scénarios alternatifs qui pourraient invalider le signal
