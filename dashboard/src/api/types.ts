@@ -66,6 +66,14 @@ export interface Signal {
   entity_id: string;
   horizon: string;
   direction: string;
+  /**
+   * ADR-018 (refactor 2026-05-07) — Tik OSINT pure :
+   * `confidence` = magnitude du `combined_bias` OSINT cross-validé ∈ [0, 1].
+   * Sémantique uniforme (plus de double sens long/short vs neutral).
+   * Affiché dans le dashboard sous le label "Conviction OSINT".
+   * Le nom du champ reste `confidence` pour compatibilité avec les
+   * signaux historiques (683 signaux pre-refactor en DB).
+   */
   confidence: number;
   veracity: number;
   hypothesis: string | null;

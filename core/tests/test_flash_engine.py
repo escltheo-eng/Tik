@@ -337,3 +337,84 @@ def test_should_emit_custom_heartbeat():
     assert should_emit(decision, last, now, heartbeat=timedelta(minutes=1)) is True
     # Avec heartbeat=5min → on est à 2 min, donc on n'émet pas
     assert should_emit(decision, last, now, heartbeat=timedelta(minutes=5)) is False
+
+
+# ===== Tests ADR-018 — refactor pur OSINT (flash) =====
+
+import pytest
+
+from tik_core.scoring.flash_engine import (
+    FlashDecision,
+    _derive_osint_decision_flash,
+    _veracity_from_dispersion,
+)
+
+
+def _make_flash_decision(direction: str = "neutral") -> FlashDecision:
+    """Crée une FlashDecision minimale pour tests."""
+    from datetime import datetime
+    return FlashDecision(
+        entity_id="BTC",
+        timestamp=datetime(2026, 5, 7, 12, 0, 0),
+        direction=direction,
+        confidence=0.0,
+        hypothesis="test",
+    )
+
+
+class TestDeriveOsintDecisionFlash:
+    """Tests de la dérivation direction + confidence depuis combined_bias OSINT (flash)."""
+
+    @pytest.mark.parametrize(
+        "combined_bias, expected_direction, expected_confidence",
+        [
+            (0.62, "long", 0.62),
+            (1.0, "long", 1.0),
+            (0.31, "long", 0.31),
+            (-0.62, "short", 0.62),
+            (-1.0, "short", 1.0),
+            (-0.31, "short", 0.31),
+            (0.0, "neutral", 0.0),
+            (0.30, "neutral", 0.30),
+            (-0.30, "neutral", 0.30),
+            (0.15, "neutral", 0.15),
+        ],
+    )
+    def test_default_threshold(self, combined_bias, expected_direction, expected_confidence):
+        decision = _make_flash_decision()
+        _derive_osint_decision_flash(decision, combined_bias)
+        assert decision.direction == expected_direction
+        assert decision.confidence == pytest.approx(expected_confidence, abs=0.01)
+
+    def test_custom_threshold(self):
+        decision = _make_flash_decision()
+        _derive_osint_decision_flash(decision, 0.45, threshold=0.5)
+        assert decision.direction == "neutral"
+
+    def test_hypothesis_updated(self):
+        decision = _make_flash_decision()
+        _derive_osint_decision_flash(decision, 0.65)
+        assert "long" in decision.hypothesis.lower()
+        assert "BTC" in decision.hypothesis
+
+
+class TestVeracityFromDispersionFlash:
+    """Tests de la veracity dérivée de la dispersion (flash)."""
+
+    @pytest.mark.parametrize(
+        "dispersion, expected_veracity",
+        [
+            (0.0, 0.95),
+            (0.19, 0.95),
+            (0.2, 0.90),
+            (0.39, 0.90),
+            (0.4, 0.85),
+            (0.59, 0.85),
+            (0.6, 0.78),
+            (0.79, 0.78),
+            (0.8, 0.70),
+            (1.0, 0.70),
+        ],
+    )
+    def test_veracity_paliers_flash(self, dispersion, expected_veracity):
+        assert _veracity_from_dispersion(dispersion) == expected_veracity

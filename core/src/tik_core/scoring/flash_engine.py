@@ -62,12 +62,22 @@ STALE_THRESHOLD_SEC = 60
 
 @dataclass
 class FlashDecision:
-    """Résultat de l'analyse flash pour une entity."""
+    """Résultat de l'analyse flash pour une entity.
+
+    ADR-018 — Tik OSINT pure (refactor 2026-05-07) :
+    - `direction` est dérivée du `combined_bias` OSINT cross-validé
+      (orderbook + aggression flow), pas de l'analyse technique RSI/MACD/EMA
+    - `confidence` = magnitude du `combined_bias` ∈ [0, 1] (sémantique uniforme)
+    - Sans overlay OSINT disponible : direction = "neutral", confidence = 0
+    - Les indicateurs techniques (RSI/MACD/EMA, momentum 15m) restent
+      calculés et affichés en `evidence` + `triggers` pour audit, mais
+      n'influencent plus la décision directionnelle
+    """
 
     entity_id: str
     timestamp: datetime
     direction: Literal["long", "short", "neutral"]
-    confidence: float                      # 0..1
+    confidence: float                      # 0..1 — magnitude du combined_bias OSINT (ADR-018)
     hypothesis: str
     veracity: float = 0.85                 # ajustée par cross-validation (0..1)
     counter_scenarios: list[dict] = field(default_factory=list)
@@ -156,8 +166,20 @@ async def is_realtime_data_fresh(redis: Redis, max_age_sec: int = STALE_THRESHOL
 
 # ----- Scoring technique pur -----
 
-def _score_flash_indicators(df: pd.DataFrame) -> FlashDecision:
-    """Score les indicateurs court terme et produit une décision flash."""
+def _compute_technical_evidence_flash(df: pd.DataFrame) -> FlashDecision:
+    """Calcule les indicateurs techniques court terme et produit une FlashDecision
+    avec evidence + triggers techniques mais SANS direction décisionnelle.
+
+    ADR-018 — Tik OSINT pure (refactor 2026-05-07) :
+    - Les indicateurs techniques (RSI 14, EMA 9/21, MACD, ATR, momentum 15m)
+      sont calculés et **affichés** en evidence/triggers pour audit
+    - Mais ils **n'influencent plus la décision directionnelle**
+    - La direction et la confidence sont mises à 0/neutral par défaut, à dériver
+      du `combined_bias` OSINT (orderbook + aggression) via
+      `_derive_osint_decision_flash()`
+
+    Renommée depuis `_score_flash_indicators()` pour refléter le nouveau rôle.
+    """
     if len(df) < 60:
         return FlashDecision(
             entity_id="unknown",
@@ -191,95 +213,55 @@ def _score_flash_indicators(df: pd.DataFrame) -> FlashDecision:
     triggers: list[dict] = []
     evidence: list[dict] = []
 
-    # Règle 1 — EMA cross (micro-tendance)
+    # Indicateurs techniques affichés en triggers (informatifs uniquement,
+    # plus utilisés pour décider — cf. ADR-018). Weight 0.0 indique qu'ils
+    # ne pèsent pas dans la décision OSINT pure.
+
+    # Règle 1 — EMA cross (informatif)
     trend_long = current_ema9 > current_ema21
     trend_short = current_ema9 < current_ema21
     if trend_long:
-        triggers.append({"type": "ema_cross", "value": "EMA9 > EMA21 (micro-uptrend)", "weight": 0.25})
+        triggers.append({"type": "ema_cross", "value": "EMA9 > EMA21 (micro-uptrend)", "weight": 0.0})
     elif trend_short:
-        triggers.append({"type": "ema_cross", "value": "EMA9 < EMA21 (micro-downtrend)", "weight": 0.25})
+        triggers.append({"type": "ema_cross", "value": "EMA9 < EMA21 (micro-downtrend)", "weight": 0.0})
 
-    # Règle 2 — RSI (seuils plus extrêmes qu'en swing : 75/25)
+    # Règle 2 — RSI (informatif, seuils 75/25)
     if current_rsi > 75:
-        triggers.append({"type": "rsi", "value": f"RSI overbought {current_rsi:.1f}", "weight": 0.20})
+        triggers.append({"type": "rsi", "value": f"RSI overbought {current_rsi:.1f}", "weight": 0.0})
     elif current_rsi < 25:
-        triggers.append({"type": "rsi", "value": f"RSI oversold {current_rsi:.1f}", "weight": 0.20})
+        triggers.append({"type": "rsi", "value": f"RSI oversold {current_rsi:.1f}", "weight": 0.0})
     elif current_rsi > 55:
-        triggers.append({"type": "rsi", "value": f"RSI bullish {current_rsi:.1f}", "weight": 0.10})
+        triggers.append({"type": "rsi", "value": f"RSI bullish {current_rsi:.1f}", "weight": 0.0})
     elif current_rsi < 45:
-        triggers.append({"type": "rsi", "value": f"RSI bearish {current_rsi:.1f}", "weight": 0.10})
+        triggers.append({"type": "rsi", "value": f"RSI bearish {current_rsi:.1f}", "weight": 0.0})
 
-    # Règle 3 — MACD (momentum shift)
+    # Règle 3 — MACD (informatif)
     macd_bull_cross = prev_hist <= 0 < current_hist
     macd_bear_cross = prev_hist >= 0 > current_hist
     if macd_bull_cross:
-        triggers.append({"type": "macd", "value": "MACD bullish cross", "weight": 0.20})
+        triggers.append({"type": "macd", "value": "MACD bullish cross", "weight": 0.0})
     elif macd_bear_cross:
-        triggers.append({"type": "macd", "value": "MACD bearish cross", "weight": 0.20})
+        triggers.append({"type": "macd", "value": "MACD bearish cross", "weight": 0.0})
     elif current_macd > current_signal:
-        triggers.append({"type": "macd", "value": "MACD above signal", "weight": 0.10})
+        triggers.append({"type": "macd", "value": "MACD above signal", "weight": 0.0})
     elif current_macd < current_signal:
-        triggers.append({"type": "macd", "value": "MACD below signal", "weight": 0.10})
+        triggers.append({"type": "macd", "value": "MACD below signal", "weight": 0.0})
 
-    # Règle 4 — Momentum 15min (spécifique flash)
+    # Règle 4 — Momentum 15min (informatif)
     if momentum_15m_pct > 0.5:
         triggers.append({
             "type": "momentum_15m",
             "value": f"Momentum 15m {momentum_15m_pct:+.2f}% (bull)",
-            "weight": 0.15,
+            "weight": 0.0,
         })
     elif momentum_15m_pct < -0.5:
         triggers.append({
             "type": "momentum_15m",
             "value": f"Momentum 15m {momentum_15m_pct:+.2f}% (bear)",
-            "weight": 0.15,
+            "weight": 0.0,
         })
 
-    # Agrégation
-    bull_score = 0.0
-    bear_score = 0.0
-
-    if trend_long:
-        bull_score += 0.25
-    if trend_short:
-        bear_score += 0.25
-
-    if 55 < current_rsi <= 75:
-        bull_score += 0.15
-    if 25 <= current_rsi < 45:
-        bear_score += 0.15
-    # Zones extrêmes = contrarian (reversal possible)
-    if current_rsi > 75:
-        bear_score += 0.10
-    if current_rsi < 25:
-        bull_score += 0.10
-
-    if current_macd > current_signal:
-        bull_score += 0.15
-    if current_macd < current_signal:
-        bear_score += 0.15
-    if macd_bull_cross:
-        bull_score += 0.15
-    if macd_bear_cross:
-        bear_score += 0.15
-
-    if momentum_15m_pct > 0.5:
-        bull_score += 0.15
-    if momentum_15m_pct < -0.5:
-        bear_score += 0.15
-
-    # Direction. Seuil 0.10 (vs swing 0.08) — un cran plus strict pour
-    # limiter les whipsaws en marché choppy court terme.
-    if bull_score > bear_score + 0.10:
-        direction: Literal["long", "short", "neutral"] = "long"
-        confidence = min(bull_score, 1.0)
-    elif bear_score > bull_score + 0.10:
-        direction = "short"
-        confidence = min(bear_score, 1.0)
-    else:
-        direction = "neutral"
-        confidence = abs(bull_score - bear_score)
-
+    # Evidence technique informative
     source = df.attrs.get("source", "binance_klines_1m")
     evidence.append(
         {
@@ -305,17 +287,20 @@ def _score_flash_indicators(df: pd.DataFrame) -> FlashDecision:
         },
     ]
 
+    # Direction et confidence par défaut neutres — à mettre à jour par
+    # `_derive_osint_decision_flash()` après cross-validation des overlays
+    # OSINT (orderbook + aggression). Si pas d'OSINT disponible, reste à
+    # neutral/0 (cohérent avec ADR-018).
     hypothesis = (
-        f"Flash {direction} on {df.attrs.get('entity_id', 'entity')} "
-        f"based on EMA/RSI/MACD/momentum confluence "
-        f"(bull={bull_score:.2f}, bear={bear_score:.2f})"
+        f"Flash analysis on {df.attrs.get('entity_id', 'entity')} — "
+        f"awaiting OSINT cross-validation for direction"
     )
 
     return FlashDecision(
         entity_id=df.attrs.get("entity_id", "unknown"),
         timestamp=now_utc(),
-        direction=direction,
-        confidence=round(confidence, 3),
+        direction="neutral",
+        confidence=0.0,
         hypothesis=hypothesis,
         counter_scenarios=counter_scenarios,
         evidence=evidence,
@@ -323,10 +308,54 @@ def _score_flash_indicators(df: pd.DataFrame) -> FlashDecision:
     )
 
 
+# Alias rétrocompat pour les tests/scripts qui importaient l'ancien nom.
+_score_flash_indicators = _compute_technical_evidence_flash
+
+
+def _derive_osint_decision_flash(
+    decision: FlashDecision,
+    combined_bias: float,
+    threshold: float = 0.30,
+) -> None:
+    """Met à jour direction et confidence d'une FlashDecision selon le combined_bias OSINT.
+
+    ADR-018 — Tik OSINT pure : direction et conviction dérivées uniquement
+    du biais OSINT cross-validé (orderbook + aggression flow), pas de l'analyse
+    technique.
+
+    - combined_bias > +threshold → direction = "long"
+    - combined_bias < -threshold → direction = "short"
+    - sinon → direction = "neutral"
+
+    confidence = abs(combined_bias) ∈ [0, 1]. Mute la decision en place.
+
+    Note : duplication volontaire avec `_derive_osint_decision()` du swing.
+    À factoriser dans un module partagé au prochain ajout d'engine
+    (cohérent avec le commentaire `_veracity_from_concordance` ligne 326).
+    """
+    if combined_bias > threshold:
+        decision.direction = "long"
+    elif combined_bias < -threshold:
+        decision.direction = "short"
+    else:
+        decision.direction = "neutral"
+
+    decision.confidence = round(abs(combined_bias), 3)
+
+    decision.hypothesis = (
+        f"Flash {decision.direction} on {decision.entity_id} "
+        f"based on OSINT cross-validation (combined_bias={combined_bias:+.2f}, "
+        f"|conviction|={decision.confidence:.2f})"
+    )
+
+
 # ----- Veracity (dupliqué du swing pour ce paquet, factoriser au 3e usage) -----
 
 def _veracity_from_concordance(direction: str, bias: float) -> float:
-    """Veracity dynamique selon concordance entre direction technique et bias overlay.
+    """[LEGACY ADR-018] Veracity dynamique selon concordance direction technique ↔ bias.
+
+    Conservée pour rétrocompat des tests existants. **Plus utilisée en
+    runtime** depuis ADR-018 — utiliser `_veracity_from_dispersion()`.
 
     Mêmes paliers que le swing pour cohérence inter-horizons :
     concordance +1 → 0.95 ; -1 → 0.70.
@@ -340,6 +369,34 @@ def _veracity_from_concordance(direction: str, bias: float) -> float:
     if concordance > -0.4:
         return 0.85
     if concordance > -0.9:
+        return 0.78
+    return 0.70
+
+
+def _veracity_from_dispersion(dispersion: float) -> float:
+    """Veracity dynamique selon dispersion (std) des biais sources OSINT.
+
+    ADR-018 — Tik OSINT pure : la veracity mesure l'alignement des sources
+    OSINT entre elles, pas la concordance technique vs sentiment.
+
+    Mêmes paliers que swing pour cohérence inter-horizons :
+    - dispersion < 0.2 → 0.95
+    - dispersion < 0.4 → 0.90
+    - dispersion < 0.6 → 0.85
+    - dispersion < 0.8 → 0.78
+    - dispersion ≥ 0.8 → 0.70
+
+    Note : duplication volontaire avec swing_engine pour ce paquet,
+    à factoriser au prochain ajout d'engine (cohérent commentaire
+    `_veracity_from_concordance`).
+    """
+    if dispersion < 0.2:
+        return 0.95
+    if dispersion < 0.4:
+        return 0.90
+    if dispersion < 0.6:
+        return 0.85
+    if dispersion < 0.8:
         return 0.78
     return 0.70
 
@@ -593,7 +650,13 @@ async def analyze_flash_btc(
             cv = apply_cross_validation_to_decision(
                 decision, biases_by_source, mode=settings.antifakenews_mode
             )
-            decision.veracity = _veracity_from_concordance(decision.direction, cv.combined_bias)
+            # ADR-018 — Tik OSINT pure : direction et confidence dérivées
+            # du combined_bias OSINT (orderbook + aggression flow), pas de
+            # l'analyse technique.
+            _derive_osint_decision_flash(decision, cv.combined_bias)
+            # Veracity dérivée de la dispersion des sources OSINT
+            # (résout bug #2 audit Paquet 17 — veracity neutral figée à 0.85).
+            decision.veracity = _veracity_from_dispersion(cv.dispersion)
             if cv.circuit_breaker_status != "ok":
                 log.info(
                     "anti_fake_news.flagged",

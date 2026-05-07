@@ -238,15 +238,21 @@ export default function SignalDetailScreen() {
 
         <ThemedView style={[styles.metricsRow, { backgroundColor: 'transparent' }]}>
           <ThemedView style={[styles.metricBox, { backgroundColor: 'transparent' }]}>
-            <ThemedText style={styles.metricLabel}>Confidence</ThemedText>
+            <ThemedText style={styles.metricLabel}>Conviction OSINT</ThemedText>
             <ThemedText type="title" style={styles.metricValue}>
               {(signal.confidence * 100).toFixed(0)}%
+            </ThemedText>
+            <ThemedText style={styles.metricSubtitle}>
+              magnitude du biais cross-validé
             </ThemedText>
           </ThemedView>
           <ThemedView style={[styles.metricBox, { backgroundColor: 'transparent' }]}>
             <ThemedText style={styles.metricLabel}>Veracity</ThemedText>
             <ThemedText type="title" style={styles.metricValue}>
               {(signal.veracity * 100).toFixed(0)}%
+            </ThemedText>
+            <ThemedText style={styles.metricSubtitle}>
+              alignement des sources
             </ThemedText>
           </ThemedView>
         </ThemedView>
@@ -534,6 +540,12 @@ const styles = StyleSheet.create({
   metricValue: {
     fontSize: 28,
     lineHeight: 32,
+  },
+  metricSubtitle: {
+    fontSize: 10,
+    opacity: 0.5,
+    marginTop: 2,
+    fontStyle: 'italic',
   },
   metaLine: {
     fontSize: 12,

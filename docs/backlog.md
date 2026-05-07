@@ -375,3 +375,92 @@ régression structurelle.
 **Risque rappelé** : Garde-fou 1 inchangé (Tik shadow vs Zeta), ADR-003
 inchangé (Tik ne crée jamais d'ordre), ADR-004 (multi-overlay) inchangé.
 Tous les nouveaux scopes/formats = ajouts non destructifs.
+
+---
+
+## 6. Refactor architectural Tik vers OSINT pur (ADR-018) ✅ LIVRÉ 2026-05-07
+
+**Date d'identification** : 2026-05-07
+**Statut** : ✅ LIVRÉ le jour même de l'identification (Sessions 1+2+3 cumulées,
+891 tests verts post-livraison, 0 régression)
+
+**Origine** : audit méthodique 2026-05-06/07 sous consigne *"doute constant
+et méthodique, sans complaisance"*. L'audit a révélé que Tik n'est pas la
+plateforme OSINT pure que CLAUDE.md laisse entendre — c'est un système
+**hybride** où l'analyse technique (RSI/MACD/EMA dans `swing_engine.py` et
+`flash_engine.py`) est le **cerveau de décision principal**, et les
+overlays OSINT ne modulent que la veracity.
+
+### Les 4 constats factuels
+
+1. **Duplication conceptuelle** avec Zeta (qui fait l'analyse technique
+   pour son moteur d'exécution, ~5211 lignes calibrées) et avec MT5 (qui
+   affiche RSI/MACD/EMA en natif sur l'écran de la trader manuelle)
+2. **Sémantique trompeuse de la `confidence`** : double signification
+   selon `direction == "neutral"` ou pas (cf. audit Paquet 17 P5)
+3. **Tik n'excelle pas en analyse technique** : seuils binaires, 14 magic
+   numbers non calibrés, hit rate global 22 % vs Random 33 %
+4. **Tik a un avantage différencié en OSINT** : Modified Z-score
+   anti fake-news (ADR-011), LLM hypothesis local (ADR-012),
+   recalibration daily des sources, multi-overlay cross-validé (ADR-004)
+
+### Verdict
+
+Refactor pur OSINT recommandé pour atteindre l'excellence dans une
+discipline (OSINT crypto/finance cross-validé local-first). Confiance
+70-75 % (audit méthodique du 2026-05-07). 4 hypothèses à vérifier avant
+exécution (cf. ADR-018).
+
+### Conditions d'activation
+
+- Trading manuel J+14 démarré et stable (≥ 1 semaine post-2026-05-14)
+- 4 hypothèses ADR-018 vérifiées (stratégie B2B, hit rate Zeta,
+  proportion signaux veracity ≥ 0.95, fréquence trading)
+- Hit rate Tik hybride mesuré empiriquement avec ≥ 30 trades manuels
+  réels
+
+### Effort estimé
+
+~9h dev focus sur 3 sessions (refonte core + dashboard + doc/tests),
++ 1 semaine de validation runtime mode shadow avant bascule.
+
+Touche **~500-700 lignes core + ~200-300 lignes dashboard** = 4-7 % du
+code total Tik (~14 000 lignes au total). **Pas un "refactor majeur"**
+comme initialement présenté lors des sessions précédentes.
+
+### Ce qui change pour la trader manuelle
+
+Avant : `BTC swing long, conf 55%, veracity 92%`
+Après : `BTC swing long, osint_conviction 0.62, veracity 0.92`
+
+`osint_conviction` = magnitude du `combined_bias` OSINT cross-validé.
+Sémantique uniforme : haute = forte conviction directionnelle, basse =
+marché OSINT équilibré. Plus de double sens.
+
+Direction (`long`/`short`/`neutral`) dérivée du `combined_bias` avec
+seuil ±0.30 (à calibrer empiriquement). Si on veut une direction
+technique complémentaire pour décider d'un trade, on regarde MT5 (qui a
+RSI/MACD/EMA en natif).
+
+### Priorité
+
+**HAUTE long terme**, **conditionnelle court terme** (à activer post-J+14
+selon les 4 hypothèses). Le refactor n'est pas urgent, mais il est
+**stratégiquement nécessaire** pour faire de Tik une plateforme
+*"surpuissante, fiable, scores très haut"* (objectif énoncé par
+l'utilisatrice 2026-05-06).
+
+### Références
+
+- ADR-018 (`docs/adr/018-tik-pure-osint-refactor.md`) — décision et plan
+  de migration détaillé
+- Audit Paquet 17 P5 (CLAUDE.md) — révélation des 14 magic numbers
+- Sessions Claude 2026-05-06 et 2026-05-07 — discussion architecturale
+  approfondie et reconnaissance des incohérences
+
+### Risque rappelé
+
+Garde-fou 1 (Tik shadow vs Zeta) **inchangé**. ADR-003 (pas de bypass
+V01-V15) **inchangé**. ADR-004 (multi-overlay) **renforcé** (devient le
+cerveau principal). Le refactor est **interne à Tik**, n'affecte ni
+l'intégration Zeta ni la sécurité du capital.

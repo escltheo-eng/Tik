@@ -930,3 +930,153 @@ def test_enrich_with_gdelt_uses_correct_score_in_evidence():
     gd = {"tone": -2.0, "n_points": 24, "timespan": "1d"}
     _enrich_with_gdelt(decision, gd)
     assert decision.evidence[0]["score"] == 0.75
+
+
+# ===== Tests ADR-018 — refactor pur OSINT =====
+
+from tik_core.scoring.swing_engine import (
+    _derive_osint_decision,
+    _veracity_from_dispersion,
+)
+
+
+# ----- _derive_osint_decision -----
+
+class TestDeriveOsintDecision:
+    """Tests de la dérivation direction + confidence depuis combined_bias OSINT."""
+
+    @pytest.mark.parametrize(
+        "combined_bias, expected_direction, expected_confidence",
+        [
+            # Long franc
+            (0.62, "long", 0.62),
+            (1.0, "long", 1.0),
+            (0.31, "long", 0.31),
+            # Short franc
+            (-0.62, "short", 0.62),
+            (-1.0, "short", 1.0),
+            (-0.31, "short", 0.31),
+            # Neutral (sous le seuil ±0.30)
+            (0.0, "neutral", 0.0),
+            (0.30, "neutral", 0.30),
+            (-0.30, "neutral", 0.30),
+            (0.15, "neutral", 0.15),
+            (-0.15, "neutral", 0.15),
+        ],
+    )
+    def test_default_threshold(self, combined_bias, expected_direction, expected_confidence):
+        decision = _make_decision("neutral")
+        decision.confidence = 0.0
+        _derive_osint_decision(decision, combined_bias)
+        assert decision.direction == expected_direction
+        assert decision.confidence == pytest.approx(expected_confidence, abs=0.01)
+
+    def test_custom_threshold_strict(self):
+        """Avec threshold 0.5, seuls les biais > 0.5 deviennent directionnels."""
+        decision = _make_decision("neutral")
+        _derive_osint_decision(decision, 0.45, threshold=0.5)
+        assert decision.direction == "neutral"
+        assert decision.confidence == pytest.approx(0.45, abs=0.01)
+
+    def test_hypothesis_updated_with_decision(self):
+        """L'hypothesis reflète la nouvelle décision OSINT."""
+        decision = _make_decision("neutral")
+        decision.entity_id = "BTC"
+        _derive_osint_decision(decision, 0.65)
+        assert "long" in decision.hypothesis.lower()
+        assert "BTC" in decision.hypothesis
+        assert "OSINT" in decision.hypothesis or "osint" in decision.hypothesis
+
+    def test_confidence_always_positive(self):
+        """Confidence = abs(combined_bias) ≥ 0 toujours."""
+        decision = _make_decision("neutral")
+        _derive_osint_decision(decision, -0.85)
+        assert decision.confidence > 0
+        assert decision.confidence == pytest.approx(0.85, abs=0.01)
+
+
+# ----- _veracity_from_dispersion -----
+
+class TestVeracityFromDispersion:
+    """Tests de la veracity dérivée de la dispersion (std) des sources OSINT."""
+
+    @pytest.mark.parametrize(
+        "dispersion, expected_veracity",
+        [
+            # Sources très alignées → veracity max
+            (0.0, 0.95),
+            (0.1, 0.95),
+            (0.19, 0.95),
+            # Alignement raisonnable
+            (0.2, 0.90),
+            (0.35, 0.90),
+            (0.39, 0.90),
+            # Alignement modéré
+            (0.4, 0.85),
+            (0.55, 0.85),
+            (0.59, 0.85),
+            # Sources éclatées
+            (0.6, 0.78),
+            (0.75, 0.78),
+            (0.79, 0.78),
+            # Sources très divergentes
+            (0.8, 0.70),
+            (1.0, 0.70),
+            (1.5, 0.70),
+        ],
+    )
+    def test_veracity_paliers(self, dispersion, expected_veracity):
+        assert _veracity_from_dispersion(dispersion) == expected_veracity
+
+    def test_returns_float(self):
+        result = _veracity_from_dispersion(0.5)
+        assert isinstance(result, float)
+        assert 0 <= result <= 1
+
+
+# ----- Test rétrocompat _veracity_from_concordance (legacy) -----
+
+class TestVeracityFromConcordanceLegacy:
+    """L'ancienne fonction est conservée pour rétrocompat tests existants."""
+
+    def test_legacy_function_still_works(self):
+        # Concordance parfaite long + bias positif
+        v = _veracity_from_concordance("long", 1.0)
+        assert v == 0.95
+
+    def test_legacy_function_still_works_short(self):
+        v = _veracity_from_concordance("short", -1.0)
+        assert v == 0.95
+
+
+# ----- Sanity check : confidence n'a plus de sémantique double -----
+
+class TestSemanticUniformityADR018:
+    """ADR-018 : confidence = magnitude du combined_bias, pas de double sens."""
+
+    def test_neutral_with_small_bias_has_low_confidence(self):
+        decision = _make_decision("long")
+        _derive_osint_decision(decision, 0.05)
+        assert decision.direction == "neutral"
+        # Sémantique uniforme : faible bias → faible conviction (cohérent)
+        assert decision.confidence < 0.1
+
+    def test_long_with_high_bias_has_high_confidence(self):
+        decision = _make_decision("neutral")
+        _derive_osint_decision(decision, 0.85)
+        assert decision.direction == "long"
+        # Sémantique uniforme : fort bias → forte conviction (cohérent)
+        assert decision.confidence > 0.8
+
+    def test_no_double_meaning_long_vs_neutral(self):
+        """Confidence reste l'amplitude du bias dans tous les cas (pas un score
+        gagnant pour long/short et un écart pour neutral comme avant ADR-018)."""
+        d_long = _make_decision("neutral")
+        _derive_osint_decision(d_long, 0.7)
+
+        d_neutral = _make_decision("neutral")
+        _derive_osint_decision(d_neutral, 0.1)
+
+        # Sémantique uniforme : les deux mesurent la même chose (|bias|)
+        # plus haute = plus convaincu, pas l'inverse
+        assert d_long.confidence > d_neutral.confidence

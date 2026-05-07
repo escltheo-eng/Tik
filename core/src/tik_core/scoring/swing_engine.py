@@ -80,12 +80,23 @@ DXY_SERIES_ID = "DTWEXBGS"
 
 @dataclass
 class SwingDecision:
-    """Résultat de l'analyse swing pour une entity."""
+    """Résultat de l'analyse swing pour une entity.
+
+    ADR-018 — Tik OSINT pure (refactor 2026-05-07) :
+    - `direction` est dérivée du `combined_bias` OSINT cross-validé,
+      pas de l'analyse technique RSI/MACD/EMA
+    - `confidence` = magnitude du `combined_bias` ∈ [0, 1] (sémantique
+      uniforme, plus de double sens long/short vs neutral)
+    - Sans overlay OSINT disponible : direction = "neutral", confidence = 0
+    - Les indicateurs techniques (RSI/MACD/EMA) restent calculés et
+      affichés en `evidence` + `triggers` pour audit et contexte humain,
+      mais n'influencent plus la décision directionnelle
+    """
 
     entity_id: str
     timestamp: datetime
     direction: Literal["long", "short", "neutral"]
-    confidence: float                      # 0..1
+    confidence: float                      # 0..1 — magnitude du combined_bias OSINT (ADR-018)
     hypothesis: str
     veracity: float = 0.85                 # ajustée par cross-validation (0..1)
     counter_scenarios: list[dict] = field(default_factory=list)
@@ -148,8 +159,22 @@ async def _fetch_yahoo_klines(symbol: str = "GC=F", interval: str = "1h", range_
     return df
 
 
-def _score_indicators(df: pd.DataFrame) -> SwingDecision:
-    """Score les indicateurs et produit une décision swing."""
+def _compute_technical_evidence(df: pd.DataFrame) -> SwingDecision:
+    """Calcule les indicateurs techniques (RSI/MACD/EMA) et produit une SwingDecision
+    avec evidence + triggers techniques mais SANS direction décisionnelle.
+
+    ADR-018 — Tik OSINT pure (refactor 2026-05-07) :
+    - Les indicateurs techniques sont calculés et **affichés** en evidence/triggers
+      pour audit et contexte humain
+    - Mais ils **n'influencent plus la décision directionnelle**
+    - La direction et la confidence sont mises à 0/neutral par défaut, à dériver
+      ultérieurement du `combined_bias` OSINT via `_derive_osint_decision()`
+    - Cette séparation permet à Tik d'être une plateforme OSINT pure (cohérence
+      stratégique vs Zeta qui fait l'analyse technique pour exécution)
+
+    Renommée depuis `_score_indicators()` pour refléter le nouveau rôle :
+    calcul d'evidence technique informative, pas de scoring décisionnel.
+    """
     if len(df) < 60:
         return SwingDecision(
             entity_id="unknown",
@@ -165,8 +190,6 @@ def _score_indicators(df: pd.DataFrame) -> SwingDecision:
     ema_50 = ema(close, 50)
     macd_line, signal_line, hist = macd(close)
 
-    last = df.iloc[-1]
-    current_price = last["close"]
     current_rsi = rsi_14.iloc[-1]
     current_ema20 = ema_20.iloc[-1]
     current_ema50 = ema_50.iloc[-1]
@@ -178,88 +201,55 @@ def _score_indicators(df: pd.DataFrame) -> SwingDecision:
     triggers: list[dict] = []
     evidence: list[dict] = []
 
-    # Règle 1 — EMA cross (trend direction)
+    # Indicateurs techniques affichés en triggers (informatifs uniquement,
+    # plus utilisés pour décider — cf. ADR-018).
+
+    # Règle 1 — EMA cross (informatif sur la micro-tendance technique)
     trend_long = current_ema20 > current_ema50
     trend_short = current_ema20 < current_ema50
     if trend_long:
-        triggers.append({"type": "ema_cross", "value": "EMA20 > EMA50 (uptrend)", "weight": 0.25})
+        triggers.append({"type": "ema_cross", "value": "EMA20 > EMA50 (uptrend)", "weight": 0.0})
     elif trend_short:
-        triggers.append({"type": "ema_cross", "value": "EMA20 < EMA50 (downtrend)", "weight": 0.25})
+        triggers.append({"type": "ema_cross", "value": "EMA20 < EMA50 (downtrend)", "weight": 0.0})
 
-    # Règle 2 — RSI
+    # Règle 2 — RSI (informatif)
     if current_rsi > 70:
-        triggers.append({"type": "rsi", "value": f"RSI overbought {current_rsi:.1f}", "weight": 0.20})
+        triggers.append({"type": "rsi", "value": f"RSI overbought {current_rsi:.1f}", "weight": 0.0})
     elif current_rsi < 30:
-        triggers.append({"type": "rsi", "value": f"RSI oversold {current_rsi:.1f}", "weight": 0.20})
+        triggers.append({"type": "rsi", "value": f"RSI oversold {current_rsi:.1f}", "weight": 0.0})
     elif current_rsi > 55:
-        triggers.append({"type": "rsi", "value": f"RSI bullish {current_rsi:.1f}", "weight": 0.10})
+        triggers.append({"type": "rsi", "value": f"RSI bullish {current_rsi:.1f}", "weight": 0.0})
     elif current_rsi < 45:
-        triggers.append({"type": "rsi", "value": f"RSI bearish {current_rsi:.1f}", "weight": 0.10})
+        triggers.append({"type": "rsi", "value": f"RSI bearish {current_rsi:.1f}", "weight": 0.0})
 
-    # Règle 3 — MACD momentum shift
+    # Règle 3 — MACD (informatif)
     macd_bull_cross = prev_hist <= 0 < current_hist
     macd_bear_cross = prev_hist >= 0 > current_hist
     if macd_bull_cross:
-        triggers.append({"type": "macd", "value": "MACD bullish cross", "weight": 0.20})
+        triggers.append({"type": "macd", "value": "MACD bullish cross", "weight": 0.0})
     elif macd_bear_cross:
-        triggers.append({"type": "macd", "value": "MACD bearish cross", "weight": 0.20})
+        triggers.append({"type": "macd", "value": "MACD bearish cross", "weight": 0.0})
     elif current_macd > current_signal:
-        triggers.append({"type": "macd", "value": "MACD above signal", "weight": 0.10})
+        triggers.append({"type": "macd", "value": "MACD above signal", "weight": 0.0})
     elif current_macd < current_signal:
-        triggers.append({"type": "macd", "value": "MACD below signal", "weight": 0.10})
+        triggers.append({"type": "macd", "value": "MACD below signal", "weight": 0.0})
 
-    # Agrégation
-    bull_score = 0.0
-    bear_score = 0.0
-    if trend_long:
-        bull_score += 0.25
-    if trend_short:
-        bear_score += 0.25
-
-    if current_rsi > 55 and current_rsi <= 70:
-        bull_score += 0.15
-    if current_rsi < 45 and current_rsi >= 30:
-        bear_score += 0.15
-    # Zones extrêmes = contrarian plutôt que trend-following
-    if current_rsi > 70:
-        bear_score += 0.10  # reversal risk
-    if current_rsi < 30:
-        bull_score += 0.10  # reversal opportunity
-
-    if current_macd > current_signal:
-        bull_score += 0.15
-    if current_macd < current_signal:
-        bear_score += 0.15
-    if macd_bull_cross:
-        bull_score += 0.15
-    if macd_bear_cross:
-        bear_score += 0.15
-
-    # Direction. Seuil de "directionnalité" calibré à 0.08 après backtest
-    # 2026-04-29 : à 0.15, trop de signaux étaient classés "neutral" alors que
-    # le marché bougeait clairement (cf docs/backtest). À surveiller — un
-    # seuil trop bas peut générer des whipsaws en marché choppy.
-    if bull_score > bear_score + 0.08:
-        direction: Literal["long", "short", "neutral"] = "long"
-        confidence = min(bull_score, 1.0)
-    elif bear_score > bull_score + 0.08:
-        direction = "short"
-        confidence = min(bear_score, 1.0)
-    else:
-        direction = "neutral"
-        confidence = abs(bull_score - bear_score)
-
-    # Evidence technique
+    # Evidence technique (informatif, weight 0.0 dans les nouveaux triggers
+    # pour signaler qu'ils ne pèsent pas dans la décision OSINT pure).
     source = df.attrs.get("source", "unknown")
     evidence.append(
         {
             "source": source,
             "score": SOURCE_SCORES.get(source, 0.5),
-            "fact": f"RSI14={current_rsi:.1f}, EMA20/50={current_ema20:.2f}/{current_ema50:.2f}, MACD={current_macd:.3f}",
+            "fact": (
+                f"RSI14={current_rsi:.1f}, "
+                f"EMA20/50={current_ema20:.2f}/{current_ema50:.2f}, "
+                f"MACD={current_macd:.3f}"
+            ),
         }
     )
 
-    # Contre-scénarios standards pour swing
+    # Contre-scénarios standards pour swing (inchangés)
     counter_scenarios = [
         {
             "name": "macro_shock",
@@ -273,21 +263,66 @@ def _score_indicators(df: pd.DataFrame) -> SwingDecision:
         },
     ]
 
+    # Direction et confidence par défaut neutres — à mettre à jour par
+    # `_derive_osint_decision()` une fois les overlays OSINT cross-validés.
+    # Si pas d'OSINT disponible (Redis miss), reste à neutral/0 — cohérent
+    # avec ADR-018 (Tik ne décide pas sans OSINT).
     hypothesis = (
-        f"Swing {direction} on {df.attrs.get('entity_id', 'entity')} "
-        f"based on EMA/RSI/MACD confluence "
-        f"(bull={bull_score:.2f}, bear={bear_score:.2f})"
+        f"Swing analysis on {df.attrs.get('entity_id', 'entity')} — "
+        f"awaiting OSINT cross-validation for direction"
     )
 
     return SwingDecision(
         entity_id=df.attrs.get("entity_id", "unknown"),
         timestamp=now_utc(),
-        direction=direction,
-        confidence=round(confidence, 3),
+        direction="neutral",
+        confidence=0.0,
         hypothesis=hypothesis,
         counter_scenarios=counter_scenarios,
         evidence=evidence,
         triggers=triggers,
+    )
+
+
+# Alias rétrocompat — pointe vers la fonction renommée. Permet aux callers
+# externes (tests, scripts) qui importaient `_score_indicators` de continuer
+# à fonctionner. Sera supprimé après migration complète des tests.
+_score_indicators = _compute_technical_evidence
+
+
+def _derive_osint_decision(
+    decision: SwingDecision,
+    combined_bias: float,
+    threshold: float = 0.30,
+) -> None:
+    """Met à jour direction et confidence d'une SwingDecision selon le combined_bias OSINT.
+
+    ADR-018 — Tik OSINT pure : la direction et la conviction sont dérivées
+    uniquement du biais OSINT cross-validé, pas de l'analyse technique.
+
+    - combined_bias > +threshold → direction = "long"
+    - combined_bias < -threshold → direction = "short"
+    - sinon → direction = "neutral"
+
+    confidence = abs(combined_bias) ∈ [0, 1] (magnitude de la conviction OSINT).
+
+    Mute la decision en place. Met aussi à jour la hypothesis pour refléter
+    la décision OSINT.
+    """
+    if combined_bias > threshold:
+        decision.direction = "long"
+    elif combined_bias < -threshold:
+        decision.direction = "short"
+    else:
+        decision.direction = "neutral"
+
+    decision.confidence = round(abs(combined_bias), 3)
+
+    # Hypothèse mise à jour pour refléter la décision OSINT
+    decision.hypothesis = (
+        f"Swing {decision.direction} on {decision.entity_id} "
+        f"based on OSINT cross-validation (combined_bias={combined_bias:+.2f}, "
+        f"|conviction|={decision.confidence:.2f})"
     )
 
 
@@ -309,7 +344,11 @@ def _compute_fg_bias(value: int) -> tuple[float, str]:
 
 
 def _veracity_from_concordance(direction: str, fg_bias: float) -> float:
-    """Veracity dynamique selon concordance entre direction technique et bias FG.
+    """[LEGACY ADR-018] Veracity dynamique selon concordance direction technique ↔ bias FG.
+
+    Conservée pour rétrocompat des tests existants. **Plus utilisée en
+    runtime** depuis ADR-018 (refactor pur OSINT 2026-05-07) — utiliser
+    `_veracity_from_dispersion()` à la place.
 
     Concordance = +1 (parfaite) → 0.95 ; -1 (opposition franche) → 0.70.
     """
@@ -322,6 +361,41 @@ def _veracity_from_concordance(direction: str, fg_bias: float) -> float:
     if concordance > -0.4:
         return 0.85
     if concordance > -0.9:
+        return 0.78
+    return 0.70
+
+
+def _veracity_from_dispersion(dispersion: float) -> float:
+    """Veracity dynamique selon dispersion (std) des biais sources OSINT.
+
+    ADR-018 — Tik OSINT pure (refactor 2026-05-07) : la veracity mesure
+    désormais l'alignement des sources OSINT entre elles, pas la concordance
+    technique vs sentiment (qui n'a plus de sens depuis que la direction
+    est dérivée du combined_bias OSINT lui-même).
+
+    Sur des biais bornés [-1, +1], l'écart-type max théorique est ~1.0
+    (N=2 aux extrêmes ±1) ou ~1.15 (N≥4 split 50/50). Seuils calibrés
+    sur cette échelle :
+
+    - dispersion < 0.2 → 0.95 (sources très alignées, forte conviction)
+    - dispersion < 0.4 → 0.90 (alignement raisonnable)
+    - dispersion < 0.6 → 0.85 (alignement modéré)
+    - dispersion < 0.8 → 0.78 (sources éclatées, prudence)
+    - dispersion ≥ 0.8 → 0.70 (sources très divergentes, désaccord)
+
+    Résout le bug #2 identifié dans l'audit Paquet 17 P5 : la veracity
+    n'est plus figée à 0.85 pour les signaux neutral (cas où dir_score=0
+    rendait concordance=0 toujours dans l'ancienne formule).
+
+    Calibration provisoire des seuils, à réviser empiriquement post-J+30.
+    """
+    if dispersion < 0.2:
+        return 0.95
+    if dispersion < 0.4:
+        return 0.90
+    if dispersion < 0.6:
+        return 0.85
+    if dispersion < 0.8:
         return 0.78
     return 0.70
 
@@ -668,7 +742,12 @@ async def analyze_swing_btc(
             cv = apply_cross_validation_to_decision(
                 decision, biases_by_source, mode=settings.antifakenews_mode
             )
-            decision.veracity = _veracity_from_concordance(decision.direction, cv.combined_bias)
+            # ADR-018 — Tik OSINT pure : direction et confidence dérivées
+            # du combined_bias OSINT (pas de l'analyse technique).
+            _derive_osint_decision(decision, cv.combined_bias)
+            # Veracity dérivée de la dispersion des sources OSINT
+            # (résout bug #2 audit Paquet 17 — veracity neutral figée à 0.85).
+            decision.veracity = _veracity_from_dispersion(cv.dispersion)
             if cv.circuit_breaker_status != "ok":
                 log.info(
                     "anti_fake_news.flagged",
@@ -1010,7 +1089,11 @@ async def analyze_swing_gold(
             cv = apply_cross_validation_to_decision(
                 decision, biases_by_source, mode=settings.antifakenews_mode
             )
-            decision.veracity = _veracity_from_concordance(decision.direction, cv.combined_bias)
+            # ADR-018 — Tik OSINT pure : direction et confidence dérivées
+            # du combined_bias OSINT (pas de l'analyse technique).
+            _derive_osint_decision(decision, cv.combined_bias)
+            # Veracity dérivée de la dispersion des sources OSINT.
+            decision.veracity = _veracity_from_dispersion(cv.dispersion)
             if cv.circuit_breaker_status != "ok":
                 log.info(
                     "anti_fake_news.flagged",
