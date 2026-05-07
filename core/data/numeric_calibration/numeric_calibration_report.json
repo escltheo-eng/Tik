@@ -1,0 +1,501 @@
+{
+  "meta": {
+    "ran_at": "2026-05-07T14:27:55.027356+00:00",
+    "days_back": 365,
+    "since_date": "2025-05-07",
+    "horizons": [
+      "24h",
+      "120h",
+      "720h"
+    ],
+    "thresholds_directionality": {
+      "24h": 0.5,
+      "120h": 1.0,
+      "720h": 2.0
+    },
+    "n_history_fetched": {
+      "fear_greed": 365,
+      "gdelt_tone": 0,
+      "dxy": 247,
+      "cftc_cot": 51,
+      "btc_klines": 400,
+      "gold_klines": 504
+    }
+  },
+  "by_source": {
+    "fear_greed": {
+      "n_total": 364,
+      "asset": "BTC",
+      "direction": "contrarian",
+      "metrics_by_horizon": {
+        "24h": {
+          "threshold_pct": 0.5,
+          "n_evaluable_total": 312,
+          "by_palier": {
+            "greed": {
+              "n": 101,
+              "n_evaluable": 101,
+              "n_success": 38,
+              "hit_rate": 0.3762,
+              "delta_avg_pct": -0.0878,
+              "bias_value": -0.5
+            },
+            "extreme_greed": {
+              "n": 4,
+              "n_evaluable": 4,
+              "n_success": 1,
+              "hit_rate": 0.25,
+              "delta_avg_pct": 0.2332,
+              "bias_value": -1.0
+            },
+            "neutral": {
+              "n": 52,
+              "n_evaluable": 0,
+              "n_success": 0,
+              "hit_rate": null,
+              "delta_avg_pct": 0.0045,
+              "bias_value": 0.0
+            },
+            "fear": {
+              "n": 71,
+              "n_evaluable": 71,
+              "n_success": 28,
+              "hit_rate": 0.3944,
+              "delta_avg_pct": -0.248,
+              "bias_value": 0.5
+            },
+            "extreme_fear": {
+              "n": 136,
+              "n_evaluable": 136,
+              "n_success": 55,
+              "hit_rate": 0.4044,
+              "delta_avg_pct": 0.0681,
+              "bias_value": 1.0
+            }
+          },
+          "ic_spearman": -0.0133,
+          "ic_expected_sign": "negative",
+          "ic_actual_sign": "negative",
+          "ic_sign_correct": true,
+          "extreme": {
+            "n_total": 140,
+            "n_evaluable": 140,
+            "n_success": 56,
+            "hit_rate": 0.4
+          }
+        },
+        "120h": {
+          "threshold_pct": 1.0,
+          "n_evaluable_total": 311,
+          "by_palier": {
+            "greed": {
+              "n": 101,
+              "n_evaluable": 101,
+              "n_success": 37,
+              "hit_rate": 0.3663,
+              "delta_avg_pct": -0.1428,
+              "bias_value": -0.5
+            },
+            "extreme_greed": {
+              "n": 4,
+              "n_evaluable": 4,
+              "n_success": 2,
+              "hit_rate": 0.5,
+              "delta_avg_pct": -1.8317,
+              "bias_value": -1.0
+            },
+            "neutral": {
+              "n": 49,
+              "n_evaluable": 0,
+              "n_success": 0,
+              "hit_rate": null,
+              "delta_avg_pct": -0.1121,
+              "bias_value": 0.0
+            },
+            "fear": {
+              "n": 70,
+              "n_evaluable": 70,
+              "n_success": 29,
+              "hit_rate": 0.4143,
+              "delta_avg_pct": -0.5018,
+              "bias_value": 0.5
+            },
+            "extreme_fear": {
+              "n": 136,
+              "n_evaluable": 136,
+              "n_success": 60,
+              "hit_rate": 0.4412,
+              "delta_avg_pct": -0.2143,
+              "bias_value": 1.0
+            }
+          },
+          "ic_spearman": -0.0464,
+          "ic_expected_sign": "negative",
+          "ic_actual_sign": "negative",
+          "ic_sign_correct": true,
+          "extreme": {
+            "n_total": 140,
+            "n_evaluable": 140,
+            "n_success": 62,
+            "hit_rate": 0.4429
+          }
+        },
+        "720h": {
+          "threshold_pct": 2.0,
+          "n_evaluable_total": 288,
+          "by_palier": {
+            "greed": {
+              "n": 101,
+              "n_evaluable": 101,
+              "n_success": 36,
+              "hit_rate": 0.3564,
+              "delta_avg_pct": 0.0721,
+              "bias_value": -0.5
+            },
+            "extreme_greed": {
+              "n": 4,
+              "n_evaluable": 4,
+              "n_success": 3,
+              "hit_rate": 0.75,
+              "delta_avg_pct": -3.153,
+              "bias_value": -1.0
+            },
+            "neutral": {
+              "n": 47,
+              "n_evaluable": 0,
+              "n_success": 0,
+              "hit_rate": null,
+              "delta_avg_pct": -2.2007,
+              "bias_value": 0.0
+            },
+            "fear": {
+              "n": 57,
+              "n_evaluable": 57,
+              "n_success": 9,
+              "hit_rate": 0.1579,
+              "delta_avg_pct": -11.0878,
+              "bias_value": 0.5
+            },
+            "extreme_fear": {
+              "n": 126,
+              "n_evaluable": 126,
+              "n_success": 58,
+              "hit_rate": 0.4603,
+              "delta_avg_pct": -0.0642,
+              "bias_value": 1.0
+            }
+          },
+          "ic_spearman": -0.1005,
+          "ic_expected_sign": "negative",
+          "ic_actual_sign": "negative",
+          "ic_sign_correct": true,
+          "extreme": {
+            "n_total": 130,
+            "n_evaluable": 130,
+            "n_success": 61,
+            "hit_rate": 0.4692
+          }
+        }
+      }
+    },
+    "gdelt_tone": {
+      "n_total": 0,
+      "asset": "GOLD",
+      "direction": "contrarian",
+      "metrics_by_horizon": {},
+      "warning": "Aucun point \u00e9valuable"
+    },
+    "dxy": {
+      "n_total": 242,
+      "asset": "GOLD",
+      "direction": "contrarian",
+      "metrics_by_horizon": {
+        "24h": {
+          "threshold_pct": 0.5,
+          "n_evaluable_total": 152,
+          "by_palier": {
+            "dxy_up": {
+              "n": 57,
+              "n_evaluable": 57,
+              "n_success": 11,
+              "hit_rate": 0.193,
+              "delta_avg_pct": 0.0946,
+              "bias_value": -0.5
+            },
+            "dxy_stable": {
+              "n": 89,
+              "n_evaluable": 0,
+              "n_success": 0,
+              "hit_rate": null,
+              "delta_avg_pct": 0.1504,
+              "bias_value": 0.0
+            },
+            "dxy_down": {
+              "n": 74,
+              "n_evaluable": 74,
+              "n_success": 18,
+              "hit_rate": 0.2432,
+              "delta_avg_pct": -0.0129,
+              "bias_value": 0.5
+            },
+            "dxy_strong_down": {
+              "n": 11,
+              "n_evaluable": 11,
+              "n_success": 3,
+              "hit_rate": 0.2727,
+              "delta_avg_pct": -0.4369,
+              "bias_value": 1.0
+            },
+            "dxy_strong_up": {
+              "n": 10,
+              "n_evaluable": 10,
+              "n_success": 2,
+              "hit_rate": 0.2,
+              "delta_avg_pct": 0.4196,
+              "bias_value": -1.0
+            }
+          },
+          "ic_spearman": 0.0703,
+          "ic_expected_sign": "negative",
+          "ic_actual_sign": "positive",
+          "ic_sign_correct": false,
+          "extreme": {
+            "n_total": 21,
+            "n_evaluable": 21,
+            "n_success": 5,
+            "hit_rate": 0.2381
+          }
+        },
+        "120h": {
+          "threshold_pct": 1.0,
+          "n_evaluable_total": 116,
+          "by_palier": {
+            "dxy_up": {
+              "n": 45,
+              "n_evaluable": 45,
+              "n_success": 7,
+              "hit_rate": 0.1556,
+              "delta_avg_pct": 0.9642,
+              "bias_value": -0.5
+            },
+            "dxy_stable": {
+              "n": 72,
+              "n_evaluable": 0,
+              "n_success": 0,
+              "hit_rate": null,
+              "delta_avg_pct": 0.9197,
+              "bias_value": 0.0
+            },
+            "dxy_down": {
+              "n": 55,
+              "n_evaluable": 55,
+              "n_success": 14,
+              "hit_rate": 0.2545,
+              "delta_avg_pct": -0.143,
+              "bias_value": 0.5
+            },
+            "dxy_strong_down": {
+              "n": 9,
+              "n_evaluable": 9,
+              "n_success": 3,
+              "hit_rate": 0.3333,
+              "delta_avg_pct": -2.5055,
+              "bias_value": 1.0
+            },
+            "dxy_strong_up": {
+              "n": 7,
+              "n_evaluable": 7,
+              "n_success": 0,
+              "hit_rate": 0.0,
+              "delta_avg_pct": 1.778,
+              "bias_value": -1.0
+            }
+          },
+          "ic_spearman": 0.2345,
+          "ic_expected_sign": "negative",
+          "ic_actual_sign": "positive",
+          "ic_sign_correct": false,
+          "extreme": {
+            "n_total": 16,
+            "n_evaluable": 16,
+            "n_success": 3,
+            "hit_rate": 0.1875
+          }
+        },
+        "720h": {
+          "threshold_pct": 2.0,
+          "n_evaluable_total": 111,
+          "by_palier": {
+            "dxy_up": {
+              "n": 43,
+              "n_evaluable": 43,
+              "n_success": 7,
+              "hit_rate": 0.1628,
+              "delta_avg_pct": 3.1697,
+              "bias_value": -0.5
+            },
+            "dxy_stable": {
+              "n": 66,
+              "n_evaluable": 0,
+              "n_success": 0,
+              "hit_rate": null,
+              "delta_avg_pct": 3.5685,
+              "bias_value": 0.0
+            },
+            "dxy_down": {
+              "n": 56,
+              "n_evaluable": 56,
+              "n_success": 36,
+              "hit_rate": 0.6429,
+              "delta_avg_pct": 4.115,
+              "bias_value": 0.5
+            },
+            "dxy_strong_down": {
+              "n": 5,
+              "n_evaluable": 5,
+              "n_success": 1,
+              "hit_rate": 0.2,
+              "delta_avg_pct": 0.2889,
+              "bias_value": 1.0
+            },
+            "dxy_strong_up": {
+              "n": 7,
+              "n_evaluable": 7,
+              "n_success": 2,
+              "hit_rate": 0.2857,
+              "delta_avg_pct": 0.3326,
+              "bias_value": -1.0
+            }
+          },
+          "ic_spearman": 0.0165,
+          "ic_expected_sign": "negative",
+          "ic_actual_sign": "positive",
+          "ic_sign_correct": false,
+          "extreme": {
+            "n_total": 12,
+            "n_evaluable": 12,
+            "n_success": 3,
+            "hit_rate": 0.25
+          }
+        }
+      }
+    },
+    "cftc_cot": {
+      "n_total": 51,
+      "asset": "GOLD",
+      "direction": "contrarian",
+      "metrics_by_horizon": {
+        "24h": {
+          "threshold_pct": 0.5,
+          "n_evaluable_total": 51,
+          "by_palier": {
+            "mm_net_long": {
+              "n": 41,
+              "n_evaluable": 41,
+              "n_success": 9,
+              "hit_rate": 0.2195,
+              "delta_avg_pct": 0.342,
+              "bias_value": -0.5
+            },
+            "mm_extreme_long": {
+              "n": 10,
+              "n_evaluable": 10,
+              "n_success": 2,
+              "hit_rate": 0.2,
+              "delta_avg_pct": 0.5889,
+              "bias_value": -1.0
+            }
+          },
+          "ic_spearman": -0.0603,
+          "ic_expected_sign": "negative",
+          "ic_actual_sign": "negative",
+          "ic_sign_correct": true,
+          "extreme": {
+            "n_total": 10,
+            "n_evaluable": 10,
+            "n_success": 2,
+            "hit_rate": 0.2
+          }
+        },
+        "120h": {
+          "threshold_pct": 1.0,
+          "n_evaluable_total": 1,
+          "by_palier": {
+            "mm_net_long": {
+              "n": 1,
+              "n_evaluable": 1,
+              "n_success": 0,
+              "hit_rate": 0.0,
+              "delta_avg_pct": -0.5885,
+              "bias_value": -0.5
+            }
+          },
+          "ic_spearman": null,
+          "ic_expected_sign": "negative",
+          "ic_actual_sign": null,
+          "ic_sign_correct": null,
+          "extreme": {
+            "n_total": 0,
+            "n_evaluable": 0,
+            "n_success": 0,
+            "hit_rate": null
+          }
+        },
+        "720h": {
+          "threshold_pct": 2.0,
+          "n_evaluable_total": 48,
+          "by_palier": {
+            "mm_net_long": {
+              "n": 38,
+              "n_evaluable": 38,
+              "n_success": 6,
+              "hit_rate": 0.1579,
+              "delta_avg_pct": 2.2573,
+              "bias_value": -0.5
+            },
+            "mm_extreme_long": {
+              "n": 10,
+              "n_evaluable": 10,
+              "n_success": 0,
+              "hit_rate": 0.0,
+              "delta_avg_pct": 7.5176,
+              "bias_value": -1.0
+            }
+          },
+          "ic_spearman": 0.4274,
+          "ic_expected_sign": "negative",
+          "ic_actual_sign": "positive",
+          "ic_sign_correct": false,
+          "extreme": {
+            "n_total": 10,
+            "n_evaluable": 10,
+            "n_success": 0,
+            "hit_rate": 0.0
+          }
+        }
+      }
+    }
+  },
+  "recommendations": [
+    "\u26a0 **fear_greed @ 24h** : IC = -0.0133 (|IC| < 0.1) \u2192 source non significative \u00e0 cet horizon.",
+    "\ud83d\udd34 **fear_greed @ 24h** : paliers extr\u00eames hit rate = 40.0% (n=140, < 45 %) \u2192 **paliers \u00e0 \u00e9largir** (seuils extr\u00eames trop laxistes).",
+    "\u26a0 **fear_greed @ 120h** : IC = -0.0464 (|IC| < 0.1) \u2192 source non significative \u00e0 cet horizon.",
+    "\ud83d\udd34 **fear_greed @ 120h** : paliers extr\u00eames hit rate = 44.3% (n=140, < 45 %) \u2192 **paliers \u00e0 \u00e9largir** (seuils extr\u00eames trop laxistes).",
+    "\u26a0 **gdelt_tone** : aucun point \u00e9valuable, v\u00e9rifier la source de donn\u00e9es.",
+    "\ud83d\udd34 **dxy @ 24h** : IC Spearman = +0.0703 (signe oppos\u00e9 \u00e0 `negative` attendu pour `contrarian`). S\u00e9mantique de l'overlay \u00e0 reconsid\u00e9rer.",
+    "\u26a0 **dxy @ 24h** : IC = +0.0703 (|IC| < 0.1) \u2192 source non significative \u00e0 cet horizon.",
+    "\ud83d\udd34 **dxy @ 24h** : paliers extr\u00eames hit rate = 23.8% (n=21, < 45 %) \u2192 **paliers \u00e0 \u00e9largir** (seuils extr\u00eames trop laxistes).",
+    "\ud83d\udd34 **dxy @ 120h** : IC Spearman = +0.2345 (signe oppos\u00e9 \u00e0 `negative` attendu pour `contrarian`). S\u00e9mantique de l'overlay \u00e0 reconsid\u00e9rer.",
+    "\u2705 **dxy @ 120h** : IC = +0.2345 (|IC| \u2265 0.2) \u2192 signal **fort**, garder le mapping actuel.",
+    "\ud83d\udd34 **dxy @ 120h** : paliers extr\u00eames hit rate = 18.8% (n=16, < 45 %) \u2192 **paliers \u00e0 \u00e9largir** (seuils extr\u00eames trop laxistes).",
+    "\ud83d\udd34 **dxy @ 720h** : IC Spearman = +0.0165 (signe oppos\u00e9 \u00e0 `negative` attendu pour `contrarian`). S\u00e9mantique de l'overlay \u00e0 reconsid\u00e9rer.",
+    "\u26a0 **dxy @ 720h** : IC = +0.0165 (|IC| < 0.1) \u2192 source non significative \u00e0 cet horizon.",
+    "\ud83d\udd34 **dxy @ 720h** : paliers extr\u00eames hit rate = 25.0% (n=12, < 45 %) \u2192 **paliers \u00e0 \u00e9largir** (seuils extr\u00eames trop laxistes).",
+    "\u2705 **dxy @ 720h**, palier `dxy_down` (bias=\u00b10.5) : hit rate = 64.3% (n=56) \u2192 **palier moyen utile**.",
+    "\u26a0 **cftc_cot @ 24h** : IC = -0.0603 (|IC| < 0.1) \u2192 source non significative \u00e0 cet horizon.",
+    "\ud83d\udd34 **cftc_cot @ 24h** : paliers extr\u00eames hit rate = 20.0% (n=10, < 45 %) \u2192 **paliers \u00e0 \u00e9largir** (seuils extr\u00eames trop laxistes).",
+    "\ud83d\udd34 **cftc_cot @ 720h** : IC Spearman = +0.4274 (signe oppos\u00e9 \u00e0 `negative` attendu pour `contrarian`). S\u00e9mantique de l'overlay \u00e0 reconsid\u00e9rer.",
+    "\u2705 **cftc_cot @ 720h** : IC = +0.4274 (|IC| \u2265 0.2) \u2192 signal **fort**, garder le mapping actuel.",
+    "\ud83d\udd34 **cftc_cot @ 720h** : paliers extr\u00eames hit rate = 0.0% (n=10, < 45 %) \u2192 **paliers \u00e0 \u00e9largir** (seuils extr\u00eames trop laxistes)."
+  ]
+}
