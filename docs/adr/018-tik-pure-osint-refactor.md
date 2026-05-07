@@ -413,97 +413,114 @@ maintenant des signaux dont :
 
 ---
 
-## Amendement post-livraison — Bascule anticipée 2026-05-07
+## Amendement post-livraison — Désactivation overlays GOLD DXY+COT (P2)
 
-### Contexte
+**Date** : 2026-05-07
+**Origine** : P2 plan stratégique fiabilité signaux — backtest empirique
+12m des 4 overlays numériques (FG, GDELT, DXY, COT). Cf. CLAUDE.md
+Paquet 18 plan stratégique post-audit fiabilité.
 
-L'ADR-018 a été livré le **2026-05-07**, soit **7 jours avant** la date
-de démarrage du trading manuel J+14 (2026-05-14). Cette livraison est en
-divergence assumée avec la section *"Conditions d'activation"* qui
-exigeait :
+### Constat empirique mesuré
 
-- *"Trading manuel J+14 démarré et stable (≥ 1 semaine de trading
-  effectif post-2026-05-14)"*
-- *"Hit rate Tik hybride mesuré empiriquement avec ≥ 30 trades manuels
-  réels"*
-- *"Réponses obtenues sur les 4 hypothèses"* (stratégie B2B, hit rate
-  Zeta, proportion signaux veracity ≥ 0.95, fréquence trading)
+Backtest 2025-05-07 → 2026-05-07 (12 mois, 365 jours calendaires) sur les
+4 sources numériques avec 3 horizons (24h, 5j, 30j) :
 
-**Aucune** de ces conditions n'était remplie le 2026-05-07.
+| Source | n total | IC Spearman max (signe attendu) | Cas extrêmes hit rate |
+|---|---|---|---|
+| **FG** (BTC) | 364 | -0.1005 (négatif attendu, marginal) | 40-47 % |
+| **GDELT** (GOLD) | 0 | n/a (rate-limit GDELT 12m) | n/a |
+| **DXY** (GOLD) | 242 | **+0.2345** à 120h (négatif attendu, **inversé**) | 19-25 % |
+| **COT** (GOLD) | 51 | **+0.4274** à 720h (négatif attendu, **inversé**) | 0-20 % |
 
-### Raison de la bascule anticipée
+Détail catastrophique sur les paliers extrêmes contrarian :
 
-Décision consciente de l'utilisatrice de **devancer le refactor** plutôt
-que de l'attendre post-J+14, pour permettre le démarrage du trading
-manuel **directement sur la nouvelle architecture** — sans avoir à
-re-apprendre la sémantique de `confidence` en cours de route.
+- **DXY palier `dxy_strong_up`** (-1.0 contrarian, attendu GOLD bear) à 120h :
+  hit rate **0.0 %** (n=7) — quand DXY a monté fort, GOLD a continué à monter
+- **COT palier `mm_extreme_long`** (-1.0 contrarian, attendu GOLD bear) à 720h :
+  hit rate **0.0 %** (n=10) — quand les hedge funds étaient extreme long
+  (signal de top contrarian classique), GOLD a fait +7.5 % en moyenne sur 30j
 
-**Trade-off accepté** :
+### Décision
 
-| Pour bascule anticipée | Contre bascule anticipée |
-|---|---|
-| Une seule sémantique à apprendre (`confidence` = `\|combined_bias\|` uniforme) | Conditions d'activation ADR-018 non vérifiées empiriquement |
-| Pas de re-formation UX en cours de trading actif | Risque de découvrir un bug structurel pendant le trading réel |
-| 7 jours pré-J+14 disponibles pour validation runtime mode shadow | Mode shadow compressé (initialement prévu 1 semaine post-livraison) |
-| Tik et la trader « calibrent » ensemble dès le début | Perte du recul empirique sur l'ancienne version hybride |
+Désactiver DXY et COT comme overlays dans `analyze_swing_gold` **par défaut**,
+via toggle `settings.gold_dxy_cot_overlays_enabled` (défaut `False`). Les
+fonctions `_compute_dxy_bias`, `_compute_cot_bias`, `_enrich_with_dxy`,
+`_enrich_with_cot` sont **conservées** dans le code pour réactivation rapide
+si la mesure post-J+30 sur période bear confirme/invalide l'inversion.
 
-**Verdict** : la cohérence d'apprentissage UX a primé sur la rigueur des
-conditions d'activation. Décision raisonnée mais à valider runtime.
+**Pour cette désactivation** :
 
-### Mode shadow compressé
+- L'évidence empirique sur 12m est **non-ambiguë** sur le sens du signal
+  (IC +0.23 et +0.43 sont des magnitudes significatives, pas du bruit)
+- Garder ces overlays continue à dégrader la qualité du `combined_bias`
+  (Tik OSINT pur post-ADR-018 dérive direction et confidence du combined_bias)
+- Garde-fou 2-bis (sizing 1 %, veracity ≥ 0.90) ne suffit PAS à compenser
+  un overlay qui contribue *systématiquement* dans le mauvais sens
 
-Au lieu d'1 semaine de validation post-livraison comme prévu, on a
-**7 jours pré-J+14 + 1 semaine post-J+14** = ~14 jours de validation
-runtime. C'est en fait **plus** que ce qui était initialement prévu,
-mais coupé par le démarrage du trading réel. Donc la fenêtre
-*"observation pure sans risque"* est de 7 jours seulement.
+**Contre cette désactivation** :
 
-### Hypothèses ADR-018 toujours non vérifiées
+- Période 12m 2025-2026 strongly bullish (régime "tout monte" — crypto, or,
+  dollar fort en parallèle, perception de débasement monétaire). L'inversion
+  pourrait être **régime-spécifique**, pas une règle générale
+- Réduit Tik à 2 overlays GOLD (Google News + GDELT — quand GDELT marche)
+  contre 4 avant. Dispersion `combined_bias` plus faible → veracity moins
+  modulée
+- Décision pifomètre raisonné, pas une bascule définitive
 
-Les 4 hypothèses listées en section *"4 hypothèses à vérifier avant
-exécution"* restent **toutes non répondues** au 2026-05-07 :
+**Verdict retenu** : désactivation par défaut (booléen `False`) MAIS code
+préservé pour réactivation. Re-mesure obligatoire post-J+30 sur période
+bear (gold drawdown ≥ 5 %, ou bear crypto) avant de réenvisager.
 
-1. Stratégie B2B Tik — pas tranchée
-2. Hit rate Zeta réel — non mesuré (associé à interroger)
-3. Proportion signaux Tik veracity ≥ 0.95 sur 30 jours — partiellement
-   mesurée (3.37 % au moment du refactor, mais sur l'ancienne
-   architecture hybride, donc non comparable post-refactor)
-4. Fréquence trading manuel — projection seulement (à mesurer post-J+14)
+### Critère de réactivation post-J+30
 
-**Critère de bascule empirique défini complémentairement par
-l'utilisatrice (2026-05-07)** : si **< 3 signaux directionnels par
-semaine sur 2 semaines post-J+14**, alors bascule prévue vers
-intégration **Polymarket** (cf. P8 du plan stratégique fiabilité signaux,
-CLAUDE.md Paquet 18). Critère binaire mesurable directement en DB.
+Sur une période diversifiée (incluant idéalement un drawdown gold ≥ 5 %) :
 
-### Limitations connues post-bascule anticipée
+- Si IC Spearman DXY @ 120h **redevient négatif** (signe correct contrarian)
+  ET cas extrêmes hit rate ≥ 50 % → réactiver `gold_dxy_cot_overlays_enabled=True`
+- Sinon : maintenir désactivés et planifier P4 (refonte mappings sources)
+- Si COT n=200+ accumulés et l'IC reste positif : reconsidérer la
+  sémantique contrarian — peut-être trend-following dans certains régimes
 
-1. **Hypothèses ADR-018 toujours à vérifier** post-J+14, le refactor a
-   été exécuté sur la base de la **conviction** qu'elles seraient
-   validées plutôt que sur leur **vérification empirique**.
-2. **Comparabilité hit rate avant/après** dégradée : le golden dataset
-   et les 156 signaux backtest sont sur l'ancienne architecture hybride.
-   La comparaison post-refactor nécessitera **une nouvelle accumulation
-   empirique** de 30+ jours.
-3. **Volume de signaux directionnels post-refactor inconnu** : le seuil
-   ±0.30 sur `combined_bias` est calibré au pifomètre. Le critère
-   Polymarket *< 3 signaux/semaine* sera l'indicateur empirique de
-   recalibration nécessaire.
-4. **Trading manuel sur architecture < 2 semaines de runtime** : c'est
-   inhabituellement court. Garde-fou 2-bis (sizing 1 %, veracity ≥ 0.90)
-   reste **strictement applicable** pour absorber ce risque.
+### Limitations connues post-désactivation
+
+1. **Tik GOLD swing repose maintenant sur 2 overlays** (Google News + GDELT) —
+   plus vulnérable à un seul overlay défaillant
+2. **GDELT non mesurable au backtest 12m** (rate-limit API publique sur volumes
+   longs) — sa qualité reste **non-validée empiriquement** post-2026-05-07
+3. **Le toggle `settings.gold_dxy_cot_overlays_enabled` lit depuis `.env`** —
+   si on veut tester en dev avec les overlays activés, override via
+   `TIK_GOLD_DXY_COT_OVERLAYS_ENABLED=true docker compose ...`
+4. **Pas de migration ni de modif schéma DB** — les signaux historiques GOLD
+   en DB qui contiennent des evidence DXY/COT restent lisibles, juste les
+   nouveaux signaux n'en auront plus
+
+### Garde-fous opérationnels confirmés
+
+- Garde-fou 1 (Tik shadow vs Zeta 3 mois) : **inchangé**
+- ADR-003 (pas de bypass V01-V15) : **inchangé** — Tik ne crée jamais d'ordre
+- ADR-004 (multi-overlay) : **inchangé** — pattern ouvert, on ferme juste
+  2 overlays GOLD spécifiques par calibration empirique
+- ADR-011 (anti fake-news) : **inchangé** — cross-validation Modified Z-score
+  toujours appliquée sur les overlays restants
+- Garde-fou 2-bis (sizing 1 %, veracity ≥ 0.90 sur swing) : **strictement
+  applicable** — règle stricte trading manuel J+14, ne change pas
 
 ### Mémoire pour instances Claude futures
 
-Si une future session questionne pourquoi l'ADR-018 a été activé sans
-respect des conditions originales, **ne pas réécrire l'historique** :
-les conditions étaient explicites, la décision de devancer était
-consciente, le trade-off est documenté ici. La rigueur méthodologique
-exige de **distinguer** :
+Cette désactivation est **réversible et conservatrice**. Si une session
+future :
 
-- *Décision raisonnée d'enfreindre une règle qu'on s'était fixée*
-  (ce cas : raison cohérente, conséquences acceptées)
-- *Oubli d'une règle qu'on s'était fixée* (qui aurait justifié de
-  signaler une erreur)
+- Re-mesure DXY/COT sur période diversifiée (incluant bear) et trouve
+  signe contrarian correct → réactiver via env var
+- Trouve un nouvel insight justifiant trend-following plutôt que contrarian
+  → modifier `_compute_dxy_bias` / `_compute_cot_bias` (inverser le mapping)
+  et nouveau ADR
 
-Cet amendement documente la première catégorie, pas la seconde.
+**Ne pas confondre** :
+
+- Désactivation overlays (ce paquet) — réversible, basée sur évidence empirique
+- Suppression overlays (jamais fait) — irréversible, nécessiterait une
+  réflexion architecturale sur la couche macro Tik
+
+3 tests pytest documentent cette setting (`TestGoldDxyCotOverlaysSettingADR018Amendment`
+dans `test_swing_engine.py`) : default=False, override=True/False via env.

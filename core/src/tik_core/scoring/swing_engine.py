@@ -1016,14 +1016,22 @@ async def analyze_swing_gold(
 ) -> SwingDecision:
     """Analyse swing Gold (GC=F) sur 1h/60d, avec overlays multi-sources.
 
-    Overlays actifs (cf. ADR-004 / ADR-008 / ADR-010) :
-    - DXY (FRED, contrarian) : corrélation négative GOLD/USD
-    - CFTC COT Managed Money (Redis, contrarian) : positioning institutionnel
+    Overlays par défaut (cf. ADR-004 / ADR-008 / ADR-010) :
     - Google News GOLD (Redis, trend-following) : sentiment éditorial mainstream
     - GDELT tone (Redis, contrarian) : NLP scientifique mondial, capte les
       tensions globales / climat éditorial macro / dimension géopolitique
       que les autres overlays ne couvrent pas. **Méthode non-LLM**, premier
       overlay Tik à diversification méthodologique pure (cf. ADR-010).
+
+    Overlays opt-in via `settings.gold_dxy_cot_overlays_enabled` (défaut False) :
+    - DXY (FRED, contrarian) : corrélation négative GOLD/USD
+    - CFTC COT Managed Money (Redis, contrarian) : positioning institutionnel
+
+    Désactivés par défaut suite au backtest empirique 12m du 2026-05-07
+    (P2 plan stratégique fiabilité, ADR-018 amendement) qui a mesuré les
+    deux contrarian inversés (DXY IC +0.23 à 120h, COT IC +0.43 à 720h).
+    À réactiver post-J+30 après mesure sur période bear gold pour
+    confirmer si l'inversion est régime-spécifique 2025-2026.
 
     La veracity finale est calculée sur la moyenne des biais disponibles —
     même architecture que analyze_swing_btc, prête à accueillir d'autres
@@ -1051,7 +1059,11 @@ async def analyze_swing_gold(
     try:
         biases_by_source: dict[str, float] = {}
 
-        if fred_api_key:
+        # ADR-018 amendement P2 : DXY et COT contrarian mesurés inversés sur
+        # 12m 2025-2026 (DXY IC +0.23 / COT IC +0.43, signes opposés
+        # contrarian attendu). Désactivés par défaut via settings, à
+        # réactiver post-J+30 sur période bear.
+        if fred_api_key and settings.gold_dxy_cot_overlays_enabled:
             history = await _fetch_dxy_history(fred_api_key)
             if history:
                 bias = _enrich_with_dxy(decision, history)
@@ -1059,15 +1071,20 @@ async def analyze_swing_gold(
                     biases_by_source["fred_dtwexbgs"] = bias
             else:
                 log.info("swing.gold.dxy_unavailable")
+        elif fred_api_key:
+            log.info("swing.gold.dxy_skipped_overlay_disabled")
 
         if redis is not None:
-            cot = await _read_cot(redis)
-            if cot is not None:
-                bias = _enrich_with_cot(decision, cot)
-                if bias is not None:
-                    biases_by_source["cftc_cot"] = bias
+            if settings.gold_dxy_cot_overlays_enabled:
+                cot = await _read_cot(redis)
+                if cot is not None:
+                    bias = _enrich_with_cot(decision, cot)
+                    if bias is not None:
+                        biases_by_source["cftc_cot"] = bias
+                else:
+                    log.info("swing.gold.cot_unavailable")
             else:
-                log.info("swing.gold.cot_unavailable")
+                log.info("swing.gold.cot_skipped_overlay_disabled")
 
             gn = await _read_google_news(redis, entity_id="GOLD")
             if gn is not None:

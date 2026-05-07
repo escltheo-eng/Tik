@@ -1080,3 +1080,36 @@ class TestSemanticUniformityADR018:
         # Sémantique uniforme : les deux mesurent la même chose (|bias|)
         # plus haute = plus convaincu, pas l'inverse
         assert d_long.confidence > d_neutral.confidence
+
+
+class TestGoldDxyCotOverlaysSettingADR018Amendment:
+    """Vérifie le toggle d'overlays GOLD DXY+COT (ADR-018 amendement P2).
+
+    Backtest empirique 12m (2026-05-07) a mesuré DXY et COT contrarian
+    inversés sur la période 2025-2026 (DXY IC +0.23 / COT IC +0.43).
+    Désactivés par défaut, à réactiver post-J+30 sur période bear.
+    """
+
+    def test_setting_default_is_disabled(self):
+        """Par défaut, le toggle est False (désactivés)."""
+        from tik_core.config import Settings
+
+        # Settings sans .env permet d'isoler la valeur défaut
+        settings = Settings(_env_file=None)
+        assert settings.gold_dxy_cot_overlays_enabled is False
+
+    def test_setting_can_be_enabled_via_env(self, monkeypatch):
+        """Override via TIK_GOLD_DXY_COT_OVERLAYS_ENABLED=true."""
+        from tik_core.config import Settings
+
+        monkeypatch.setenv("TIK_GOLD_DXY_COT_OVERLAYS_ENABLED", "true")
+        settings = Settings(_env_file=None)
+        assert settings.gold_dxy_cot_overlays_enabled is True
+
+    def test_setting_can_be_disabled_via_env(self, monkeypatch):
+        """Override via TIK_GOLD_DXY_COT_OVERLAYS_ENABLED=false."""
+        from tik_core.config import Settings
+
+        monkeypatch.setenv("TIK_GOLD_DXY_COT_OVERLAYS_ENABLED", "false")
+        settings = Settings(_env_file=None)
+        assert settings.gold_dxy_cot_overlays_enabled is False

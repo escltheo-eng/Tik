@@ -961,6 +961,67 @@ Voir `docs/adr/018-tik-pure-osint-refactor.md` pour le détail technique complet
 
 ---
 
+## 21. Calibration empirique 12m : DXY et COT désactivés sur GOLD (2026-05-07)
+
+Le 7 mai, on a mesuré sur 12 mois de données réelles ce que valaient vraiment les 4 sources numériques (Fear & Greed, GDELT, DXY, CFTC COT). Le résultat sur DXY et COT a été surprenant.
+
+### Le constat
+
+**DXY** (l'indice du dollar américain) est censé fonctionner à l'**inverse** de l'or — quand le dollar monte, l'or descend. C'est la corrélation négative classique des manuels de finance. Tik utilisait cette logique « contrarian » : DXY ↑ → bias bear sur GOLD.
+
+**COT** (positions des hedge funds sur l'or) est censé fonctionner aussi à l'inverse — quand les hedge funds sont massivement long sur l'or, c'est souvent un **signal de top** (ils vont sortir). Tik utilisait cette logique : hedge funds extreme long → bias bear sur GOLD.
+
+**Mais sur les 12 derniers mois** (mai 2025 → mai 2026), ces deux relations classiques **n'ont pas tenu** :
+
+- Quand DXY a fortement monté, l'or **n'a pas baissé**. Au contraire, sur la période, dollar fort + or fort sont allés ensemble (perception d'un débasement monétaire global).
+- Quand les hedge funds étaient extreme long (signal de top contrarian classique), l'or a fait **+7.5 % en moyenne sur 30 jours** — tout l'inverse du signal attendu.
+
+L'IC Spearman (mesure de corrélation des rangs) confirme :
+- DXY @ 5j : **+0.23** au lieu de **négatif** attendu
+- COT @ 30j : **+0.43** au lieu de **négatif** attendu
+
+### La décision
+
+**Désactiver temporairement DXY et COT comme overlays GOLD.** Tik continue de calculer leur bias sur les fonctions internes, mais leur résultat **n'est plus injecté** dans le `combined_bias` qui décide la direction.
+
+C'est une décision **conservatrice** : si un overlay donne systématiquement un signal dans le mauvais sens, mieux vaut l'ignorer que de continuer à le mélanger aux autres et dégrader le `combined_bias`.
+
+### Pourquoi c'est temporaire
+
+La période 2025-2026 a été **strongly bullish** sur quasi tous les actifs (crypto, or, dollar perçu en débasement). Cette concomitance a probablement brisé les corrélations classiques pour cette période-là.
+
+Sur une période bear (drawdown gold ≥ 5 %, ou bear crypto), la corrélation classique DXY ↔ GOLD pourrait redevenir négative comme prévu. C'est ce qu'on devra mesurer **post-J+30** pour décider si on réactive.
+
+### Ce que tu vois côté Tik
+
+Pour les signaux GOLD swing :
+- **Avant** : 4 overlays (DXY + COT + Google News + GDELT)
+- **Maintenant** : 2 overlays seulement (Google News + GDELT)
+
+Le `combined_bias` est calculé sur moins de sources. Donc la veracity sera **plus volatile** (dispersion plus facile à atteindre quand on a 2 sources qu'avec 4). Garde-fou 2-bis (sizing 1 % capital, filtre veracity ≥ 0.90) reste applicable et compense ce risque.
+
+### Réactivation rapide possible
+
+Le code des overlays DXY et COT est **conservé**. Pour les réactiver :
+
+```bash
+# Dans core/.env
+TIK_GOLD_DXY_COT_OVERLAYS_ENABLED=true
+```
+
+Puis `docker compose restart scheduler` pour prise en compte.
+
+### Limites de cette mesure
+
+1. **12 mois = un seul régime de marché** (bull). Pas représentatif d'un cycle long terme.
+2. **GDELT pas mesuré** dans le backtest 12m (rate-limit API publique sur volumes longs)
+3. **COT n=51 points** (hebdomadaire) → IC Spearman bruité, à interpréter avec prudence
+4. **Décision basée sur l'évidence empirique** récente, pas sur une remise en question théorique de la sémantique contrarian classique
+
+Voir `docs/adr/018-tik-pure-osint-refactor.md` (Amendement P2) pour le détail technique et les critères de réactivation.
+
+---
+
 ## Glossaire des termes clés
 
 - **Signal** : un avis émis par Tik à un instant donné sur un actif

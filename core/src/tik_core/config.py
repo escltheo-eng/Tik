@@ -77,6 +77,15 @@ class Settings(BaseSettings):
     #            dans Signal.advisory["template_hypothesis"] pour audit
     llm_hypothesis_mode: Literal["disabled", "shadow", "active"] = "shadow"
 
+    # --- Overlays GOLD calibrés (ADR-018 amendement P2) ---
+    # DXY (contrarian) et CFTC COT (contrarian) mesurés inversés sur 12m
+    # 2025-2026 (DXY IC Spearman +0.23 à 120h, COT IC +0.43 à 720h —
+    # signes positifs au lieu de négatifs attendus contrarian). Régime
+    # "tout monte" 2025-2026 (crypto + or + dollar fort en parallèle).
+    # Désactivés par défaut, à réactiver post-J+30 après mesure sur
+    # période bear pour confirmer si l'inversion est régime-spécifique.
+    gold_dxy_cot_overlays_enabled: bool = False
+
     # --- CORS ---
     cors_origins: str = "http://localhost:3000"
 
