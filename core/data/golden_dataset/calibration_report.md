@@ -1,6 +1,6 @@
 # Rapport de calibration — golden dataset Tik
 
-*Généré le 2026-05-02T15:03:48.214865+00:00*
+*Généré le 2026-05-07T09:12:11.462481+00:00*
 
 - **Items totaux** : 100 (50 BTC + 50 GOLD)
 - **Items annotés à la main** : 100
@@ -77,27 +77,35 @@ Diagonale = accord. Hors-diagonale = divergence.
 
 | Predictor | n correct / n | hit rate |
 |---|---|---:|
-| human | n/a | n/a |
-| ollama | n/a | n/a |
-| keywords | n/a | n/a |
+| **human** | 34 / 50 |  68.0% |
+| **ollama** | 9 / 50 |  18.0% |
+| **keywords** | 33 / 50 |  66.0% |
 
 **Baselines** (pour comparaison) :
 
 | Baseline | n correct / n | hit rate |
 |---|---|---:|
+| random | 16.8 / 50 |  33.7% |
+| always_bull | 0 / 50 |   0.0% |
+| always_bear | 0 / 50 |   0.0% |
+| always_neutral | 50 / 50 | 100.0% |
 
 ### Horizon 5d
 
 | Predictor | n correct / n | hit rate |
 |---|---|---:|
-| human | n/a | n/a |
-| ollama | n/a | n/a |
-| keywords | n/a | n/a |
+| **human** | 27 / 100 |  27.0% |
+| **ollama** | 38 / 100 |  38.0% |
+| **keywords** | 23 / 100 |  23.0% |
 
 **Baselines** (pour comparaison) :
 
 | Baseline | n correct / n | hit rate |
 |---|---|---:|
+| random | 32.5 / 100 |  32.5% |
+| always_bull | 100 / 100 | 100.0% |
+| always_bear | 0 / 100 |   0.0% |
+| always_neutral | 0 / 100 |   0.0% |
 
 ## 4. Performance par source
 
@@ -107,9 +115,9 @@ Diagonale = accord. Hors-diagonale = divergence.
 
 | Source | n total | hit human | hit ollama | hit keywords |
 |---|---:|---:|---:|---:|
-| **cryptocompare** | 17 | n/a | n/a | n/a |
-| **google_news** | 67 | n/a | n/a | n/a |
-| **reddit** | 16 | n/a | n/a | n/a |
+| **cryptocompare** | 17 |  11.8% |  47.1% |  41.2% |
+| **google_news** | 67 |  32.8% |  38.8% |  22.4% |
+| **reddit** | 16 |  18.8% |  25.0% |   6.2% |
 
 ## 5. Pistes d'ajustement
 

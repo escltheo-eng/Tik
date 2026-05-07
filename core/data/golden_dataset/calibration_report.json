@@ -1,6 +1,6 @@
 {
   "meta": {
-    "generated_at": "2026-05-02T15:03:48.214865+00:00",
+    "generated_at": "2026-05-07T09:12:11.462481+00:00",
     "n_total": 100,
     "n_btc": 50,
     "n_gold": 50,
@@ -230,25 +230,81 @@
       }
     },
     "24h": {
-      "human": null,
-      "ollama": null,
-      "keywords": null,
+      "human": {
+        "n": 50,
+        "n_correct": 34,
+        "hit_rate": 0.68
+      },
+      "ollama": {
+        "n": 50,
+        "n_correct": 9,
+        "hit_rate": 0.18
+      },
+      "keywords": {
+        "n": 50,
+        "n_correct": 33,
+        "hit_rate": 0.66
+      },
       "baselines": {
-        "random": null,
-        "always_bull": null,
-        "always_bear": null,
-        "always_neutral": null
+        "random": {
+          "n": 50,
+          "n_correct": 16.84,
+          "hit_rate": 0.3368
+        },
+        "always_bull": {
+          "n": 50,
+          "n_correct": 0,
+          "hit_rate": 0.0
+        },
+        "always_bear": {
+          "n": 50,
+          "n_correct": 0,
+          "hit_rate": 0.0
+        },
+        "always_neutral": {
+          "n": 50,
+          "n_correct": 50,
+          "hit_rate": 1.0
+        }
       }
     },
     "5d": {
-      "human": null,
-      "ollama": null,
-      "keywords": null,
+      "human": {
+        "n": 100,
+        "n_correct": 27,
+        "hit_rate": 0.27
+      },
+      "ollama": {
+        "n": 100,
+        "n_correct": 38,
+        "hit_rate": 0.38
+      },
+      "keywords": {
+        "n": 100,
+        "n_correct": 23,
+        "hit_rate": 0.23
+      },
       "baselines": {
-        "random": null,
-        "always_bull": null,
-        "always_bear": null,
-        "always_neutral": null
+        "random": {
+          "n": 100,
+          "n_correct": 32.47,
+          "hit_rate": 0.3247
+        },
+        "always_bull": {
+          "n": 100,
+          "n_correct": 100,
+          "hit_rate": 1.0
+        },
+        "always_bear": {
+          "n": 100,
+          "n_correct": 0,
+          "hit_rate": 0.0
+        },
+        "always_neutral": {
+          "n": 100,
+          "n_correct": 0,
+          "hit_rate": 0.0
+        }
       }
     }
   },
@@ -295,14 +351,38 @@
           }
         },
         "24h": {
-          "human": null,
-          "ollama": null,
-          "keywords": null
+          "human": {
+            "n": 17,
+            "n_correct": 10,
+            "hit_rate": 0.5882352941176471
+          },
+          "ollama": {
+            "n": 17,
+            "n_correct": 3,
+            "hit_rate": 0.17647058823529413
+          },
+          "keywords": {
+            "n": 17,
+            "n_correct": 14,
+            "hit_rate": 0.8235294117647058
+          }
         },
         "5d": {
-          "human": null,
-          "ollama": null,
-          "keywords": null
+          "human": {
+            "n": 67,
+            "n_correct": 22,
+            "hit_rate": 0.3283582089552239
+          },
+          "ollama": {
+            "n": 67,
+            "n_correct": 26,
+            "hit_rate": 0.3880597014925373
+          },
+          "keywords": {
+            "n": 67,
+            "n_correct": 15,
+            "hit_rate": 0.22388059701492538
+          }
         }
       }
     },
@@ -347,14 +427,38 @@
           }
         },
         "24h": {
-          "human": null,
-          "ollama": null,
-          "keywords": null
+          "human": {
+            "n": 17,
+            "n_correct": 11,
+            "hit_rate": 0.6470588235294118
+          },
+          "ollama": {
+            "n": 17,
+            "n_correct": 2,
+            "hit_rate": 0.11764705882352941
+          },
+          "keywords": {
+            "n": 17,
+            "n_correct": 5,
+            "hit_rate": 0.29411764705882354
+          }
         },
         "5d": {
-          "human": null,
-          "ollama": null,
-          "keywords": null
+          "human": {
+            "n": 17,
+            "n_correct": 2,
+            "hit_rate": 0.11764705882352941
+          },
+          "ollama": {
+            "n": 17,
+            "n_correct": 8,
+            "hit_rate": 0.47058823529411764
+          },
+          "keywords": {
+            "n": 17,
+            "n_correct": 7,
+            "hit_rate": 0.4117647058823529
+          }
         }
       }
     },
@@ -399,14 +503,38 @@
           }
         },
         "24h": {
-          "human": null,
-          "ollama": null,
-          "keywords": null
+          "human": {
+            "n": 16,
+            "n_correct": 13,
+            "hit_rate": 0.8125
+          },
+          "ollama": {
+            "n": 16,
+            "n_correct": 4,
+            "hit_rate": 0.25
+          },
+          "keywords": {
+            "n": 16,
+            "n_correct": 14,
+            "hit_rate": 0.875
+          }
         },
         "5d": {
-          "human": null,
-          "ollama": null,
-          "keywords": null
+          "human": {
+            "n": 16,
+            "n_correct": 3,
+            "hit_rate": 0.1875
+          },
+          "ollama": {
+            "n": 16,
+            "n_correct": 4,
+            "hit_rate": 0.25
+          },
+          "keywords": {
+            "n": 16,
+            "n_correct": 1,
+            "hit_rate": 0.0625
+          }
         }
       }
     }
