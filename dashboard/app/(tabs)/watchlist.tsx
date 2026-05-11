@@ -1,12 +1,15 @@
 import { useRouter } from 'expo-router';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { HitRatePersoCard } from '@/components/watchlist/hit-rate-perso-card';
+import { OverrideOutcomeModal } from '@/components/watchlist/override-outcome-modal';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useAutoResolveWatchlist } from '@/src/hooks/useAutoResolveWatchlist';
 import { useTick } from '@/src/hooks/use-tick';
 import { timeAgo } from '@/src/utils/time';
 import { useWatchlist, type WatchlistEntry } from '@/src/watchlist/WatchlistContext';
@@ -42,6 +45,8 @@ export default function WatchlistScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const palette = Colors[colorScheme];
   const { entries, remove, clear, hydrated } = useWatchlist();
+  const { resolving, refresh: refreshAutoResolve } = useAutoResolveWatchlist();
+  const [overrideTarget, setOverrideTarget] = useState<WatchlistEntry | null>(null);
   useTick();
 
   const stats = useMemo(() => {
@@ -59,6 +64,11 @@ export default function WatchlistScreen() {
   const renderEntry = (entry: WatchlistEntry) => {
     const dirColor = directionColor(entry.direction);
     const outcomeColor = OUTCOME_COLORS[entry.outcome];
+    // Bouton Override visible uniquement pour les entries résolues (pas pending).
+    // Sur pending, l'override n'a pas vraiment de sens — on attend que l'auto
+    // résolution se prononce. L'utilisatrice peut quand même cliquer si elle
+    // veut forcer un statut « n_a » par exemple (cf. modal qui propose pending).
+    const showOverride = entry.outcome !== 'pending';
     return (
       <Pressable
         key={entry.signalId}
@@ -89,16 +99,38 @@ export default function WatchlistScreen() {
             verac {(entry.veracity * 100).toFixed(0)}%
           </ThemedText>
           <ThemedText style={styles.metaItem}>
-            conf {(entry.confidence * 100).toFixed(0)}%
+            conv {(entry.confidence * 100).toFixed(0)}%
           </ThemedText>
           <View style={[styles.outcomeBadge, { borderColor: outcomeColor }]}>
             <ThemedText style={[styles.outcomeLabel, { color: outcomeColor }]}>
               {OUTCOME_LABELS[entry.outcome]}
             </ThemedText>
           </View>
+          {showOverride ? (
+            <Pressable
+              onPress={(e) => {
+                e.stopPropagation();
+                setOverrideTarget(entry);
+              }}
+              hitSlop={6}
+              style={({ pressed }) => [
+                styles.overrideBtn,
+                { borderColor: palette.icon, opacity: pressed ? 0.5 : 1 },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Modifier le résultat (override manuel)">
+              <ThemedText style={styles.overrideBtnLabel}>✎</ThemedText>
+            </Pressable>
+          ) : null}
         </View>
+        {entry.userNote ? (
+          <ThemedText style={styles.noteText}>« {entry.userNote} »</ThemedText>
+        ) : null}
         <Pressable
-          onPress={() => remove(entry.signalId)}
+          onPress={(e) => {
+            e.stopPropagation();
+            remove(entry.signalId);
+          }}
           hitSlop={8}
           style={({ pressed }) => [styles.removeBtn, { opacity: pressed ? 0.4 : 0.7 }]}
           accessibilityRole="button"
@@ -114,7 +146,9 @@ export default function WatchlistScreen() {
       <View style={styles.header}>
         <ThemedText type="title">Watchlist</ThemedText>
         <ThemedText style={styles.subtitle}>
-          Signaux marqués pour follow-up. L&apos;outcome (confirmé / infirmé) sera renseigné automatiquement à l&apos;expiration de l&apos;horizon dans une prochaine session.
+          Signaux marqués pour follow-up. Le résultat (confirmé / infirmé) est renseigné
+          automatiquement par le track record à l&apos;expiration de l&apos;horizon (flash 1h, swing 5j, macro 90j).
+          Vous pouvez modifier manuellement via le bouton ✎.
         </ThemedText>
         {stats.total > 0 ? (
           <View style={styles.statsLine}>
@@ -130,10 +164,32 @@ export default function WatchlistScreen() {
             <ThemedText style={styles.statsItem}>
               {stats.resolved} résolu{stats.resolved > 1 ? 's' : ''}
             </ThemedText>
+            {resolving ? (
+              <>
+                <ThemedText style={styles.statsDot}>·</ThemedText>
+                <ThemedText style={[styles.statsItem, { fontStyle: 'italic', opacity: 0.6 }]}>
+                  résolution en cours...
+                </ThemedText>
+              </>
+            ) : null}
           </View>
         ) : null}
         {stats.total > 0 ? (
           <View style={styles.actions}>
+            <Pressable
+              onPress={() => void refreshAutoResolve()}
+              disabled={resolving}
+              style={({ pressed }) => [
+                styles.actionBtn,
+                {
+                  borderColor: palette.icon,
+                  opacity: pressed || resolving ? 0.5 : 1,
+                },
+              ]}>
+              <ThemedText style={{ color: palette.text, fontSize: 13 }}>
+                Actualiser les résultats
+              </ThemedText>
+            </Pressable>
             <Pressable
               onPress={clear}
               style={({ pressed }) => [
@@ -157,9 +213,15 @@ export default function WatchlistScreen() {
         </ThemedView>
       ) : (
         <ScrollView contentContainerStyle={styles.listContent}>
+          <HitRatePersoCard entries={entries} />
           {sortedEntries.map(renderEntry)}
         </ScrollView>
       )}
+
+      <OverrideOutcomeModal
+        entry={overrideTarget}
+        onClose={() => setOverrideTarget(null)}
+      />
     </ThemedView>
   );
 }
@@ -180,6 +242,7 @@ const styles = StyleSheet.create({
   statsLine: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexWrap: 'wrap',
     gap: 8,
     marginTop: 4,
   },
@@ -194,6 +257,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
     marginTop: 4,
+    flexWrap: 'wrap',
   },
   actionBtn: {
     borderWidth: 1,
@@ -271,6 +335,24 @@ const styles = StyleSheet.create({
   outcomeLabel: {
     fontSize: 10,
     fontWeight: '600',
+  },
+  overrideBtn: {
+    borderWidth: 1,
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    minWidth: 22,
+    alignItems: 'center',
+  },
+  overrideBtnLabel: {
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  noteText: {
+    fontSize: 12,
+    opacity: 0.75,
+    fontStyle: 'italic',
+    marginTop: 2,
   },
   removeBtn: {
     position: 'absolute',

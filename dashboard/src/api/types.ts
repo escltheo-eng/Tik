@@ -207,3 +207,44 @@ export interface SignalTrackRecord {
   computed_at: string;
   cache_hit: boolean;
 }
+
+// ----- Feedback (Phase C Session 2 trading manuel J+10) -----
+
+/**
+ * Vocabulaire feedback côté backend Tik core (cf. core/src/tik_core/storage/schemas.py).
+ * Régex Pydantic : `^(win|loss|breakeven|not_taken)$`.
+ *
+ * Mapping depuis le vocabulaire OSINT-neutre de la Watchlist (`WatchlistOutcome`) :
+ *   - confirmed → win
+ *   - refuted   → loss
+ *   - n_a       → not_taken
+ *   - pending   → ne pas submit
+ *
+ * Voir `dashboard/src/watchlist/feedback.ts` pour la conversion.
+ */
+export type FeedbackOutcome = 'win' | 'loss' | 'breakeven' | 'not_taken';
+
+export interface FeedbackIn {
+  signal_id: string;
+  trade_id?: string | null;
+  outcome: FeedbackOutcome;
+  pnl_points?: number | null;
+  pnl_pct?: number | null;
+  duration_held_s?: number | null;
+  /**
+   * Texte libre. Phase C Session 2 utilise ce champ pour tagger la source de
+   * la résolution : `"auto_market_check"` (auto via track record) ou la note
+   * libre de l'utilisatrice (override manuel). Convention à formaliser dans
+   * `docs/methodology/calibration.md` côté core si un filtre est ajouté plus
+   * tard à la recalibration source credibility (ADR-011).
+   */
+  exit_reason?: string | null;
+}
+
+export interface FeedbackOut {
+  id: string;
+  signal_id: string;
+  client_id: string;
+  outcome: FeedbackOutcome;
+  received_at: string;
+}

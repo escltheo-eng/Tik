@@ -11,6 +11,8 @@
 import { HttpClient } from './client';
 import {
   Entity,
+  FeedbackIn,
+  FeedbackOut,
   Headline,
   Health,
   HitRate,
@@ -213,4 +215,23 @@ export async function getSignalTrackRecord(
   return client.get<SignalTrackRecord>(
     `/metrics/signal_track_record/${encodeURIComponent(signalId)}`,
   );
+}
+
+// ----- Feedback (Phase C Session 2 trading manuel J+10) -----
+
+/**
+ * POST le résultat d'un signal observé pour nourrir la calibration daily
+ * 03:00 UTC des `SOURCE_SCORES` (ADR-011 source credibility).
+ *
+ * Scope auth requis côté core : `write:feedback`.
+ * Côté serveur : 404 si signal_id inconnu, 201 sinon.
+ *
+ * Cohérent plan stratégique D1 (Paquet 18) — POST /feedback systématique
+ * sur outcome auto OU manuel, tagger via `exit_reason` pour traçabilité.
+ */
+export async function submitFeedback(
+  client: HttpClient,
+  payload: FeedbackIn,
+): Promise<FeedbackOut> {
+  return client.post<FeedbackOut>('/feedback', payload);
 }
