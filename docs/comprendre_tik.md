@@ -1022,6 +1022,102 @@ Voir `docs/adr/018-tik-pure-osint-refactor.md` (Amendement P2) pour le détail t
 
 ---
 
+## 22. La Watchlist devient intelligente : auto-resolution + hit rate perso (2026-05-11)
+
+Pendant ta période de trading manuel, tu vas marquer des signaux dans la Watchlist (★ Suivre) pour suivre ce qui se passe ensuite. Jusqu'au 11 mai, ces signaux restaient en état « En attente » jusqu'à ce que tu cliques manuellement pour les résoudre. Avec le Paquet 20 (livré pendant la période Windows HP), **la Watchlist devient intelligente** : elle se met à jour toute seule.
+
+### Ce qui change concrètement pour toi
+
+Tu ouvres l'onglet Watchlist sur ton iPhone. Tik regarde **chaque signal en attente**, va chercher le prix actuel de l'actif (BTC ou GOLD), compare au prix au moment où le signal a été émis, et **décide automatiquement** si le signal s'est confirmé ou pas. C'est ce qu'on appelle l'**auto-resolution**.
+
+**3 résultats possibles** pour chaque signal :
+
+| Résultat | Signification | Quand ça arrive |
+|---|---|---|
+| **Confirmé** ✅ | Le prix a bougé dans le sens prédit, au-delà du seuil | Long BTC à 110 000 $, le prix est maintenant à 111 200 $ (+1.1 %), bingo |
+| **Infirmé** ❌ | Le prix a bougé à l'inverse du sens prédit, au-delà du seuil | Long BTC à 110 000 $, le prix est maintenant à 108 500 $ (-1.4 %), raté |
+| **Pas évaluable** ⚠️ | Pas assez de données ou hors fenêtre temporelle | Yahoo Finance ne répond pas, ou signal trop vieux pour avoir un prix de référence |
+
+**Quand l'auto-resolution tourne-t-elle ?**
+
+- Dès que tu ouvres l'onglet Watchlist
+- Puis automatiquement toutes les 5 minutes tant que tu restes dessus
+- Avec un bouton « Actualiser les résultats » si tu veux forcer
+- **Pas** en arrière-plan quand l'app est fermée (économie de batterie iPhone)
+
+**Quel horizon Tik utilise-t-il pour décider ?**
+
+L'horizon contractuel du signal :
+- Signal **flash** → mesure à T+1h (TTL du signal)
+- Signal **swing** → mesure à T+5j
+- Signal **macro** → mesure à T+90j
+
+Si T+1h (par exemple pour un flash) n'est pas encore atteint, le signal reste en « En attente ». L'auto-resolution réessaiera 5 minutes plus tard, et ainsi de suite jusqu'à ce que la fenêtre temporelle soit franchie.
+
+### Le hit rate perso : ta performance personnelle
+
+Une nouvelle carte apparaît en haut de la Watchlist dès que tu as au moins **un signal résolu** :
+
+```
+📊 Hit rate perso
+67 %
+2 / 3 signaux confirmés
+```
+
+C'est le **ratio des signaux que tu as suivis et qui se sont avérés confirmés**, vs le total de signaux résolus (confirmés ou infirmés). Les « En attente » et « Pas évaluable » sont exclus du calcul.
+
+**À comparer avec le hit rate global Tik** (carte HitRate sur l'écran Home, Paquet 10).
+
+### Le piège du biais de sélection
+
+Important : **ton hit rate perso N'EST PAS le hit rate de Tik**. Tu as marqué **seulement les signaux qui te plaisaient** au moment du tap ★ Suivre. C'est un sous-ensemble biaisé positivement.
+
+Si Tik a un hit rate global de 40 % et que ton hit rate perso est 70 %, ça **ne veut pas dire que tu es meilleure que Tik** — ça veut dire que tu as sélectionné les meilleurs signaux **avant de les marquer**. Le hit rate global est calculé sur **tous** les signaux émis, pas seulement ceux que tu as suivis.
+
+Tik affiche un disclaimer explicite si tu as moins de 20 signaux résolus :
+
+```
+⚠ Échantillon petit (n=3 < 20). Ce chiffre est peu fiable statistiquement.
+Il reflète aussi un biais de sélection : vous n'avez suivi que les signaux
+qui vous semblaient bons.
+```
+
+### Le bouton ✎ : modifier manuellement un résultat
+
+Sur les signaux **déjà résolus** (pas pending), tu vois un petit bouton **✎** à droite. Tu peux cliquer dessus pour ouvrir une modal et :
+
+1. **Changer le résultat** (par exemple, l'auto-resolution a dit « Confirmé » mais tu sais que c'était dû à un event macro non-prédit par le signal — tu rectifies en « Infirmé »)
+2. **Ajouter une note** libre (« faux positif à cause d'un FOMC surprise »)
+3. **Valider** → Tik enregistre localement ET envoie ta correction au backend
+
+### Pourquoi Tik a besoin de tes corrections : la boucle de calibration
+
+Tik a un mécanisme d'**auto-calibration des sources** qui tourne tous les jours à 3h du matin UTC (ADR-011 Paquet 5). Il regarde quels signaux étaient corrects ou incorrects, par source (Fear & Greed, Google News, Reddit, etc.), et ajuste **automatiquement** le score de crédibilité de chaque source.
+
+Quand tu envoies un feedback via la Watchlist, **tu nourris cette boucle**. À terme, Tik apprendra que certaines sources sont plus fiables pour TOI, et il en tiendra compte.
+
+Pour l'instant (ADR-019 du 2026-05-11), aucun ajustement manuel des scores de sources n'est fait — l'auto-calibration est laissée à son régime normal pendant la période d'observation. Mais tes feedbacks sont **conservés en DB** (tag `exit_reason` pour distinguer auto vs manuel) et seront analysables plus tard.
+
+### Limites à connaître
+
+1. **Phase C Session 2 non encore validée runtime** au moment de la livraison (Node.js pas installé sur Windows + Tik backend ne tourne pas). Validation prévue au retour du Mac (cf. checklist `docs/post-mac-recovery-checklist.md` phase 5).
+2. **L'auto-resolution échoue si Tik backend est down** ou injoignable. Dans ce cas les signaux restent pending, on réessaiera plus tard. Pas de perte de données.
+3. **L'envoi de feedback est best-effort** : si le backend ne répond pas, le résultat est enregistré localement quand même. Tu ne perds rien.
+4. **Pas de sync multi-device** : si tu installes Expo Go sur un nouvel iPhone, tu repars à zéro. La Watchlist est stockée localement sur ton iPhone uniquement.
+
+### Réagir si l'auto-resolution se trompe systématiquement
+
+Si tu vois que l'auto-resolution résout en « Confirmé » ce qui te paraît être un « Infirmé » de façon répétée (par exemple 5 fois sur 10), c'est un signe que :
+
+- Soit les seuils de magnitude (0.3 % à 1h, 0.5 % à 5j) sont mal calibrés
+- Soit les prix Binance/Yahoo lus par Tik divergent de ce que tu vois sur MT5
+
+Action : ouvre une session Claude, montre 3-4 exemples concrets (signal, prix annoncé, prix réel), et on calibrera ensemble. Garde-fou paranoïa contrôlée — ne pas ajuster les seuils sans données concrètes.
+
+Voir `docs/adr/019-source-scores-no-op-policy.md` pour la politique no-op des scores de sources, et `docs/methodology/calibration.md` section 8 pour la convention `exit_reason`.
+
+---
+
 ## Glossaire des termes clés
 
 - **Signal** : un avis émis par Tik à un instant donné sur un actif
@@ -1042,4 +1138,4 @@ Voir `docs/adr/018-tik-pure-osint-refactor.md` (Amendement P2) pour le détail t
 
 ---
 
-*Document rédigé le 2026-04-28, mis à jour le 2026-04-29 (ajout 3e source CryptoCompare, premier backtest avec baselines, recalibrage seuil NEUTRAL), puis le 2026-04-30 (ajout 2e source GOLD : CFTC COT Managed Money, validation grandeur réelle du pattern multi-overlay sur GOLD ; remplacement de l'analyse par mots-clés CryptoCompare par un LLM local via Ollama avec fallback keywords automatique). Pour expliquer Tik à toute personne curieuse, sans prérequis technique.*
+*Document rédigé le 2026-04-28, mis à jour le 2026-04-29 (ajout 3e source CryptoCompare, premier backtest avec baselines, recalibrage seuil NEUTRAL), puis le 2026-04-30 (ajout 2e source GOLD : CFTC COT Managed Money, validation grandeur réelle du pattern multi-overlay sur GOLD ; remplacement de l'analyse par mots-clés CryptoCompare par un LLM local via Ollama avec fallback keywords automatique), puis le 2026-05-07 (sections 20 et 21 : refactor OSINT pur Paquet 18 + désactivation DXY+COT Paquet 19), puis le 2026-05-11 (section 22 : Watchlist intelligente Paquet 20, livré pendant la période Windows HP). Pour expliquer Tik à toute personne curieuse, sans prérequis technique.*

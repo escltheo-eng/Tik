@@ -1564,6 +1564,10 @@ Pour les évolutions fonctionnelles à venir (carte Top headlines, hit rate live
 
 ## 11. Workflow de l'utilisateur
 
+> **⚠ Note temporaire (depuis 2026-05-11)** : Mac en panne. L'utilisatrice code provisoirement depuis un **Windows HP** à RAM/CPU faibles (Docker indispo) en attendant la récupération du Mac. Détails dans la mémoire Claude `project_platform_windows_period.md`. Outils disponibles côté Windows : VS Code, Ollama (avec `llama3.2:3b`), Python 3.14, Git CLI (configuré le 2026-05-11 avec identité `Lolasiku-prog <lolasiku@gmail.com>`), pas de GitHub Desktop ni Node.js. Commits + push automatiques sur la branche `work-from-hp` sans confirmation pendant cette période (cf. mémoire `feedback_auto_commit_push_windows.md`). **Cette note disparaît dès que l'utilisatrice annonce « j'ai récupéré mon Mac »** — voir `docs/post-mac-recovery-checklist.md` phase 8 pour le cleanup.
+>
+> La description Mac ci-dessous reste la **référence durable** (état normal du projet, à reprendre dès retour Mac).
+
 L'utilisateur est sur **macOS Tahoe 26.0** (Mac M1 Apple Silicon).
 
 **Outils installés et fonctionnels** :
