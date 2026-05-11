@@ -2,14 +2,17 @@
 
 > Document vivant, mis à jour à chaque cycle de calibration.
 >
-> **Version actuelle** : Paquet 4 Session 4 (2026-05-02).
+> **Version actuelle** : Paquet 4 Session 4 (2026-05-02) + amendements Paquets 19-20 (2026-05-07/11) — re-run golden 5j P1, backtest 12m sources numériques P2, ADR-019 politique no-op manuel `SOURCE_SCORES`, Phase C Session 2 Watchlist Paquet 20 (POST /feedback systématique).
 >
 > **Objectif** : mesurer objectivement la qualité prédictive de chaque source
 > sentiment news intégrée à Tik (Google News BTC + GOLD, CryptoCompare BTC,
 > Reddit BTC, GDELT GOLD), du classifier NLP utilisé (Ollama vs keywords),
 > et des sources numériques (Fear & Greed, DXY, COT). Déclencher des
 > ajustements **mesurés et justifiés** de `SOURCE_SCORES` plutôt qu'à
-> l'intuition.
+> l'intuition. **Depuis ADR-019 (2026-05-11)** : pas d'ajustement manuel
+> sur la base de P1+P2 seule — l'auto-cal ADR-011 fait le boulot
+> automatiquement à partir des signaux runtime (≥ 30 samples).
+> Cf. section 6 ci-dessous pour le partage de responsabilité actuel.
 
 ---
 
@@ -343,17 +346,44 @@ qui regénère le rapport à chaque exécution — peu coûteux).
 À l'issue de chaque exécution complète du protocole, le rapport
 `calibration_report.md` doit être lu et permettre de trancher :
 
-1. **Ajustement `SOURCE_SCORES`** : si une source a un hit rate vs marché
-   significativement plus élevé / plus bas que la moyenne (delta > 10
-   points sur 100 items, > 5 points sur 200+ items), réviser son score
-   dans `core/src/tik_core/scoring/swing_engine.py`. Documenter dans un
-   ADR si l'ajustement est structurel.
+1. **Ajustement `SOURCE_SCORES`** : **Politique acté par ADR-019 (2026-05-11) — no-op manuel + surveillance auto-cal.**
+   Le pipeline de calibration ici est un **outil exploratoire** : il
+   mesure et fournit des observations. Il ne déclenche **plus
+   automatiquement** un ajustement manuel des scores dans
+   `core/src/tik_core/scoring/swing_engine.py`. La raison : l'auto-cal
+   ADR-011 (job daily 03h UTC `recalibrate_sources`, cf. `source_credibility.py`)
+   fait déjà les ajustements automatiquement à partir des signaux réels
+   en prod (≥ 30 samples, hit rate < 40 % → penalty ÷ 1.2, > 70 % →
+   reward × 1.1, cap [0.30, 0.95]). Modifier les scores statiques sur
+   la base du golden risquerait de **biaiser le point de départ** de
+   l'auto-cal.
+   
+   **Critères de réouverture explicites** (cf. ADR-019 section 3) :
+   - C1 : auto-cal pas converge après ≥ 60 jours runtime (oscillation
+     erratique entre penalty et reward sans tendance)
+   - C2 : une source persistante < 30 % hit rate sur ≥ 100 samples
+     auto-cal → désactivation via toggle settings (comme DXY+COT P2 amendement)
+   - C3 : golden dataset étendu à ≥ 200 items multi-régime (bull + bear
+     ou bull + range) → recalibration manuelle conservatrice possible
+   
+   **Action concrète post-cycle** : générer le rapport, le lire, le
+   conserver comme **donnée comparative** pour quand la prod aura
+   accumulé suffisamment de samples. Ne pas modifier les `SOURCE_SCORES`
+   statiques.
 
-2. **Décision GDELT BTC** : la Session 3 a déployé GDELT uniquement sur
-   GOLD parce que le mapping contrarian sur BTC était incertain. Si le
-   protocole de calibration montre une corrélation tone GDELT ↔ delta
-   BTC exploitable, déployer en Session 5 avec ADR-011. Sinon, archiver
-   définitivement la piste BTC.
+2. **Décision GDELT BTC** : la Session 3 (Paquet 4, ADR-010) a déployé
+   GDELT uniquement sur GOLD parce que le mapping contrarian sur BTC
+   était incertain. La P3 du plan stratégique fiabilité signaux
+   (Paquet 18) prévoyait de trancher déployer/archiver via mesure
+   empirique. La P2 (Paquet 19, backtest 12m) a tenté la mesure et
+   obtenu **0 point évaluable** (rate-limit GDELT historique). Donc
+   **GDELT BTC reste non décidable par backtest historique**.
+   
+   **Statut actuel (CLAUDE.md Paquet 19)** : 🔵 en attente runtime —
+   à reconsidérer 1 mois minimum post-J+14 si Tik a tourné en continu
+   et a accumulé suffisamment de signaux BTC + tone GDELT live pour
+   mesurer une corrélation empirique. Si oui : ADR successeur (ADR-020+)
+   pour déployer ou archiver définitivement.
 
 3. **Choix classifier (Ollama vs keywords)** : si Ollama bat keywords
    significativement sur la mesure marché, valider le choix par défaut
@@ -375,7 +405,118 @@ qui regénère le rapport à chaque exécution — peu coûteux).
 - **Paranoïa contrôlée** : maintenue. Les contre-scénarios continuent
   d'être émis pour chaque signal, indépendamment des scores ajustés.
 
+## 8. Convention `exit_reason` pour POST /feedback (auto-cal ADR-011)
+
+> **Section ajoutée Paquet 20 (2026-05-11)** pour fermer la dette tracée
+> dans Phase C Session 2 + ADR-019. Distincte du pipeline golden dataset
+> ci-dessus : le golden mesure exploratoirement, **POST /feedback nourrit
+> directement l'auto-cal** de scoring source dynamique (ADR-011).
+
+### 8.1 Rappel mécanisme
+
+L'auto-cal `recalibrate_sources` (job daily 03h UTC, `run_scheduler.py`)
+lit les **signaux des 30 derniers jours** en DB et calcule hit rate par
+source en réutilisant `backtest.evaluate_signal`. Mais elle peut aussi,
+à terme, utiliser les **feedbacks humains** stockés dans la table
+`feedbacks` (`core/src/tik_core/storage/models.py`, modèle `Feedback`)
+si un filtre est ajouté.
+
+Le schéma `FeedbackIn` (cf. `core/src/tik_core/storage/schemas.py`) :
+
+```python
+class FeedbackIn(BaseModel):
+    signal_id: str
+    trade_id: str | None = None
+    outcome: str = Field(pattern="^(win|loss|breakeven|not_taken)$")
+    pnl_points: float | None = None
+    pnl_pct: float | None = None
+    duration_held_s: int | None = None
+    exit_reason: str | None = None  # ← convention ci-dessous
+```
+
+### 8.2 Convention `exit_reason` (mise en place Paquet 20)
+
+Le champ `exit_reason` (texte libre optionnel) est utilisé par la
+Watchlist dashboard (Phase C Session 2, Paquet 20) pour **tagger la
+source de la résolution** de l'outcome :
+
+| Valeur `exit_reason` | Source | Cas d'usage |
+|---|---|---|
+| `"auto_market_check"` | Auto-cal Watchlist via `getSignalTrackRecord` | Le track record (Paquet 12) a déterminé l'outcome (correct → confirmed → win, raté → refuted → loss, données_manquantes → n_a → not_taken). L'utilisatrice **n'a pas touché**. |
+| `"user_override"` | Override manuel **sans note** dans la modal | L'utilisatrice a explicitement changé l'outcome via le bouton ✎ mais n'a pas saisi de texte. Tag par défaut. |
+| `<texte libre>` | Override manuel **avec note** | L'utilisatrice a saisi une explication (ex. *"faux positif à cause d'un event macro non détecté"*). Le texte est conservé tel quel dans `exit_reason`. |
+
+**Mapping outcome OSINT-neutre → FeedbackIn.outcome** (cohérent
+`dashboard/src/watchlist/feedback.ts` Paquet 20) :
+
+| Watchlist (OSINT-neutre) | Backend FeedbackIn (trading-historique) |
+|---|---|
+| `confirmed` | `win` |
+| `refuted` | `loss` |
+| `n_a` | `not_taken` |
+| `pending` | (skip submit) |
+
+Le mapping est documenté dans la docstring de
+`dashboard/src/watchlist/feedback.ts` côté dashboard.
+
+### 8.3 Pourquoi cette distinction matterait
+
+Aujourd'hui (Paquet 20 livré 2026-05-11), l'auto-cal **n'utilise pas**
+les feedbacks. Elle ne lit que les signaux et compare au marché. Mais
+si un jour on veut **incorporer le jugement humain** dans la
+recalibration (par exemple : pondérer les overrides manuels plus fort
+que les résolutions auto, ou ignorer les overrides pour éviter le biais
+de sélection), la convention `exit_reason` permet le filtre :
+
+```sql
+-- Exemple futur : ne garder que les feedbacks auto pour calibration
+SELECT * FROM feedbacks
+WHERE exit_reason = 'auto_market_check'
+  AND received_at >= NOW() - INTERVAL '30 days';
+
+-- Ou inversement : isoler les overrides manuels pour audit qualitatif
+SELECT signal_id, outcome, exit_reason
+FROM feedbacks
+WHERE exit_reason NOT IN ('auto_market_check', 'user_override')
+  -- = ceux avec note libre
+ORDER BY received_at DESC;
+```
+
+### 8.4 Action à faire (réservée à plus tard)
+
+**Tant qu'aucun bug ou besoin clair n'émerge**, ne pas implémenter de
+filtre. La convention est juste **documentée** pour traçabilité. Cf.
+limite assumée 4 du Paquet 20 + section 8.3.
+
+**Critères d'implémentation d'un filtre** (à valider avant d'ajouter
+le code) :
+
+- Au moins 100 feedbacks accumulés en DB (Watchlist Phase C Session 2
+  effectivement utilisée par l'utilisatrice pendant son trading manuel)
+- Une question concrète à laquelle un filtre répondrait (ex. *"la
+  source X est-elle plus fiable selon mes overrides manuels que selon
+  l'auto-resolution ?"*)
+- ADR successeur (ADR-020+) documentant le pour/contre/verdict
+
+### 8.5 Sources futures de feedbacks (autres que Watchlist dashboard)
+
+À mesure que Tik s'intègre à d'autres bots, le canal `POST /feedback`
+sera nourri par d'autres sources :
+
+| Source | `exit_reason` (proposé) | Statut |
+|---|---|---|
+| Watchlist dashboard auto-resolve | `"auto_market_check"` | ✅ Paquet 20 livré |
+| Watchlist dashboard manual override | `"user_override"` ou note libre | ✅ Paquet 20 livré |
+| **Futur** SDK Python (bot Zeta post-3-mois-shadow) | `"zeta_trade_closed"` (à proposer) | 🔵 post-shadow Zeta |
+| **Futur** Bot Totem (ML autonome) | `"totem_trade_closed"` (à proposer) | 🔵 post-shadow Totem |
+| **Futur** Backtest re-injecté | `"backtest_replay"` (à proposer) | 🔵 jamais à ce stade |
+
+Chaque source future devra **suivre cette convention** ou en proposer
+une nouvelle via ADR. Le principe central : `exit_reason` doit
+permettre de **filtrer par source** à l'analyse a posteriori.
+
 ---
 
-*Mainteneur : utilisateur solo + assistant Claude via extension VS Code.*
+*Mainteneur : utilisateur solo + assistant Claude via extension VS Code (Mac) / Claude Code (Windows, période 2026-05-11 → retour Mac).*
 *Dernier rapport : `core/data/golden_dataset/calibration_report.md` (regénéré à chaque exécution).*
+*Dernier amendement : Paquet 20 (section 8, convention `exit_reason`).*
