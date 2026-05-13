@@ -23,7 +23,6 @@ RUN pip install --upgrade pip && \
 # Code source
 COPY alembic.ini ./
 COPY migrations ./migrations
-COPY scripts ./scripts
 
 EXPOSE 8200
 
