@@ -89,11 +89,23 @@ class Signal(BaseModel):
 
     Champs clés :
     - `direction` : long | short | neutral
-    - `confidence` : ∈ [0, 1] — force du signal (techniques + sentiment)
-    - `veracity`   : ∈ [0, 1] — confiance dans les sources
-                     (cf. ADR-004 — moyenne des biais cross-validés)
-    - `circuit_breaker_status` : "ok" | "tripped" — flag à respecter
-                                  côté bot client.
+    - `confidence` : ∈ [0, 1] — **magnitude du `combined_bias` OSINT
+      cross-validé** depuis le refactor ADR-018 (Paquet 18, 2026-05-07).
+      **Pas un score d'analyse technique.** Voir `osint_conviction`
+      ci-dessous pour l'alias sémantique recommandé.
+    - `veracity`   : ∈ [0, 1] — dispersion des sources OSINT (faible
+      dispersion → veracity élevée). Cf. ADR-018 décision 4.
+    - `circuit_breaker_status` : "ok" | "degraded" | "tripped" — flag
+      anti fake-news à respecter côté bot client (cf. ADR-011).
+
+    ⚠️ **Sémantique de confidence post-Paquet 18** : avant le refactor
+    OSINT pur, `confidence` était dérivée de l'analyse technique
+    RSI/MACD/EMA. Depuis le 2026-05-07, elle est dérivée uniquement du
+    biais OSINT cross-validé (Fear & Greed, news, Reddit, etc.). Le nom
+    du champ JSON est resté `confidence` pour compatibilité rétroactive
+    avec les 683 signaux historiques en DB. Pour le code de consommation
+    nouveau, **préférer la propriété `osint_conviction`** qui rend la
+    sémantique explicite et évite la confusion avec un score technique.
     """
 
     id: str
@@ -111,6 +123,30 @@ class Signal(BaseModel):
     expiry: datetime | None = None
     advisory: Advisory = Field(default_factory=Advisory)
     circuit_breaker_status: str = "ok"
+
+    @property
+    def osint_conviction(self) -> float:
+        """Alias sémantique de `confidence` (ADR-018, SDK 0.6.0+).
+
+        Retourne strictement la même valeur que `self.confidence`.
+        Le nom rend explicite que la « confidence » Tik est en réalité
+        la magnitude du consensus OSINT cross-validé (biais combiné des
+        sources sentiment news, Fear & Greed, etc.) — **pas** un score
+        d'analyse technique RSI/MACD/EMA comme le mot pourrait le
+        suggérer en convention trading.
+
+        Usage recommandé pour tous les nouveaux consommateurs (Zeta,
+        bots tiers, intégrations B2B). Le champ historique `confidence`
+        reste disponible pour la rétrocompatibilité avec les 683
+        signaux Tik émis avant le refactor du 2026-05-07.
+
+        Voir aussi :
+        - `docs/adr/018-tik-pure-osint-refactor.md` — décision et plan
+          de migration OSINT pur
+        - `docs/integration_zeta.md` — pattern d'overlay recommandé
+          côté Zeta avec seuil minimum osint_conviction × veracity
+        """
+        return self.confidence
 
 
 # ----- Veracity -----

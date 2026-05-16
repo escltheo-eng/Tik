@@ -53,7 +53,7 @@ from tik_sdk.models import (
 )
 from tik_sdk.stream import TikStream
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 __all__ = [
     "Advisory",

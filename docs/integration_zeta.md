@@ -54,17 +54,44 @@
 
 Tik **augmente** Zeta. Aucun fichier Zeta n'est **remplacé**.
 
-## Pattern 1 — Overlay confidence dans `turbo_v2.py`
+## Pattern 1 — Overlay OSINT conviction dans `turbo_v2.py`
 
-**But** : prendre le signal interne de Zeta, et le moduler à la marge
-selon ce que Tik dit. Le `risk_engine.py` et le guard V01-V15
-**continuent de fonctionner exactement comme avant**.
+**But** : prendre le signal interne **technique** de Zeta, et le moduler à
+la marge selon ce que **Tik dit côté OSINT**. Le `risk_engine.py` et le
+guard V01-V15 **continuent de fonctionner exactement comme avant**.
+
+### ⚠️ Sémantique critique post-Paquet 18 (ADR-018, 2026-05-07)
+
+**Le score Tik utilisé pour la modulation N'EST PAS un score d'analyse
+technique.** Avant le 2026-05-07 il l'était. Depuis le refactor OSINT
+pur (ADR-018), le champ `confidence` du signal Tik a basculé sémantique :
+
+| Avant (≤ 2026-05-06) | Après (≥ 2026-05-07) |
+|---|---|
+| `confidence` = score RSI/MACD/EMA (0..0.55 mesuré empiriquement) | `confidence` = `abs(combined_bias)` magnitude OSINT cross-validé (0..1) |
+
+Le SDK 0.6.0+ expose la **propriété `osint_conviction`** comme alias
+explicite de `confidence` pour rendre cette sémantique visible dans le
+code Zeta. **Utiliser `tik.osint_conviction` plutôt que `tik.confidence`
+dans tout nouveau code** — c'est strictement la même valeur, mais le
+nom évite de mélanger un score OSINT avec un score technique linéairement.
+
+Conséquence sur le pattern d'overlay : on ne fait **plus** une modulation
+linéaire systématique (cf. ancien doc 2026-04-30). On utilise Tik comme
+**filtre fort** — la confidence Zeta n'est modulée que si le consensus
+OSINT est lui-même fort (au-delà d'un seuil minimum). Si Tik a une
+conviction OSINT faible, Tik ne dit "rien" et on n'altère pas le signal
+technique de Zeta.
 
 ### Code à ajouter dans `cranial_bot/turbo_v2.py`
 
 ```python
 # En haut du fichier, à côté des autres imports :
 from tik_sdk import TikClient, TikError
+
+# Constantes du pattern (cf. CLAUDE.md Paquet 22 / ADR-018)
+OSINT_MIN_STRENGTH = 0.6   # seuil minimum osint_conviction × veracity
+OSINT_MAX_ADJUSTMENT = 0.20  # plafond de boost/penalty appliqué à confidence Zeta
 
 # Au démarrage de la classe (ex : __init__ ou un setup() async) :
 self._tik_client = None  # lazy init
@@ -86,10 +113,15 @@ async def _get_tik_client(self) -> TikClient | None:
 
 
 async def _apply_tik_overlay(self, internal_signal):
-    """Applique l'overlay Tik sur la confidence du signal interne.
+    """Applique l'overlay OSINT Tik sur la confidence du signal Zeta.
 
     AUCUN court-circuit du guard V01-V15. AUCUN remplacement du signal.
-    On modifie uniquement `internal_signal.confidence` à la marge.
+    On modifie uniquement `internal_signal.confidence` à la marge, ET
+    UNIQUEMENT si le consensus OSINT Tik est fort (osint_conviction ×
+    veracity > OSINT_MIN_STRENGTH).
+
+    Cf. ADR-018 et CLAUDE.md Paquet 22 pour la justification du seuil
+    minimum (vs ancien pattern 2026-04-30 qui modulait linéairement).
     """
     client = await self._get_tik_client()
     if client is None:
@@ -121,35 +153,66 @@ async def _apply_tik_overlay(self, internal_signal):
         log.warning("tik.overlay.circuit_tripped_skip", id=tik.id)
         return internal_signal
 
-    # Modulation : facteur = confidence_tik × veracity_tik
-    # → varie entre 0 et 1, plafonné par les facteurs ci-dessous
-    factor = tik.confidence * tik.veracity
+    # Force du consensus OSINT = magnitude OSINT × dispersion sources
+    # Note : `tik.osint_conviction` est l'alias sémantique de
+    # `tik.confidence` introduit en SDK 0.6.0 (ADR-018). Strictement
+    # même valeur, nom plus clair pour signaler "score OSINT pas
+    # technique".
+    osint_strength = tik.osint_conviction * tik.veracity
+
+    # Seuil minimum : si Tik OSINT trop faible, on ne dit rien à Zeta.
+    # On évite de moduler un signal technique fort par un consensus
+    # OSINT bruité (cf. CLAUDE.md Paquet 22 — false friend confidence).
+    if osint_strength < OSINT_MIN_STRENGTH:
+        log.debug(
+            "tik.overlay.osint_too_weak_skip",
+            tik_id=tik.id,
+            osint_strength=round(osint_strength, 3),
+            threshold=OSINT_MIN_STRENGTH,
+        )
+        internal_signal.tik_signal_id = tik.id  # tracé pour feedback
+        return internal_signal
+
+    # OSINT fort : magnitude d'ajustement proportionnelle à la marge
+    # au-dessus du seuil. Varie entre 0 (à osint_strength = 0.6) et
+    # OSINT_MAX_ADJUSTMENT (à osint_strength = 1.0).
+    adjustment = (
+        (osint_strength - OSINT_MIN_STRENGTH)
+        / (1.0 - OSINT_MIN_STRENGTH)
+        * OSINT_MAX_ADJUSTMENT
+    )
 
     if tik.direction == internal_signal.direction:
-        # Tik confirme → on boost la confidence (max +20%)
-        boost = factor * 0.20
-        new_confidence = min(1.0, internal_signal.confidence + boost)
+        # Concordance OSINT ↔ technique → boost
+        new_confidence = min(1.0, internal_signal.confidence + adjustment)
         log.info(
             "tik.overlay.boost",
             internal=internal_signal.confidence,
-            boost=boost,
-            new=new_confidence,
+            adjustment=round(adjustment, 3),
+            osint_strength=round(osint_strength, 3),
+            new=round(new_confidence, 3),
             tik_id=tik.id,
         )
     elif tik.direction != "neutral":
-        # Tik contredit → on baisse la confidence (max -15%)
-        penalty = factor * 0.15
-        new_confidence = max(0.0, internal_signal.confidence - penalty)
+        # Discordance OSINT ↔ technique → penalty (sans couper le signal)
+        new_confidence = max(0.0, internal_signal.confidence - adjustment)
         log.info(
             "tik.overlay.penalty",
             internal=internal_signal.confidence,
-            penalty=penalty,
-            new=new_confidence,
+            adjustment=round(adjustment, 3),
+            osint_strength=round(osint_strength, 3),
+            new=round(new_confidence, 3),
             tik_id=tik.id,
         )
     else:
-        # Tik est neutre → pas de modulation
+        # Tik direction=neutral malgré OSINT fort = consensus
+        # « rien à faire » → pas de modulation
         new_confidence = internal_signal.confidence
+        log.debug(
+            "tik.overlay.tik_neutral_no_change",
+            tik_id=tik.id,
+            osint_strength=round(osint_strength, 3),
+        )
 
     internal_signal.confidence = new_confidence
     internal_signal.tik_signal_id = tik.id  # pour la telemetry feedback (Pattern 4)
@@ -247,7 +310,7 @@ class TikListener:
             severity="high",
             reason=(
                 f"tik.macro_crash_warning sur {signal.entity_id} "
-                f"(conf={signal.confidence:.2f}, verac={signal.veracity:.2f})"
+                f"(osint_conv={signal.osint_conviction:.2f}, verac={signal.veracity:.2f})"
                 f": {signal.hypothesis or 'no hypothesis'}"
             ),
         )
@@ -474,4 +537,6 @@ si la méthode est vraiment un canal d'exécution.
 
 ---
 
-*Dernière mise à jour : 2026-04-30 (Session 5/5 du Paquet 2).*
+*Dernière mise à jour : 2026-05-16 (Paquet 22 — adaptation Pattern 1 post-Paquet 18 ADR-018 OSINT pur + alias `osint_conviction` SDK 0.6.0 + seuil minimum modulation OSINT_MIN_STRENGTH=0.6).*
+
+*Versions précédentes : 2026-04-30 (Session 5/5 du Paquet 2 — pattern d'overlay initial avec modulation linéaire `tik.confidence × tik.veracity`, valable uniquement pré-Paquet 18 quand confidence = score technique RSI/MACD/EMA).*

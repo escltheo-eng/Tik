@@ -140,3 +140,63 @@ def test_entity_round_trip() -> None:
 def test_counter_scenario_round_trip() -> None:
     c = CounterScenario(name="x", probability=0.3, mitigation="y")
     assert c.probability == 0.3
+
+
+# ----- ADR-018 Paquet 22 — alias osint_conviction sur Signal -----
+
+
+def test_signal_osint_conviction_alias_returns_confidence(
+    signal_payload: dict[str, Any],
+) -> None:
+    """osint_conviction est strictement la même valeur que confidence.
+
+    Cf. ADR-018 + CLAUDE.md Paquet 22 — alias sémantique sans changement
+    de valeur, pour clarifier côté consommateur Zeta que la confidence
+    Tik est un score OSINT, pas technique.
+    """
+    sig = Signal.model_validate(signal_payload)
+    assert sig.osint_conviction == sig.confidence
+    assert sig.osint_conviction == 0.78  # même valeur que dans la fixture
+
+
+def test_signal_osint_conviction_is_read_only_property() -> None:
+    """osint_conviction est une property dérivée, pas un champ Pydantic.
+
+    Donc absente de la sérialisation JSON (pour ne pas dupliquer le
+    payload) et calquée sur confidence au runtime.
+    """
+    sig = Signal.model_validate(
+        {
+            "id": "x",
+            "timestamp": "2026-05-16T00:00:00",
+            "entity_id": "BTC",
+            "horizon": "swing",
+            "direction": "long",
+            "confidence": 0.42,
+            "veracity": 0.8,
+        }
+    )
+    # Lecture OK
+    assert sig.osint_conviction == 0.42
+    # JSON sortant ne contient PAS osint_conviction (c'est une property)
+    payload = sig.model_dump()
+    assert "confidence" in payload
+    assert "osint_conviction" not in payload
+
+
+def test_signal_osint_conviction_tracks_confidence_value() -> None:
+    """Si confidence change (cas hypothétique), osint_conviction suit."""
+    sig = Signal.model_validate(
+        {
+            "id": "x",
+            "timestamp": "2026-05-16T00:00:00",
+            "entity_id": "BTC",
+            "horizon": "swing",
+            "direction": "long",
+            "confidence": 0.0,
+            "veracity": 0.8,
+        }
+    )
+    assert sig.osint_conviction == 0.0
+    sig.confidence = 0.95
+    assert sig.osint_conviction == 0.95

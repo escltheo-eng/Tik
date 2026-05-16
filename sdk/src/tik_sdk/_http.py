@@ -55,7 +55,7 @@ from tik_sdk.exceptions import (
 log = structlog.get_logger(__name__)
 
 DEFAULT_TIMEOUT = 10.0  # secondes
-USER_AGENT = "tik-sdk/0.5.0"
+USER_AGENT = "tik-sdk/0.6.0"
 API_PREFIX = "/api/v1"
 
 
