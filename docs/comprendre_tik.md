@@ -1022,6 +1022,117 @@ Voir `docs/adr/018-tik-pure-osint-refactor.md` (Amendement P2) pour le détail t
 
 ---
 
+## 22. Calendrier macro multi-banques centrales (Phase B2, 2026-05-16)
+
+### De quoi on parle
+
+La Phase B1 (cf. section 17 ci-dessus) avait équipé Tik d'un calendrier
+macro **US** : FOMC, NFP, CPI et 5 autres indicateurs publiés par la Fed
+et le Bureau du Travail US. La discipline opérationnelle qui en découle
+(« ne pas entrer en swing dans les ±4 h autour d'un event HIGH ») a été
+calibrée pour ces événements US.
+
+Mais les marchés ne se résument pas aux US. Trois banques centrales
+internationales bougent aussi violemment Bitcoin et l'or :
+
+- **BCE** (Banque centrale européenne, basée à Francfort) — Christine
+  Lagarde décide tous les 6-7 semaines les taux d'intérêt de la zone
+  euro. Une surprise = mouvement EUR/USD de ±1 à 2 %. Comme le DXY
+  (indice dollar) intègre l'euro à 58 %, ça transmet à BTC et à l'or
+  immédiatement.
+
+- **BoJ** (Bank of Japan, basée à Tokyo) — Kazuo Ueda décide tous les
+  ~6 semaines de la politique monétaire japonaise. La BoJ a tenu pendant
+  30 ans un yield curve control qu'elle a commencé à démanteler en 2024.
+  Une normalisation surprise → carry trade (emprunter en yen pour
+  investir ailleurs) qui se casse → débouclage massif → BTC chute par
+  effet de levier mondial.
+
+- **BoE** (Bank of England, basée à Londres) — Andrew Bailey décide tous
+  les 6-8 semaines des taux UK. Impact réel mais plus modéré : la livre
+  sterling pèse moins dans le DXY que l'euro, donc la transmission
+  vers BTC/GOLD est de second ordre.
+
+Sans ce calendrier, la trader manuelle est aveugle à **24 événements
+majeurs par an** (3 banques × 8 réunions) qui peuvent expliquer un
+mouvement BTC/GOLD apparemment "technique" mais en réalité macro.
+
+### Comment Tik gère ça
+
+Exactement comme la Phase B1 pour FOMC :
+
+1. Les dates de réunion 2026-2027 sont publiées 1 an à l'avance par
+   chaque banque centrale sur son site officiel. Tik les a **hardcodées
+   en Python** dans un fichier versionné Git (`macro_calendar_data.py`)
+   qui est revue-able comme du code, type-checkable, testable.
+
+2. Un nouvel ingester `MacroStaticIngester` tourne 1 fois par jour pour
+   pousser ces dates dans la table `macro_events` (la même que Phase B1)
+   en mode "upsert idempotent" : ré-exécutable autant de fois qu'on
+   veut sans générer de doublons.
+
+3. La carte « Calendrier macro » sur la page d'accueil du dashboard
+   **affiche automatiquement** ces nouveaux événements à côté de FOMC.
+   **Aucune modification du dashboard nécessaire** : la conception
+   domain-agnostic de Phase B1 le supportait sans toucher au frontend.
+
+### Les fuseaux horaires : un détail piégeux
+
+Chaque banque publie son statement à une heure locale propre :
+
+- FOMC : 14:00 ET (Eastern Time, USA — change de UTC-5 à UTC-4 avec
+  l'heure d'été)
+- BCE : 14:15 CET (Central European Time, change de UTC+1 à UTC+2)
+- BoJ : ~12:00 JST (Japan Standard Time, constant UTC+9, le Japon n'a
+  pas d'heure d'été)
+- BoE : 12:00 GMT (London time, change de UTC+0 à UTC+1)
+
+Tik convertit tout en UTC à l'insertion en base, avec gestion automatique
+de l'heure d'été grâce à la bibliothèque standard Python `zoneinfo`. Le
+dashboard ré-affiche en heure locale de la trader. Tout le pipeline est
+timezone-aware (cohérent ADR-013, cf. section 14).
+
+### Bonus : un bug latent fixé
+
+En Phase B1, le `FredCalendarIngester` gérait à la fois les release FRED
+dynamiques (NFP, CPI, …) **et** les dates FOMC statiques. Or au boot, si
+la clé FRED n'était pas configurée, l'ingester skip TOUT — y compris les
+FOMC dates qui ne dépendent pourtant pas de FRED. Bug latent silencieux.
+
+Phase B2 sépare proprement les responsabilités : le `FredCalendarIngester`
+gère uniquement FRED dynamique, le nouveau `MacroStaticIngester` gère
+toutes les dates statiques (FOMC + BCE + BoJ + BoE) **sans aucune
+dépendance externe** (pas de fetch HTTP, pas de clé API requise). Si
+FRED est down ou la clé absente, la discipline calendrier macro continue
+quand même de fonctionner.
+
+### Ce qui n'a pas changé
+
+- Les engines (swing, flash) n'ont **pas accès** au calendrier. C'est un
+  outil de discipline **pour l'humain**, pas un input des calculs Tik.
+  La trader regarde la carte avant de placer son ordre, c'est tout.
+- Garde-fou 1 inchangé (Tik shadow vs Zeta).
+- ADR-003 inchangé (Tik ne crée jamais d'ordre).
+- ADR-004 inchangé (le calendrier macro n'est pas un overlay).
+
+### Limites assumées
+
+- Les dates 2026-2027 sont saisies à la main depuis les sites officiels.
+  Si la BCE déplace une réunion d'urgence (rare : pandémie, crise), il
+  faut éditer le fichier `macro_calendar_data.py`. Mais c'est aussi
+  rare que le Fed change ses dates FOMC publiées.
+- L'importance BoE est calibrée MEDIUM "au pifomètre" — à recalibrer
+  empiriquement post-J+30 sur observations de la vol BTC/GOLD autour des
+  meetings BoE réels.
+- Pas d'élections (US midterms, présidentielles, etc.) en Phase B2.
+  Reporté Phase B3 post-J+30 — scope trop large pour bien le faire en
+  une session.
+
+Voir `docs/adr/020-multi-central-banks-static-ingester.md` pour le
+détail technique des décisions structurantes.
+
+---
+
 ## Glossaire des termes clés
 
 - **Signal** : un avis émis par Tik à un instant donné sur un actif

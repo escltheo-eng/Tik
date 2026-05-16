@@ -293,12 +293,13 @@ async def test_ingester_fetch_release_dates_skips_empty_dates():
     assert out == ["2026-06-05"]
 
 
-async def test_ingester_cycle_includes_static_fomc(monkeypatch):
-    """Le cycle inclut toutes les dates FOMC statiques (toujours présentes).
+async def test_ingester_cycle_does_not_include_static_fomc(monkeypatch):
+    """Phase B2 (ADR-020) : le cycle FRED ne gère plus les FOMC statiques.
 
-    On stub `_fetch_release_dates` pour retourner une liste vide → seuls
-    les FOMC statiques sont upsert. Validation que `upsert_many` reçoit
-    bien les events FOMC.
+    Les FOMC dates sont désormais upsertées par `MacroStaticIngester`
+    séparément. Ici on stub `_fetch_release_dates` pour retourner une
+    liste vide → si la séparation est respectée, `upsert_many` reçoit
+    0 events (aucun FRED, aucun FOMC).
     """
     sm = _MockSessionMaker()
     ing = FredCalendarIngester(api_key="abc", session_maker=sm)
@@ -323,9 +324,44 @@ async def test_ingester_cycle_includes_static_fomc(monkeypatch):
 
     n = await ing._cycle()
 
-    # Tous les FOMC statiques sont passés à upsert_many
-    assert n == len(FOMC_STATIC_DATES)
+    # Phase B2 : aucun FOMC dans le cycle FRED (déplacé vers MacroStaticIngester)
+    assert n == 0
     fomc_events = [e for e in captured_events if e["event_code"] == "FOMC_MEETING"]
-    assert len(fomc_events) == len(FOMC_STATIC_DATES)
-    # Tous les events ont la source "fed_static" pour FOMC
-    assert all(e["source"] == "fed_static" for e in fomc_events)
+    assert fomc_events == []
+
+
+async def test_ingester_cycle_includes_fred_dates_only(monkeypatch):
+    """Le cycle FRED retourne uniquement des events `source="fred"` (Phase B2).
+
+    Stub `_fetch_release_dates` pour retourner 1 date → 1 event FRED
+    attendu (pour chaque release de la whitelist).
+    """
+    sm = _MockSessionMaker()
+    ing = FredCalendarIngester(api_key="abc", session_maker=sm)
+
+    async def _stub_fetch(self_ing, client, spec):
+        # 1 date par release pour vérifier le branchement
+        return ["2026-06-05"]
+
+    monkeypatch.setattr(
+        FredCalendarIngester, "_fetch_release_dates", _stub_fetch
+    )
+
+    captured_events: list = []
+
+    async def _stub_upsert(session_maker, events):
+        captured_events.extend(events)
+        return len(events)
+
+    monkeypatch.setattr(
+        "tik_core.aggregator.fred_calendar_ingester.upsert_many",
+        _stub_upsert,
+    )
+
+    n = await ing._cycle()
+
+    # 1 event par release de la whitelist
+    assert n == len(FRED_RELEASES)
+    # Tous les events ont source="fred", pas de fed_static
+    assert all(e["source"] == "fred" for e in captured_events)
+    assert all(e["release_id"] is not None for e in captured_events)

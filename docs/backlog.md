@@ -296,9 +296,12 @@ multi-overlay ADR-004 extensible). Mais aujourd'hui Tik est focalisé
 3 chantiers (chacun ~1-2 sessions, à étaler sur 4-6 semaines post-J+14) :
 
 1. ✅ **Calendrier événementiel macro** (FOMC, NFP, CPI, GDP, élections,
-   sommets, sanctions) → ✅ **Phase B1 livrée 2026-05-06** (ADR-017).
-   Couvre US-only via FRED Releases API + FOMC dates statiques. Phase B2
-   internationale (ECB, BoJ, BoE, élections) post-J+14.
+   sommets, sanctions) → ✅ **Phase B1 livrée 2026-05-06** (ADR-017) +
+   ✅ **Phase B2 livrée 2026-05-16** (ADR-020 — banques centrales
+   internationales ECB / BoJ / BoE, 36 events 2026-2027 ajoutés, nouvel
+   ingester `MacroStaticIngester` séparé, fix bug latent FOMC sans clé
+   FRED). **Phase B3 (élections G7) reportée post-J+30** selon retour
+   utilisatrice sur l'utilité pratique des Phases B1+B2.
 
 2. **Scope élargi des entities** — ajouter :
    - `US_DEBT` (dette US, watch sur crisis liquidity)
@@ -601,10 +604,38 @@ CLAUDE.md Paquet 22.
 
 | Quand | Action | Effort |
 |---|---|---|
-| Prochaine session Mac/HP | A.1 re-run backtest GDELT + A.2 pytest validation + A.3 restart ingesters | ~30 min |
-| Post-J+30 (mi-juin 2026) | B.1 recalibration seuils P6 selon distributions réelles | ~1h analyse |
+| Prochaine session Mac/HP | A.1 re-run backtest GDELT + A.2 pytest validation + A.3 restart ingesters + A.4 validation dates BC 2026-2027 (Phase B2) | ~45 min |
+| Post-J+30 (mi-juin 2026) | B.1 recalibration seuils P6 selon distributions réelles + B.4 importance BoE selon vol BTC/GOLD observée | ~1h analyse |
 | Post-période bear gold | B.3 re-mesure DXY/COT, possible réactivation overlays | ~30 min mesure |
 | Post-câblage Zeta shadow (mi-août 2026) | B.2 validation `OSINT_MIN_STRENGTH` + C.1 adoption pattern | Conditionnel |
+
+#### A.4 — Validation dates ECB/BoJ/BoE 2026-2027 (Phase B2 livrée 2026-05-16)
+
+Les 36 dates ECB / BoJ / BoE hardcodées dans
+`core/src/tik_core/aggregator/macro_calendar_data.py` (Paquet 23) sont
+basées sur les patterns publiés mais doivent être **vérifiées contre les
+sources officielles** avant production runtime :
+
+- ECB : https://www.ecb.europa.eu/press/calendars/mgcgc/html/index.en.html
+- BoJ : https://www.boj.or.jp/en/mopo/mpmsche_minu/index.htm
+- BoE : https://www.bankofengland.co.uk/monetary-policy/upcoming-mpc-dates
+
+Si une date est incorrecte, éditer `macro_calendar_data.py` et restart
+le `MacroStaticIngester` (idempotent — UNIQUE constraint DB protège
+contre les doublons).
+
+#### B.4 — Importance BoE (Phase B2 — calibration empirique)
+
+L'importance BoE MPC est posée MEDIUM "au pifomètre raisonné"
+(justification : GBP moins influente sur DXY que EUR/USD). À recalibrer
+empiriquement post-J+30 sur 4-5 meetings BoE observés : si la vol
+BTC/GOLD post-event est comparable ou supérieure à celle post-CPI US,
+remonter à HIGH.
+
+Méthodologie suggérée : exporter les signaux Tik et les prix BTC/GOLD
+dans les ±4 h autour de chaque meeting BoE 2026, calculer la vol moyenne
+réalisée vs vol moyenne sur un échantillon contrôle (jours sans event).
+Si ratio ≥ 1.5 sur ≥ 3 meetings observés, bumper BoE de MEDIUM à HIGH.
 
 ### Risque rappelé
 

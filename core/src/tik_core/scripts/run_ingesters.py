@@ -15,6 +15,7 @@ from tik_core.aggregator.cryptocompare_ingester import CryptoCompareIngester
 from tik_core.aggregator.fear_greed_ingester import FearGreedIngester
 from tik_core.aggregator.fred_calendar_ingester import FredCalendarIngester
 from tik_core.aggregator.fred_ingester import FredIngester
+from tik_core.aggregator.macro_static_ingester import MacroStaticIngester
 from tik_core.aggregator.gdelt_ingester import GdeltIngester
 from tik_core.aggregator.google_news_ingester import GoogleNewsIngester
 from tik_core.aggregator.news_classifier import build_news_classifier
@@ -134,12 +135,19 @@ async def main() -> None:
             interval_s=1800,
         ),
         CftcCotIngester(redis, interval_s=24 * 3600),
-        # Lacune B Phase B1 J+10 — Calendrier macro/géopolitique (ADR-017).
-        # Polling daily des release_dates FRED + upsert FOMC dates statiques.
-        # Pas de Redis injecté : la persistance DB est suffisante (cycle daily
-        # vs cache Redis 5 min via l'endpoint qui est largement assez frais).
+        # Lacune B Phase B1 J+10 — FRED Releases dynamiques (ADR-017).
+        # Polling daily des release_dates FRED (NFP, CPI, PPI, GDP…).
+        # Skip si pas de clé FRED (Phase B2 : ne bloque plus FOMC static
+        # qui est désormais géré par MacroStaticIngester).
         FredCalendarIngester(
             api_key=settings.fred_api_key,
+            session_maker=session_maker,
+            interval_s=24 * 3600,
+        ),
+        # Lacune B Phase B2 — Calendrier macro statique multi-banques (ADR-020).
+        # Upsert daily des dates FOMC + ECB + BoJ + BoE depuis macro_calendar_data.
+        # Aucune dépendance externe (pas de clé API). Tourne même sans FRED.
+        MacroStaticIngester(
             session_maker=session_maker,
             interval_s=24 * 3600,
         ),

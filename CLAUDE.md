@@ -1409,6 +1409,115 @@ v1.0.0 reste réservée à la mise en production réelle dans Zeta après les 3 
 
 **Mémoire pour instances Claude futures** : NE PAS revenir au pattern linéaire de 2026-04-30 sans relire ADR-018 et la discussion du 2026-05-16. Le mot "confidence" dans Tik signifie "magnitude OSINT cross-validée", pas "force technique" — utiliser `osint_conviction` partout dans tout nouveau code consommateur. Le SDK 0.6.0+ matérialise l'alias.
 
+### Paquet 23 — Phase B2 calendrier macro multi-banques centrales LIVRÉ (P9 plan fiabilité, ADR-020, 2026-05-16)
+
+P9 du plan stratégique post-audit fiabilité signaux livrée le même jour
+que les Paquets 21+22. Extension naturelle de Phase B1 (ADR-017, Paquet 11)
+qui couvrait US-only : Tik dispose maintenant d'un calendrier macro
+**multi-banques centrales** (BCE Lagarde + BoJ Ueda + BoE Bailey aux
+côtés du FOMC américain). Discipline opérationnelle de la trader manuelle
+J+14 (Garde-fou 2-bis) étendue aux ±4 h autour de **24 events majeurs
+internationaux supplémentaires par an** (3 BC × 8 meetings).
+
+#### 6 décisions structurantes prises (cf. ADR-020)
+
+1. **Nouvel ingester `MacroStaticIngester` séparé** (vs étendre `FredCalendarIngester`) :
+   fix d'un **bug latent Phase B1** — sans clé FRED, le ingester actuel
+   skip TOUT y compris FOMC static. Séparation propre des responsabilités
+   (FRED dynamique vs static). MacroStaticIngester n'a aucune dépendance
+   externe (pas de fetch HTTP, pas de clé API).
+2. **Dates hardcodées en Python** dans `macro_calendar_data.py` (vs scraping
+   ECB JSON ou API agrégée payante). Cohérent avec FOMC Phase B1.
+   Auditabilité PR-able + type-checking + tests possibles.
+3. **`tz_name: str` IANA** sur `StaticEventSpec` + `FredReleaseSpec` (default
+   `"America/New_York"` rétrocompat). Permet 1 seule structure pour
+   FOMC US / BCE EU / BoJ JP / BoE UK. DST géré automatiquement par
+   `zoneinfo` stdlib (CEST/CET ECB, JST sans DST BoJ, GMT/BST BoE).
+4. **`source: str` sur `StaticEventSpec`** (default `"fed_static"` rétrocompat).
+   Valeurs `"fed_static"` / `"ecb_static"` / `"boj_static"` / `"boe_static"`.
+   Trace d'audit + filtrage potentiel futur côté API.
+5. **Importance** : FOMC HIGH, BCE HIGH, BoJ HIGH, BoE MEDIUM (GBP moins
+   influente sur DXY que EUR/USD). Calibration au pifomètre raisonné à
+   recalibrer empiriquement post-J+30 (backlog #7 B.4).
+6. **Pas d'élections en Phase B2** (reportées Phase B3 post-J+30). Scope
+   élections trop large (50+/an mondial) pour bien faire en une session.
+
+#### Implémentation (9 fichiers, ~700 lignes nettes)
+
+| Fichier | Changement |
+|---|---|
+| `core/src/tik_core/aggregator/macro_calendar_data.py` | +`tz_name` sur specs, +`source` sur StaticEventSpec, helpers `date_to_utc_release`/`build_event_from_*` déplacés ici (avant dans `fred_calendar_ingester`), +3 listes `ECB_STATIC_DATES`/`BOJ_STATIC_DATES`/`BOE_STATIC_DATES` (12 dates 2026-2027 chacune), helper `all_static_events()`. 48 static events total (12 par BC). |
+| `core/src/tik_core/aggregator/fred_calendar_ingester.py` | Retrait FOMC static du cycle. Devient FRED-only. Réexport rétrocompat des helpers déplacés. |
+| `core/src/tik_core/aggregator/macro_static_ingester.py` | **Nouveau** (~120 lignes). `MacroStaticIngester(BaseIngester)` qui upsert `all_static_events()` à chaque cycle daily. Aucune dépendance externe. |
+| `core/src/tik_core/scripts/run_ingesters.py` | +1 instance `MacroStaticIngester(session_maker=..., interval_s=24*3600)`. |
+| `core/tests/test_macro_calendar_data.py` | +43 tests (invariants ECB/BoJ/BoE, `date_to_utc_release` 4 timezones, `all_static_events()`, `build_event_from_static` 4 sources). |
+| `core/tests/test_fred_calendar_ingester.py` | 1 test refactor (FOMC retiré) + 1 nouveau (`test_ingester_cycle_includes_fred_dates_only`). |
+| `core/tests/test_macro_static_ingester.py` | **Nouveau** (10 tests : lifecycle no_session_maker → skip propre, `_cycle()` upsert all events, counts par source, best-effort sur erreur DB, structure events). |
+| `docs/adr/020-multi-central-banks-static-ingester.md` | **Nouveau** — formalise les 6 décisions. |
+| `docs/comprendre_tik.md` | Section 22 pédagogique FR sur le calendrier multi-BC. |
+| `docs/backlog.md` | Entry #5 ✓ Phase B2 livrée + entry #7 enrichie (A.4 validation dates 2026-2027, B.4 importance BoE). |
+
+#### Schéma DB et API : aucune modification
+
+Table `macro_events` Phase B1 (migration `0005_macro_events`) déjà
+domain-agnostic : `source: str` accepte les nouvelles valeurs, schéma
+Pydantic `MacroEventOut` et endpoints `/macro_events/{upcoming,history}`
+inchangés. La carte Home dashboard `MacroEventsCard` affiche ECB Lagarde /
+BoJ Ueda / BoE Bailey **automatiquement sans aucune modification frontend**.
+C'est l'effet visé par la conception domain-agnostic Phase B1 (ADR-017 D4+D5).
+
+#### Validation effectuée
+
+- Syntaxe Python OK sur tous les fichiers modifiés (py_compile).
+- Test d'import du module pur : `FRED_RELEASES=7` + `FOMC=12` + `ECB=12`
+  + `BoJ=12` + `BoE=12` = 48 static events. Conversions timezone
+  validées (ECB 14h15 CEST → 12h15 UTC, BoJ 12h JST → 03h UTC, BoE 12h
+  BST → 11h UTC).
+- Suite pytest complète **à valider sur Mac/HP** (env serveur n'a pas
+  Docker/dépendances) — inscrite dans backlog #7 A.2 standard. Estimation :
+  954 → ~1007 verts (+53 nouveaux : 43 calendar_data + 10 static_ingester
+  + 0 net fred_calendar_ingester).
+
+#### Garde-fous opérationnels rappelés
+
+- **Garde-fou 1** (Tik shadow vs Zeta 3 mois) **inchangé**.
+- **ADR-003** (pas de bypass V01-V15) **inchangé** — calendrier macro est
+  un outil de discipline humain, **pas un input des engines**.
+- **ADR-004** (multi-overlay) **inchangé** — calendrier ne devient pas
+  un overlay du `combined_bias`.
+- **Garde-fou 2-bis** (sizing 1 %, veracity ≥ 0.90, discipline macro
+  ±4 h autour event HIGH) **renforcé empiriquement** : la discipline
+  s'étend à 24 events internationaux/an en plus des US.
+
+#### Limites connues post-livraison
+
+1. **Dates 2026-2027 ECB/BoJ/BoE basées sur patterns publiés** — à
+   vérifier par l'utilisatrice contre les sites officiels avant
+   déploiement runtime (cf. backlog #7 A.4). UNIQUE constraint
+   `(event_code, scheduled_for)` protège contre doublons mais pas
+   contre erreur de date.
+2. **2027 = estimations sur patterns**. Calendrier 2027 confirmé sera
+   publié mi-2026 par chaque BC. Mise à jour annuelle dans
+   `macro_calendar_data.py`.
+3. **Importance BoE MEDIUM = pifomètre raisonné**. À recalibrer
+   empiriquement post-J+30 (backlog #7 B.4).
+4. **Pas de couplage automatique signal ↔ event proche**. L'humain fait
+   le lien mentalement. Phase B2.5 (flag `near_macro_event` sur signaux
+   dans la fenêtre ±4 h) envisageable selon retour terrain.
+
+#### Mémoire pour instances Claude futures
+
+- Si une BC déplace une réunion (rare mais arrive — BoJ a bougé son
+  statement 2x sur 10 ans), éditer `macro_calendar_data.py` ET restart
+  `MacroStaticIngester` (idempotent — UNIQUE constraint protège
+  contre doublons).
+- **NE PAS** ajouter des dates ECB/BoJ/BoE sans citer la source officielle
+  en commentaire de la liste. Le pattern Phase B1 (URL en tête de
+  `FOMC_STATIC_DATES`) est la convention.
+- **NE PAS** revenir au pattern "tout dans FredCalendarIngester" sans
+  re-lire ADR-020 décision 1 — la séparation static/dynamic résout un
+  bug latent qui était silencieux en Phase B1.
+
 ### Plan stratégique post-audit fiabilité signaux (révision 2026-05-06 ~01h00)
 
 Re-audit demandé par l'utilisatrice fin de session pour trier les recommandations selon le critère **« fiabilité, précision et qualité des signaux Tik émis »** uniquement, en excluant UX/sécurité/mobilité (axes orthogonaux qui restent à mener mais ne contribuent pas à la qualité signal).
@@ -1432,7 +1541,7 @@ Re-audit demandé par l'utilisatrice fin de session pour trier les recommandatio
 | **P6** | Détection anomalies par ingester : brigading Reddit (ratio comments/upvotes), dominance publisher Google News (>50% single source), pic volume CryptoCompare anormal vs baseline 7j — invalide ou pondère down les biais pollués | ~3-4h | Post-J+14 (premier mois trading) |
 | **P7** | Phase C Session 2 avec `POST /feedback` systématique — auto-resolution + hit rate perso vs Tik global + bouton override feedback nourrissant la calibration source credibility | ~2-3h | Après 1-2j d'usage Session 1 |
 | **P8** | Phase B Polymarket (ADR-015) — 5e overlay sentiment BTC avec « money on the line », signal qualité supérieure aux news textuelles éditoriales | ~2 sessions | Post-J+14 si pas eu le temps avant |
-| **P9** | Phase B2 calendrier macro multi-banques centrales (ECB/BoJ/BoE/élections) — étend la discipline macro hors-US | ~3-4h | Post-J+14 |
+| ✅ **P9** | Phase B2 calendrier macro multi-banques centrales (ECB/BoJ/BoE) — étend la discipline macro hors-US. **Livré 2026-05-16** (Paquet 23, ADR-020). 36 events 2026-2027 ajoutés, nouvel ingester `MacroStaticIngester` séparé, fix bug latent FOMC sans clé FRED. Phase B3 (élections G7) reportée post-J+30 selon retour utilisatrice. | ~3-4h livrés ✅ | ✅ LIVRÉ 2026-05-16 |
 
 **Recommandations dépriorisées (zéro impact fiabilité signal)** :
 - EAS Build dev (UX mobilité, cf Paquet 16)

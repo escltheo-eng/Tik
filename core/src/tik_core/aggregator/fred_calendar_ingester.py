@@ -1,8 +1,12 @@
-"""FRED Calendar ingester (couche 4 — macro-événementiel).
+"""FRED Calendar ingester (couche 4 — macro-événementiel US).
 
-Cf. ADR-017 — Calendrier macro/géopolitique (Lacune B Phase B1 J+10).
+Cf. ADR-017 — Calendrier macro/géopolitique (Phase B1 J+10).
+Cf. ADR-020 — Multi-banques centrales (Phase B2) : FOMC + ECB + BoJ +
+BoE sont désormais gérés par `MacroStaticIngester` séparément. Ce
+ingester ne s'occupe plus que des 7 release FRED dynamiques.
 
 Pour chaque release_id de la whitelist `macro_calendar_data.FRED_RELEASES` :
+
 1. Polling daily du endpoint `/fred/release/dates` avec
    `realtime_end=9999-12-31` + `include_release_dates_with_no_data=true`
    pour récupérer les dates futures programmées.
@@ -12,18 +16,13 @@ Pour chaque release_id de la whitelist `macro_calendar_data.FRED_RELEASES` :
    automatiquement le DST (passage été/hiver).
 3. Upsert dans la table `macro_events` via `macro_events_repo.upsert_many`.
 
-En complément, le ingester upsert également les FOMC dates statiques
-(2026-2027) listées dans `macro_calendar_data.FOMC_STATIC_DATES` — FRED
-ne couvre pas proprement le statement+press conference FOMC, on les pose
-nous-mêmes depuis le calendrier officiel Fed Reserve.
-
 **Polling daily** : interval 24h (configurable). Au boot, premier cycle
-immédiat. Cohérent avec FredIngester existant pour les séries
-observations (DGS10, DXY…).
+immédiat.
 
 **Best-effort** : si l'API FRED renvoie une erreur, on log warning et on
-continue avec les autres release_ids. Si `session_maker=None` (pas de
-DB configurée), on saute la persistence — mais on ne crashe pas.
+continue avec les autres release_ids. Si `session_maker=None` ou
+`api_key=""`, on saute le démarrage proprement (warning) mais on ne
+crashe pas — `MacroStaticIngester` reste actif pour FOMC/ECB/BoJ/BoE.
 
 **ADR-003 inchangé** : ce ingester est read-only (lecture FRED →
 écriture table d'audit), aucune décision trading générée. ADR-004
@@ -33,9 +32,8 @@ multi-overlay inchangé.
 from __future__ import annotations
 
 import asyncio
-from datetime import date, datetime, timezone
+from datetime import datetime, timedelta
 from typing import Any
-from zoneinfo import ZoneInfo
 
 import httpx
 import structlog
@@ -43,10 +41,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tik_core.aggregator.base import BaseIngester
 from tik_core.aggregator.macro_calendar_data import (
-    FOMC_STATIC_DATES,
     FRED_RELEASES,
     FredReleaseSpec,
-    StaticEventSpec,
+    build_event_from_fred,
 )
 from tik_core.storage.macro_events_repo import upsert_many
 from tik_core.utils.time import now_utc
@@ -54,66 +51,14 @@ from tik_core.utils.time import now_utc
 log = structlog.get_logger()
 
 FRED_BASE = "https://api.stlouisfed.org/fred/release/dates"
-ET_TZ = ZoneInfo("America/New_York")
 
 
-def date_to_utc_release(
-    iso_date: str, release_hour_et: int, release_minute_et: int
-) -> datetime:
-    """Convertit une date calendaire ISO + heure ET en datetime UTC aware.
-
-    Le DST (US/Eastern : EST UTC-5 hiver / EDT UTC-4 été) est géré
-    automatiquement par `zoneinfo` :
-    - 8h30 ET en janvier → 13h30 UTC
-    - 8h30 ET en juin → 12h30 UTC
-    - 14h00 ET en juillet → 18h00 UTC
-    - 14h00 ET en décembre → 19h00 UTC
-
-    Retourne un datetime UTC aware (`tzinfo=UTC`). Le caller convertira
-    en naïf via `to_naive_utc()` avant insertion DB.
-    """
-    d = date.fromisoformat(iso_date)
-    et_dt = datetime(
-        d.year,
-        d.month,
-        d.day,
-        release_hour_et,
-        release_minute_et,
-        tzinfo=ET_TZ,
-    )
-    return et_dt.astimezone(timezone.utc)
-
-
-def build_event_from_fred(
-    spec: FredReleaseSpec, iso_date: str
-) -> dict[str, Any]:
-    """Construit un dict event prêt pour `upsert_many` à partir d'un FRED spec."""
-    return {
-        "event_code": spec.event_code,
-        "event_name": spec.event_name,
-        "scheduled_for": date_to_utc_release(
-            iso_date, spec.release_hour_et, spec.release_minute_et
-        ),
-        "importance": spec.importance,
-        "assets_impacted": list(spec.assets_impacted),
-        "source": "fred",
-        "release_id": spec.release_id,
-    }
-
-
-def build_event_from_static(spec: StaticEventSpec) -> dict[str, Any]:
-    """Construit un dict event prêt pour `upsert_many` à partir d'un Static spec."""
-    return {
-        "event_code": spec.event_code,
-        "event_name": spec.event_name,
-        "scheduled_for": date_to_utc_release(
-            spec.iso_date, spec.release_hour_et, spec.release_minute_et
-        ),
-        "importance": spec.importance,
-        "assets_impacted": list(spec.assets_impacted),
-        "source": "fed_static",
-        "release_id": None,
-    }
+# Réexport des helpers déplacés vers macro_calendar_data (rétrocompat tests B1).
+# Les helpers eux-mêmes sont définis dans macro_calendar_data (Phase B2 ADR-020).
+from tik_core.aggregator.macro_calendar_data import (  # noqa: E402, F401
+    build_event_from_static,
+    date_to_utc_release,
+)
 
 
 def filter_future_dates(
@@ -127,20 +72,22 @@ def filter_future_dates(
     on coupe les très anciens.
     """
     if min_date is None:
-        # Garde 30 jours d'historique pour l'audit + tout le futur
-        from datetime import timedelta
         min_date = now_utc() - timedelta(days=30)
     min_iso = min_date.date().isoformat()
     return [d for d in dates if d >= min_iso]
 
 
 class FredCalendarIngester(BaseIngester):
-    """Ingester du calendrier macro (FRED Releases + FOMC static).
+    """Ingester du calendrier macro (FRED Releases dynamiques uniquement).
 
-    Cf. ADR-017.
+    Cf. ADR-017 (B1) + ADR-020 (B2 — séparation static/dynamic).
 
     Polling daily : interval 24h. Premier cycle au boot. Best-effort sur
     chaque release_id (un échec n'arrête pas les autres).
+
+    Si `api_key=""` ou `session_maker=None`, le ingester ne démarre pas.
+    Phase B2 : ce skip n'affecte plus les dates statiques FOMC, qui sont
+    désormais gérées par `MacroStaticIngester` (sans clé FRED requise).
     """
 
     name = "fred_calendar_ingester"
@@ -170,7 +117,6 @@ class FredCalendarIngester(BaseIngester):
         log.info(
             "fred_calendar.ingester.started",
             n_fred_releases=len(FRED_RELEASES),
-            n_static_events=len(FOMC_STATIC_DATES),
             interval_s=self.interval_s,
         )
 
@@ -230,14 +176,15 @@ class FredCalendarIngester(BaseIngester):
         ]
 
     async def _cycle(self) -> int:
-        """Un cycle complet : fetch FRED + concat static + upsert. Retourne n_upserted."""
+        """Un cycle complet : fetch FRED dynamique + upsert. Retourne n_upserted.
+
+        Phase B2 : ne gère plus les FOMC dates statiques (déplacé dans
+        `MacroStaticIngester`). Si le static ingester n'est pas configuré,
+        les FOMC dates ne seront PAS upsertées — c'est intentionnel pour
+        garantir la séparation des responsabilités (cf. ADR-020).
+        """
         events: list[dict[str, Any]] = []
 
-        # 1. FOMC static dates
-        for static_spec in FOMC_STATIC_DATES:
-            events.append(build_event_from_static(static_spec))
-
-        # 2. FRED dynamic releases
         async with httpx.AsyncClient() as client:
             for spec in FRED_RELEASES:
                 dates = await self._fetch_release_dates(client, spec)
