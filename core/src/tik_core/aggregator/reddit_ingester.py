@@ -33,6 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tik_core.aggregator.base import BaseIngester
 from tik_core.aggregator.news_classifier import NewsClassifier
+from tik_core.scoring.anomaly_detector import detect_brigading_reddit
 from tik_core.storage.headlines_repo import persist_headlines
 
 log = structlog.get_logger()
@@ -274,6 +275,12 @@ class RedditIngester(BaseIngester):
             for name, count in Counter(sub_distribution).most_common(5)
         ]
 
+        # P6 — Détection brigading via ratio comments/upvotes agrégé.
+        # On passe la liste des pdata bruts (Reddit JSON expose `score` =
+        # upvotes et `num_comments` directement). Le détecteur est tolérant
+        # aux posts malformés.
+        anomaly = detect_brigading_reddit([pdata for _sub, pdata in all_posts])
+
         return {
             "source": "reddit_btc",
             "method": self.classifier.method_name,
@@ -286,6 +293,7 @@ class RedditIngester(BaseIngester):
             "n_neutral": n_neutral,
             "top_subreddits": top_subs,
             "headlines": headlines,
+            "anomaly": anomaly,
             "fetched_at": fetched_at,
         }
 
@@ -311,6 +319,7 @@ class RedditIngester(BaseIngester):
                         if point["top_subreddits"]
                         else None
                     )
+                    anomaly = point["anomaly"]
                     log.info(
                         "reddit.published",
                         entity_id=self.entity_id,
@@ -323,5 +332,16 @@ class RedditIngester(BaseIngester):
                         n_headlines=len(point["headlines"]),
                         n_persisted=n_persisted,
                         top_sub=top,
+                        anomaly_severity=anomaly["severity"],
+                        anomaly_score=anomaly["score"],
                     )
+                    if anomaly["severity"] != "ok":
+                        log.warning(
+                            "reddit.anomaly_detected",
+                            entity_id=self.entity_id,
+                            type=anomaly["type"],
+                            severity=anomaly["severity"],
+                            score=anomaly["score"],
+                            detail=anomaly["detail"],
+                        )
                 await asyncio.sleep(self.interval_s)

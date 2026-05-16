@@ -36,6 +36,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tik_core.aggregator.base import BaseIngester
 from tik_core.aggregator.news_classifier import NewsClassifier
+from tik_core.scoring.anomaly_detector import detect_publisher_dominance
 from tik_core.storage.headlines_repo import persist_headlines
 
 log = structlog.get_logger()
@@ -247,6 +248,12 @@ class GoogleNewsIngester(BaseIngester):
             for name, count in Counter(publishers).most_common(5)
         ]
 
+        # P6 — Détection dominance publisher (>50%/70% = medium/high).
+        # Validation Paquet 4 Session 1 a observé Yahoo Finance à 40 % sur
+        # certains cycles BTC = déjà élevé. Le détecteur flag les vraies
+        # dominances qui pourraient biaiser le sentiment.
+        anomaly = detect_publisher_dominance(top_publishers, len(entries))
+
         return {
             "source": "google_news_rss",
             "method": self.classifier.method_name,
@@ -259,6 +266,7 @@ class GoogleNewsIngester(BaseIngester):
             "n_neutral": n_neutral,
             "top_publishers": top_publishers,
             "headlines": headlines,
+            "anomaly": anomaly,
             "fetched_at": fetched_at,
         }
 
@@ -285,6 +293,7 @@ class GoogleNewsIngester(BaseIngester):
                         if point["top_publishers"]
                         else None
                     )
+                    anomaly = point["anomaly"]
                     log.info(
                         "google_news.published",
                         entity_id=self.entity_id,
@@ -296,5 +305,16 @@ class GoogleNewsIngester(BaseIngester):
                         n_headlines=len(point["headlines"]),
                         n_persisted=n_persisted,
                         top_publisher=top,
+                        anomaly_severity=anomaly["severity"],
+                        anomaly_score=anomaly["score"],
                     )
+                    if anomaly["severity"] != "ok":
+                        log.warning(
+                            "google_news.anomaly_detected",
+                            entity_id=self.entity_id,
+                            type=anomaly["type"],
+                            severity=anomaly["severity"],
+                            score=anomaly["score"],
+                            detail=anomaly["detail"],
+                        )
                 await asyncio.sleep(self.interval_s)

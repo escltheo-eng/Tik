@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tik_core.aggregator.base import BaseIngester
 from tik_core.aggregator.news_classifier import NewsClassifier
+from tik_core.scoring.anomaly_detector import detect_volume_spike
 from tik_core.storage.headlines_repo import persist_headlines
 
 log = structlog.get_logger()
@@ -31,6 +32,14 @@ log = structlog.get_logger()
 NEWS_URL = "https://min-api.cryptocompare.com/data/v2/news/"
 REDIS_TTL_S = 2 * 3600  # 2h, plus court que FG car les news bougent vite
 MAX_HEADLINES = 25
+
+# Baseline volume P6 — stockée en Redis pour persistance entre cycles.
+# Polling horaire → 7 baseline points = 7 h minimum d'activation, cap à 168
+# = rolling window 7 jours une fois mature. TTL 14 j pour survivre à un
+# arrêt prolongé (vacances, redémarrages cumulés).
+VOLUME_BASELINE_KEY_TPL = "tik.anomaly.baseline.cryptocompare.{currency}"
+VOLUME_BASELINE_TTL_S = 14 * 24 * 3600  # 14 jours
+VOLUME_BASELINE_MAX_POINTS = 168  # 7 jours de polling horaire
 
 
 class CryptoCompareIngester(BaseIngester):
@@ -99,6 +108,37 @@ class CryptoCompareIngester(BaseIngester):
             return datetime.fromtimestamp(int(float(ts)), tz=timezone.utc).isoformat()
         except (TypeError, ValueError, OverflowError, OSError):
             return None
+
+    async def _read_volume_baseline(self) -> list[int]:
+        """Lit la baseline volume historique depuis Redis. [] si absente."""
+        key = VOLUME_BASELINE_KEY_TPL.format(currency=self.currency.lower())
+        try:
+            raw = await self.redis.get(key)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("cryptocompare.baseline.read_error", error=str(exc))
+            return []
+        if not raw:
+            return []
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, list):
+                # Tolère les anciens formats (entiers, floats, strings)
+                return [int(v) for v in parsed if isinstance(v, (int, float))]
+        except (TypeError, ValueError):
+            pass
+        return []
+
+    async def _push_volume_baseline(
+        self, baseline: list[int], current_volume: int
+    ) -> None:
+        """Append `current_volume` à la baseline, cap à VOLUME_BASELINE_MAX_POINTS,
+        écrit en Redis avec TTL. Best-effort — si Redis échoue, on log et continue."""
+        new_baseline = (baseline + [current_volume])[-VOLUME_BASELINE_MAX_POINTS:]
+        key = VOLUME_BASELINE_KEY_TPL.format(currency=self.currency.lower())
+        try:
+            await self.redis.setex(key, VOLUME_BASELINE_TTL_S, json.dumps(new_baseline))
+        except Exception as exc:  # noqa: BLE001
+            log.warning("cryptocompare.baseline.write_error", error=str(exc))
 
     @staticmethod
     def _extract_publisher(article: dict) -> str:
@@ -179,6 +219,14 @@ class CryptoCompareIngester(BaseIngester):
         n_classified = n_bullish + n_bearish
         score = (n_bullish - n_bearish) / n_classified if n_classified > 0 else 0.0
 
+        # P6 — Détection pic volume vs baseline 7j (rolling, persistée Redis).
+        # Lecture baseline historique → détection sur cycle actuel → mise à
+        # jour baseline avec le volume actuel pour le cycle suivant.
+        # Désactivé tant que < 7 baseline points (cf. detect_volume_spike).
+        baseline = await self._read_volume_baseline()
+        anomaly = detect_volume_spike(len(articles), baseline)
+        await self._push_volume_baseline(baseline, len(articles))
+
         return {
             "source": "cryptocompare_news",
             "method": self.classifier.method_name,
@@ -189,6 +237,7 @@ class CryptoCompareIngester(BaseIngester):
             "n_bearish": n_bearish,
             "n_neutral": n_neutral,
             "headlines": headlines,
+            "anomaly": anomaly,
             "fetched_at": fetched_at,
         }
 
@@ -209,6 +258,7 @@ class CryptoCompareIngester(BaseIngester):
                         credibility=0.70,
                         headlines=point["headlines"],
                     )
+                    anomaly = point["anomaly"]
                     log.info(
                         "cryptocompare.published",
                         currency=self.currency,
@@ -219,5 +269,16 @@ class CryptoCompareIngester(BaseIngester):
                         n_neutral=point["n_neutral"],
                         n_headlines=len(point["headlines"]),
                         n_persisted=n_persisted,
+                        anomaly_severity=anomaly["severity"],
+                        anomaly_score=anomaly["score"],
                     )
+                    if anomaly["severity"] != "ok":
+                        log.warning(
+                            "cryptocompare.anomaly_detected",
+                            currency=self.currency,
+                            type=anomaly["type"],
+                            severity=anomaly["severity"],
+                            score=anomaly["score"],
+                            detail=anomaly["detail"],
+                        )
                 await asyncio.sleep(self.interval_s)

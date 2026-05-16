@@ -24,6 +24,7 @@ import structlog
 from redis.asyncio import Redis
 
 from tik_core.config import get_settings
+from tik_core.scoring.anomaly_detector import AnomalyResult
 from tik_core.scoring.cross_validator import apply_cross_validation_to_decision
 from tik_core.scoring.hypothesis_generator import (
     HypothesisGenerator,
@@ -410,6 +411,57 @@ async def _read_fear_greed(redis: Redis) -> dict | None:
         return None
 
 
+def _apply_anomaly_pondération(
+    decision: SwingDecision,
+    source_label: str,
+    bias: float,
+    anomaly: dict | None,
+) -> float:
+    """Applique la pondération P6 sur le bias selon le résultat anomaly.
+
+    Cohérent CLAUDE.md Paquet 21 P6 décision D-P6-1 (verdict bias /2 sur high) :
+
+    - severity=high → bias divisé par 2 + flag dans evidence (réduit l'influence
+      sans supprimer)
+    - severity=medium → bias inchangé + flag dans evidence (transparence)
+    - severity=ok ou anomaly None → bias inchangé, pas de flag
+
+    Args:
+        decision: la SwingDecision à enrichir avec evidence si applicable.
+        source_label: nom de la source pour le message evidence
+            (ex. "reddit_btc", "google_news_rss", "cryptocompare_news").
+        bias: bias brut calculé par l'overlay, à pondérer.
+        anomaly: payload `anomaly` lu depuis Redis (peut être None pour
+            rétrocompat avec les payloads pre-fix qui n'ont pas le champ).
+
+    Returns:
+        Bias pondéré (divisé par 2 si severity=high, inchangé sinon).
+    """
+    if not isinstance(anomaly, dict):
+        return bias
+    severity = anomaly.get("severity")
+    if severity not in ("high", "medium"):
+        return bias
+
+    anomaly_type = anomaly.get("type", "unknown")
+    detail = str(anomaly.get("detail", ""))
+    action = "/2" if severity == "high" else "kept"
+    decision.evidence.append(
+        {
+            "source": "anomaly_detector",
+            "score": 1.0,  # Détecteur interne, on trust son verdict
+            "fact": (
+                f"P6 anomaly on {source_label}: {anomaly_type} "
+                f"severity={severity} → bias {action} ({detail})"
+            ),
+        }
+    )
+
+    if severity == "high":
+        return bias / 2
+    return bias
+
+
 def _enrich_with_fear_greed(decision: SwingDecision, fg: dict) -> float | None:
     """Ajoute evidence + trigger FG à la décision, retourne le bias contrarian.
 
@@ -474,7 +526,12 @@ def _compute_cryptocompare_bias(score: float) -> tuple[float, str]:
 
 
 def _enrich_with_cryptocompare(decision: SwingDecision, cc: dict) -> float | None:
-    """Ajoute evidence + trigger CryptoCompare news, retourne le bias trend-following."""
+    """Ajoute evidence + trigger CryptoCompare news, retourne le bias trend-following.
+
+    P6 (Paquet 21) : si le payload contient un champ `anomaly` avec
+    severity=high (volume spike anormal), le bias est divisé par 2 et un
+    flag est ajouté à l'evidence (cf. `_apply_anomaly_pondération`).
+    """
     try:
         score = float(cc["score"])
         n_articles = int(cc.get("n_articles", 0))
@@ -504,7 +561,9 @@ def _enrich_with_cryptocompare(decision: SwingDecision, cc: dict) -> float | Non
             "weight": 0.10,
         }
     )
-    return bias
+    return _apply_anomaly_pondération(
+        decision, "cryptocompare_news", bias, cc.get("anomaly")
+    )
 
 
 async def _read_google_news(redis: Redis, entity_id: str) -> dict | None:
@@ -582,7 +641,10 @@ def _enrich_with_google_news(decision: SwingDecision, gn: dict) -> float | None:
             "weight": 0.10,
         }
     )
-    return bias
+    # P6 (Paquet 21) : si publisher_dominance severity=high, bias /= 2.
+    return _apply_anomaly_pondération(
+        decision, "google_news_rss", bias, gn.get("anomaly")
+    )
 
 
 async def _read_reddit(redis: Redis, entity_id: str) -> dict | None:
@@ -659,7 +721,10 @@ def _enrich_with_reddit(decision: SwingDecision, rd: dict) -> float | None:
             "weight": 0.10,
         }
     )
-    return bias
+    # P6 (Paquet 21) : si brigading_reddit severity=high, bias /= 2.
+    return _apply_anomaly_pondération(
+        decision, "reddit_btc", bias, rd.get("anomaly")
+    )
 
 
 async def analyze_swing_btc(

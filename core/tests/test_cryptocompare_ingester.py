@@ -13,7 +13,7 @@ classifier (keywords vs Ollama) est testée séparément dans
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -74,7 +74,11 @@ class _FakeClient:
 def _make_ingester(
     classifier: NewsClassifier | None = None,
 ) -> CryptoCompareIngester:
+    # AsyncMock requis depuis P6 (Paquet 21) car _fetch lit/écrit la baseline
+    # volume via await self.redis.get/setex pour la détection volume_spike.
     redis_mock = MagicMock()
+    redis_mock.get = AsyncMock(return_value=None)  # baseline absente → ok
+    redis_mock.setex = AsyncMock(return_value=True)
     return CryptoCompareIngester(
         redis=redis_mock,
         api_key="fake-key",
