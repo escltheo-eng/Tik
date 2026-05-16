@@ -339,13 +339,24 @@ Dernier signal par actif, Tendance veracity, Roadmap Paquet 3, Version box).
 | **D. Élaguer obsolète** (Roadmap Paquet 3 livrée, Version box → footer App) | Quick win, ~30 min | Cosmétique, pas structurel | 6/10 |
 
 **Verdict envisagé** : combiner **B (tabs) + D (élagage)**. Tabs `Marché / Calibration / Système` :
-- **Marché** : Top headlines (en haut) + Veracity globale + Dernier signal par actif + Activité 24h
+- **Marché** : Top headlines (en haut) + Veracity globale + Macro events + Dernier signal par actif + Activité 24h
 - **Calibration** : Hit rate live + Hit rate par veracity + Tendance veracity + Stats LLM
 - **Système** : État du core + Bouton refresh + Version box + lien vers Config/Bots/Alerts
 
 L'écran d'accueil devient **« Marché »** par défaut (= ce dont tu as besoin avant un trade).
 **Calibration** devient une vue d'audit séparée qu'on consulte en début de
 journée. **Système** disparaît dans un menu secondaire.
+
+### ✅ LIVRÉ Paquet 24 (2026-05-16)
+
+Levier B (tabs) + Levier D (élagage Roadmap Paquet 3 + Version box déplacée
+dans Système) livrés. 1 fichier modifié (`dashboard/app/(tabs)/index.tsx`,
+422 → ~430 lignes). Bump dashboard 0.5.6 → 0.5.7. Aucune nouvelle
+dépendance. Validation TypeScript runtime à confirmer côté HP/Mac (env
+serveur Claude Code n'a pas Node).
+
+Leviers A (élargissement scope entities) et C (mode contextuel) restent
+backlog, à reconsidérer post-J+30 selon retour usage.
 
 ### Pourquoi attendre post-J+14 — décision paranoïa contrôlée
 

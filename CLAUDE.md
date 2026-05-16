@@ -1518,6 +1518,105 @@ C'est l'effet visé par la conception domain-agnostic Phase B1 (ADR-017 D4+D5).
   re-lire ADR-020 décision 1 — la séparation static/dynamic résout un
   bug latent qui était silencieux en Phase B1.
 
+### Paquet 24 — Refonte dashboard Home tabs Marché/Calibration/Système LIVRÉ (backlog #5 Levier B+D, 2026-05-16)
+
+Refonte UX du dashboard Home demandée par l'utilisatrice juste après
+Paquet 23 (même session 2026-05-16, J+2 trading manuel). La Home avait
+**13 sections empilées** (cf. backlog #5 constat 2026-05-05) — trop
+dense pour une utilisatrice débutante. Refonte = tabs internes pour
+organiser visuellement + élagage de sections obsolètes.
+
+#### Architecture retenue
+
+**3 tabs internes** (state local React `activeTab: 'market' | 'calibration' | 'system'`) :
+
+- **Marché** (défaut, ce dont la trader a besoin avant un trade) :
+  Top headlines + Veracity globale + Macro events + Dernier signal par
+  actif + Activité 24 h
+- **Calibration** (vue d'audit, consultée en début de journée) :
+  Hit rate live + Hit rate par veracity + Tendance veracity + Stats LLM
+- **Système** (menu secondaire) : État du core + Bouton refresh +
+  Version box + rappel des autres onglets (Signals/Watchlist/Alerts/
+  Bots/Config)
+
+**Pas de scroll preserved par tab** — pattern radio buttons simple,
+conditional rendering en un seul scroll. Pas de dépendance externe à
+React Native Tab Navigator (overkill pour 3 sections internes).
+
+**Pas de persistence du dernier tab sélectionné** — Marché par défaut
+à chaque ouverture. Friction minimale (3 tabs = 1 tap pour switcher).
+
+#### Décisions structurantes prises
+
+| # | Décision | Verdict |
+|---|---|---|
+| D1 | Mécanisme tabs : Tab Navigator vs radio buttons | **Radio buttons** (simple, pas de lib externe, ParallaxScrollView préservé) |
+| D2 | Onglet défaut + persistence | **Marché par défaut, pas de persistence** (3 tabs = 1 tap = friction minimale) |
+| D3 | Placement MacroEventsCard (livré Paquet 11, après backlog #5) | **Onglet Marché** (outil de discipline avant trade, cohérent vision Phase B1) |
+| D4 | Suppression Roadmap Paquet 3 obsolète | **Oui** (Paquet 3 livré 2026-05-01, 15 jours plus tard plus de raison de l'afficher) |
+| D5 | Sélecteurs hit rate partagés entre 2 cartes Calibration | **Garder state lifted dans HomeScreen** (les 2 cartes restent synchronisées même séparées dans le DOM tab) |
+| D6 | Comportement quand on switch de tab pendant un fetch | **Aucune action** — les hooks (useHitRate, useTopHeadlines, etc.) continuent leur poll. Au retour du tab, données fraîches. |
+
+#### Fichiers modifiés (1 + bump version)
+
+| Fichier | Changement |
+|---|---|
+| `dashboard/app/(tabs)/index.tsx` | Refactor complet : ajout state `activeTab`, composant TabBar inline (3 boutons Pressable), conditional rendering via `renderMarketTab` / `renderCalibrationTab` / `renderSystemTab`. Suppression section Roadmap Paquet 3. Déplacement State du core + Version box dans `renderSystemTab`. Total ~430 lignes (vs 422 avant). |
+| `dashboard/package.json` | Bump 0.5.6 → 0.5.7. |
+
+#### Validation effectuée côté env serveur
+
+- Pas de Node disponible côté env serveur Claude Code → pas de
+  `tsc --noEmit` possible ici.
+- Validation TypeScript + runtime visuelle **à faire côté HP/Mac** :
+  `npx expo start --clear` côté dashboard puis scan iPhone via Expo Go,
+  vérifier qu'aucune section ne plante au switch de tab, que les
+  sélecteurs hit rate gardent leur valeur entre Marché ↔ Calibration.
+
+#### Garde-fous opérationnels rappelés
+
+- **Garde-fou 1** (Tik shadow vs Zeta 3 mois) **inchangé**. La refonte
+  est purement UX, zéro modification backend / engines / pipeline
+  scoring / cross-validation.
+- **ADR-003** (pas de bypass V01-V15) **inchangé**.
+- **ADR-018** (Tik OSINT pur) **inchangé**.
+- Refacto purement front, **aucun fichier `core/` touché**, **aucune
+  modif Pydantic / endpoints / migrations Alembic**.
+
+#### Limites connues post-livraison
+
+1. **Pas testé sur petit écran** (iPhone SE / iPhone Mini) — les boutons
+   tab pourraient être étroits. Validation visuelle iPhone 12 Pro Max
+   (device utilisatrice) suffisante en première approche. Adaptation
+   responsive si retour terrain négatif.
+2. **Sélecteurs hit rate partagés** (entity/horizon/includeFlagged) :
+   choix volontaire pour éviter la duplication d'état mais si la trader
+   préfère 2 contextes séparés (ex. swing BTC sur Calibration, flash
+   GOLD ailleurs), ça nécessitera de séparer les states. Inscrit comme
+   limite à observer post-J+14.
+3. **Onglet Système peu utilisé** — `État du core` était auparavant en
+   tête de Home, désormais caché derrière 2 taps. Volontaire (la trader
+   n'a pas besoin de voir l'état du core toutes les 5 min) mais à
+   surveiller : si l'utilisatrice se plaint de ne pas voir tout de
+   suite quand le core est down, on remontera un indicateur compact
+   dans la TabBar ou en bas de Marché.
+4. **Roadmap Paquet 3 supprimée** : si l'utilisatrice voulait garder
+   un historique des livraisons, c'est désormais dans
+   `CLAUDE.md` (le seul endroit qui doit l'avoir, plus de duplication).
+
+#### Mémoire pour instances Claude futures
+
+- **NE PAS** réintroduire la section Roadmap Paquet 3 dans le dashboard.
+  L'historique des livraisons est dans CLAUDE.md ("État d'avancement").
+- **NE PAS** mettre l'État du core sur Marché — c'est désormais sur
+  Système exprès, pour réduire la densité visuelle avant un trade.
+- Si une feature future ajoute une nouvelle carte, **choisir l'onglet
+  selon le critère** : *est-ce que la trader la consulte AVANT un trade
+  (Marché), pour AUDIT (Calibration), ou pour CONFIG/MAINTENANCE
+  (Système) ?*
+- Bump version dashboard à chaque livraison Paquet ≥ 1 fichier
+  `dashboard/` modifié (cohérent pattern Paquets 13, 14, 22).
+
 ### Plan stratégique post-audit fiabilité signaux (révision 2026-05-06 ~01h00)
 
 Re-audit demandé par l'utilisatrice fin de session pour trier les recommandations selon le critère **« fiabilité, précision et qualité des signaux Tik émis »** uniquement, en excluant UX/sécurité/mobilité (axes orthogonaux qui restent à mener mais ne contribuent pas à la qualité signal).

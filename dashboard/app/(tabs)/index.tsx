@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, StyleSheet } from 'react-native';
 
@@ -26,9 +27,22 @@ import { useTopHeadlines } from '@/src/hooks/useTopHeadlines';
 import { useUpcomingMacroEvents } from '@/src/hooks/useUpcomingMacroEvents';
 import { timeAgo } from '@/src/utils/time';
 
-const APP_VERSION = '0.5.6';
+const APP_VERSION = '0.5.7';
 
 const HEALTH_REFRESH_INTERVAL_MS = 30_000;
+
+// Paquet 24 — refonte Home tabs Marché/Calibration/Système (backlog #5 Levier B+D).
+// Marché par défaut = vue trading manuel quotidien (Top headlines + Veracity globale +
+// Macro events + Dernier signal par actif + Activité 24h).
+type HomeTab = 'market' | 'calibration' | 'system';
+
+const TAB_LABELS: Record<HomeTab, string> = {
+  market: 'Marché',
+  calibration: 'Calibration',
+  system: 'Système',
+};
+
+const TAB_ORDER: HomeTab[] = ['market', 'calibration', 'system'];
 
 interface HealthState {
   status: 'idle' | 'loading' | 'ok' | 'error';
@@ -59,6 +73,8 @@ export default function HomeScreen() {
   const { client, baseUrl } = useAuth();
   const colorScheme = useColorScheme() ?? 'light';
   const palette = Colors[colorScheme];
+
+  const [activeTab, setActiveTab] = useState<HomeTab>('market');
 
   const [healthState, setHealthState] = useState<HealthState>(INITIAL_HEALTH);
 
@@ -141,22 +157,130 @@ export default function HomeScreen() {
     );
   };
 
-  return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#0a7ea4', dark: '#0d2a3d' }}
-      headerImage={
-        <ThemedText style={[styles.headerLogo, { fontFamily: Fonts.rounded }]}>
-          Tik
-        </ThemedText>
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Dashboard</ThemedText>
+  // Marché : vue trading manuel quotidien (cf. backlog #5 Levier B+D).
+  const renderMarketTab = () => (
+    <>
+      <TopHeadlinesCard
+        headlines={headlinesState.headlines}
+        entityId={headlinesEntity}
+        onEntityChange={setHeadlinesEntity}
+        displayLimit={5}
+        loading={headlinesState.loading}
+        error={headlinesState.error}
+      />
+
+      <ThemedView style={[styles.card, { borderColor: palette.icon }]}>
+        {kpis.veracity ? (
+          <>
+            <VeracityGauge value={kpis.veracity.global_veracity} status={kpis.veracity.status} />
+            <ThemedText style={styles.metaText}>
+              {kpis.veracity.sources_count_active} source(s) active(s) · dernière computation {timeAgo(kpis.veracity.last_computed)}
+            </ThemedText>
+          </>
+        ) : kpis.veracityError ? (
+          <ThemedText style={styles.errorText}>Veracity indisponible : {kpis.veracityError}</ThemedText>
+        ) : kpis.loading ? (
+          <ActivityIndicator />
+        ) : (
+          <ThemedText style={{ opacity: 0.6 }}>Veracity inconnue.</ThemedText>
+        )}
       </ThemedView>
 
-      <ThemedText>
-        Visualisation temps réel des signaux OSINT produits par le core Tik.
-      </ThemedText>
+      <MacroEventsCard
+        events={macroEventsState.events}
+        loading={macroEventsState.loading}
+        error={macroEventsState.error}
+        displayLimit={4}
+      />
 
+      <ThemedView style={styles.section}>
+        <ThemedText type="subtitle">Dernier signal par actif</ThemedText>
+        <ThemedView style={styles.kpiRow}>
+          {renderEntityCard('BTC')}
+          {renderEntityCard('GOLD')}
+        </ThemedView>
+      </ThemedView>
+
+      <ThemedView style={styles.section}>
+        <ThemedText type="subtitle">Activité 24 h</ThemedText>
+        <ThemedView style={styles.kpiRow}>
+          <KpiCard title="Total" value={kpis.signalsByHorizon.total.toString()} subtitle="signaux émis" />
+          <KpiCard title="Flash" value={kpis.signalsByHorizon.flash.toString()} />
+        </ThemedView>
+        <ThemedView style={styles.kpiRow}>
+          <KpiCard title="Swing" value={kpis.signalsByHorizon.swing.toString()} />
+          <KpiCard title="Macro" value={kpis.signalsByHorizon.macro.toString()} />
+        </ThemedView>
+        {kpis.signals24hError ? (
+          <ThemedText style={styles.errorText}>
+            Activité indisponible : {kpis.signals24hError}
+          </ThemedText>
+        ) : null}
+      </ThemedView>
+    </>
+  );
+
+  // Calibration : vue d'audit consultée en début de journée (cf. backlog #5).
+  const renderCalibrationTab = () => (
+    <>
+      <HitRateCard
+        data={hitRateState.data}
+        entityId={hitRateEntity}
+        horizon={hitRateHorizon}
+        includeFlagged={hitRateIncludeFlagged}
+        onEntityChange={setHitRateEntity}
+        onHorizonChange={setHitRateHorizon}
+        onIncludeFlaggedChange={setHitRateIncludeFlagged}
+        loading={hitRateState.loading}
+        error={hitRateState.error}
+      />
+
+      <HitRateByVeracityCard
+        data={hitRateByVeracityState.data}
+        entityId={hitRateEntity}
+        horizon={hitRateHorizon}
+        loading={hitRateByVeracityState.loading}
+        error={hitRateByVeracityState.error}
+      />
+
+      <ThemedView style={[styles.card, { borderColor: palette.icon }]}>
+        <ThemedText type="defaultSemiBold">Tendance veracity</ThemedText>
+        {kpis.veracitySeries.length >= 2 ? (
+          <>
+            <ThemedText style={styles.veracityStats}>
+              min {(Math.min(...kpis.veracitySeries) * 100).toFixed(0)}% · actuelle{' '}
+              {(kpis.veracitySeries[kpis.veracitySeries.length - 1] * 100).toFixed(0)}% · max{' '}
+              {(Math.max(...kpis.veracitySeries) * 100).toFixed(0)}%
+            </ThemedText>
+            <ThemedText style={styles.veracitySubtitle}>
+              {kpis.veracitySeries.length} derniers signaux · ~24 dernières heures
+            </ThemedText>
+          </>
+        ) : null}
+        <MiniSparkline
+          values={kpis.veracitySeries}
+          height={80}
+          color={Colors.light.tint}
+          thresholds={[0.7, 0.85]}
+          autoScale
+          emptyMessage="Pas assez de signaux pour tracer"
+        />
+        <ThemedView style={styles.legendRow}>
+          <ThemedText style={styles.legendItem}>tirets : seuils 0,70 et 0,85</ThemedText>
+        </ThemedView>
+      </ThemedView>
+
+      <StatsLLMCard
+        stats={kpis.llmStatsToday}
+        loading={kpis.loading}
+        error={kpis.signals24hError}
+      />
+    </>
+  );
+
+  // Système : état du core + version + lien onglets secondaires.
+  const renderSystemTab = () => (
+    <>
       <ThemedView style={[styles.statusBox, { borderColor: statusColor[healthState.status] }]}>
         <ThemedView style={styles.statusHeader}>
           <ThemedText type="defaultSemiBold">État du core</ThemedText>
@@ -190,128 +314,6 @@ export default function HomeScreen() {
         </Pressable>
       </ThemedView>
 
-      <ThemedView style={[styles.card, { borderColor: palette.icon }]}>
-        {kpis.veracity ? (
-          <>
-            <VeracityGauge value={kpis.veracity.global_veracity} status={kpis.veracity.status} />
-            <ThemedText style={styles.metaText}>
-              {kpis.veracity.sources_count_active} source(s) active(s) · dernière computation {timeAgo(kpis.veracity.last_computed)}
-            </ThemedText>
-          </>
-        ) : kpis.veracityError ? (
-          <ThemedText style={styles.errorText}>Veracity indisponible : {kpis.veracityError}</ThemedText>
-        ) : kpis.loading ? (
-          <ActivityIndicator />
-        ) : (
-          <ThemedText style={{ opacity: 0.6 }}>Veracity inconnue.</ThemedText>
-        )}
-      </ThemedView>
-
-      <StatsLLMCard
-        stats={kpis.llmStatsToday}
-        loading={kpis.loading}
-        error={kpis.signals24hError}
-      />
-
-      <HitRateCard
-        data={hitRateState.data}
-        entityId={hitRateEntity}
-        horizon={hitRateHorizon}
-        includeFlagged={hitRateIncludeFlagged}
-        onEntityChange={setHitRateEntity}
-        onHorizonChange={setHitRateHorizon}
-        onIncludeFlaggedChange={setHitRateIncludeFlagged}
-        loading={hitRateState.loading}
-        error={hitRateState.error}
-      />
-
-      <HitRateByVeracityCard
-        data={hitRateByVeracityState.data}
-        entityId={hitRateEntity}
-        horizon={hitRateHorizon}
-        loading={hitRateByVeracityState.loading}
-        error={hitRateByVeracityState.error}
-      />
-
-      <TopHeadlinesCard
-        headlines={headlinesState.headlines}
-        entityId={headlinesEntity}
-        onEntityChange={setHeadlinesEntity}
-        displayLimit={5}
-        loading={headlinesState.loading}
-        error={headlinesState.error}
-      />
-
-      <MacroEventsCard
-        events={macroEventsState.events}
-        loading={macroEventsState.loading}
-        error={macroEventsState.error}
-        displayLimit={4}
-      />
-
-      <ThemedView style={styles.section}>
-        <ThemedText type="subtitle">Activité 24 h</ThemedText>
-        <ThemedView style={styles.kpiRow}>
-          <KpiCard title="Total" value={kpis.signalsByHorizon.total.toString()} subtitle="signaux émis" />
-          <KpiCard title="Flash" value={kpis.signalsByHorizon.flash.toString()} />
-        </ThemedView>
-        <ThemedView style={styles.kpiRow}>
-          <KpiCard title="Swing" value={kpis.signalsByHorizon.swing.toString()} />
-          <KpiCard title="Macro" value={kpis.signalsByHorizon.macro.toString()} />
-        </ThemedView>
-        {kpis.signals24hError ? (
-          <ThemedText style={styles.errorText}>
-            Activité indisponible : {kpis.signals24hError}
-          </ThemedText>
-        ) : null}
-      </ThemedView>
-
-      <ThemedView style={styles.section}>
-        <ThemedText type="subtitle">Dernier signal par actif</ThemedText>
-        <ThemedView style={styles.kpiRow}>
-          {renderEntityCard('BTC')}
-          {renderEntityCard('GOLD')}
-        </ThemedView>
-      </ThemedView>
-
-      <ThemedView style={[styles.card, { borderColor: palette.icon }]}>
-        <ThemedText type="defaultSemiBold">Tendance veracity</ThemedText>
-        {kpis.veracitySeries.length >= 2 ? (
-          <>
-            <ThemedText style={styles.veracityStats}>
-              min {(Math.min(...kpis.veracitySeries) * 100).toFixed(0)}% · actuelle{' '}
-              {(kpis.veracitySeries[kpis.veracitySeries.length - 1] * 100).toFixed(0)}% · max{' '}
-              {(Math.max(...kpis.veracitySeries) * 100).toFixed(0)}%
-            </ThemedText>
-            <ThemedText style={styles.veracitySubtitle}>
-              {kpis.veracitySeries.length} derniers signaux · ~24 dernières heures
-            </ThemedText>
-          </>
-        ) : null}
-        <MiniSparkline
-          values={kpis.veracitySeries}
-          height={80}
-          color={Colors.light.tint}
-          thresholds={[0.7, 0.85]}
-          autoScale
-          emptyMessage="Pas assez de signaux pour tracer"
-        />
-        <ThemedView style={styles.legendRow}>
-          <ThemedText style={styles.legendItem}>tirets : seuils 0,70 et 0,85</ThemedText>
-        </ThemedView>
-      </ThemedView>
-
-      <ThemedView style={styles.section}>
-        <ThemedText type="subtitle">Roadmap Paquet 3</ThemedText>
-        <ThemedText>
-          • Session 1 : Bootstrap & Hello World (livrée){'\n'}
-          • Session 2 : Auth + client HTTP (livrée){'\n'}
-          • Session 3 : WebSocket + Signals Feed (livrée){'\n'}
-          • Session 4 : KPIs Home + Charts (livrée){'\n'}
-          • Session 5 : Alerts + Bots + Config + Push (en cours)
-        </ThemedText>
-      </ThemedView>
-
       <ThemedView style={styles.versionBox}>
         <ThemedText style={styles.versionText}>
           tik-dashboard v{APP_VERSION} — Expo SDK 54 — plateforme {Platform.OS}
@@ -319,7 +321,65 @@ export default function HomeScreen() {
         <ThemedText style={styles.versionText}>
           Pour modifier les credentials ou se déconnecter, voir l’onglet Config.
         </ThemedText>
+        <ThemedText style={styles.versionText}>
+          Autres onglets : Signals (flux WS) · Watchlist · Alerts · Bots · Config.
+        </ThemedText>
       </ThemedView>
+    </>
+  );
+
+  const tabContent: Record<HomeTab, ReactNode> = {
+    market: renderMarketTab(),
+    calibration: renderCalibrationTab(),
+    system: renderSystemTab(),
+  };
+
+  return (
+    <ParallaxScrollView
+      headerBackgroundColor={{ light: '#0a7ea4', dark: '#0d2a3d' }}
+      headerImage={
+        <ThemedText style={[styles.headerLogo, { fontFamily: Fonts.rounded }]}>
+          Tik
+        </ThemedText>
+      }>
+      <ThemedView style={styles.titleContainer}>
+        <ThemedText type="title">Dashboard</ThemedText>
+      </ThemedView>
+
+      <ThemedText>
+        Visualisation temps réel des signaux OSINT produits par le core Tik.
+      </ThemedText>
+
+      <ThemedView style={styles.tabBar}>
+        {TAB_ORDER.map((tab) => {
+          const isActive = tab === activeTab;
+          return (
+            <Pressable
+              key={tab}
+              onPress={() => setActiveTab(tab)}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: isActive }}
+              style={({ pressed }) => [
+                styles.tabButton,
+                {
+                  backgroundColor: isActive ? Colors.light.tint : 'transparent',
+                  borderColor: isActive ? Colors.light.tint : palette.icon,
+                  opacity: pressed ? 0.7 : 1,
+                },
+              ]}>
+              <ThemedText
+                style={[
+                  styles.tabLabel,
+                  { color: isActive ? '#ffffff' : palette.text },
+                ]}>
+                {TAB_LABELS[tab]}
+              </ThemedText>
+            </Pressable>
+          );
+        })}
+      </ThemedView>
+
+      {tabContent[activeTab]}
     </ParallaxScrollView>
   );
 }
@@ -340,6 +400,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     marginBottom: 8,
+  },
+  tabBar: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  tabButton: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  tabLabel: {
+    fontSize: 14,
+    fontWeight: '600',
   },
   statusBox: {
     marginTop: 16,
