@@ -464,3 +464,150 @@ Garde-fou 1 (Tik shadow vs Zeta) **inchangé**. ADR-003 (pas de bypass
 V01-V15) **inchangé**. ADR-004 (multi-overlay) **renforcé** (devient le
 cerveau principal). Le refactor est **interne à Tik**, n'affecte ni
 l'intégration Zeta ni la sécurité du capital.
+
+---
+
+## 7. Calibrations & validations à faire post Paquets 19-22 (identifiées 2026-05-16)
+
+**Date d'identification** : 2026-05-16 (J+2 trading manuel, fin de
+session de livraison Paquets 21+22)
+
+**Contexte** : la session du 2026-05-16 a livré 4 commits sur main
+(Paquet 19 doc / fix GDELT timing / P6 anomalies / Option B SDK alias)
+qui introduisent **3 nouveaux paramètres calibrés au pifomètre raisonné**
++ **3 actions runtime à effectuer côté Mac/HP** que l'utilisatrice ne
+peut pas faire depuis cette session Claude (l'environnement serveur
+Linux n'a pas Docker / pas de pytest local / pas de Tik core qui tourne).
+
+Cette entrée trace **toutes les calibrations et validations encore à
+faire** pour ne rien oublier. Une partie est conditionnée à des
+événements futurs (J+30, câblage Zeta = 3 mois shadow), une autre est
+actionnable dès la prochaine session sur le Mac/HP.
+
+### A. Actions runtime à faire dès la prochaine session Mac/HP (~30 min cumulés)
+
+#### A.1 — Re-run du backtest P2 GDELT (commit `a7ef93d`)
+
+Le fix `GDELT_MIN_BACKOFF_S = 6` permet enfin au backtest 12m de
+récupérer les vraies mesures GDELT GOLD (vs 0 points avant le fix).
+Commande à lancer (Tik core doit tourner) :
+
+```bash
+docker compose -f core/docker-compose.yml exec tik-core \
+  python -m tik_core.scripts.backtest_numeric_sources \
+  --days-back 365 \
+  --output-json core/data/numeric_calibration/numeric_calibration_report.json \
+  --output-md core/data/numeric_calibration/numeric_calibration_report.md \
+  --fred-api-key TON_API_KEY_FRED
+```
+
+Une fois le re-run effectué, mettre à jour CLAUDE.md Paquet 19 section
+P2 avec les nouveaux chiffres GDELT GOLD (`n_history_fetched.gdelt_tone`
+devrait passer de 0 à ~365 points). Décision GDELT BTC peut alors être
+tranchée (P3 plan stratégique).
+
+#### A.2 — Validation pytest suite complète
+
+Côté Mac/HP, lancer la suite complète pour confirmer 988 verts (954 base
++ 31 anomaly_detector + 3 backoff floor) :
+
+```bash
+docker compose -f core/docker-compose.yml exec tik-core pytest -v
+```
+
+Si régression inattendue, m'envoyer le log d'erreur dans la prochaine
+session Claude pour diagnostic.
+
+#### A.3 — Restart ingesters + observation runtime P6
+
+Pour que la détection anomalies P6 soit active :
+
+```bash
+docker compose -f core/docker-compose.yml restart ingesters
+```
+
+Puis observer pendant 1-2 cycles (~30 min) que :
+- Les payloads Redis contiennent bien la nouvelle clé `anomaly` (ex.
+  `redis-cli GET tik.sentiment.reddit.btc | jq .anomaly`)
+- Aucun log `*.anomaly_detected` ne flag tous les cycles (= seuils
+  trop bas, faux positifs)
+- La baseline CryptoCompare se construit progressivement (key
+  `tik.anomaly.baseline.cryptocompare.btc` apparaît dans Redis)
+
+### B. Calibrations empiriques à faire post-J+30 (entre 2026-05-31 et 2026-06-15)
+
+#### B.1 — Recalibration seuils P6 anomalies (Paquet 21)
+
+Les seuils suivants sont calibrés au pifomètre raisonné dans
+`anomaly_detector.py` :
+
+| Constante | Valeur | À recalibrer ? |
+|---|---|---|
+| `BRIGADING_THRESHOLD_HIGH` | 1.0 | Oui — observer 30j de ratios réels Reddit pour calibrer le 99e percentile |
+| `BRIGADING_THRESHOLD_MEDIUM` | 0.5 | Idem (75e percentile) |
+| `BRIGADING_MIN_POSTS` | 3 | Probablement OK |
+| `PUBLISHER_DOMINANCE_THRESHOLD_HIGH` | 0.70 | Oui — observer 30j Google News pour calibrer (Yahoo Finance déjà à 40% sur certains cycles) |
+| `PUBLISHER_DOMINANCE_THRESHOLD_MEDIUM` | 0.50 | Idem |
+| `VOLUME_SPIKE_THRESHOLD_HIGH` | 5.0× | Oui — un vrai event macro peut générer un pic légitime |
+| `VOLUME_SPIKE_THRESHOLD_MEDIUM` | 3.0× | Idem |
+
+Méthodologie suggérée : exporter 30 jours de logs `*.anomaly_detected`
+et `*.published` (avec `anomaly_score`), calculer les distributions
+réelles, ajuster les seuils sur les 90e/99e percentiles.
+
+#### B.2 — Validation/recalibration `OSINT_MIN_STRENGTH` (Paquet 22)
+
+Constante du pattern Zeta dans `docs/integration_zeta.md` :
+`OSINT_MIN_STRENGTH = 0.6`. Calibrée au pifomètre. Sera validée
+empiriquement quand Zeta sera câblé en mode shadow (Garde-fou 1 = 3
+mois minimum à compter de J+14, donc validation ~mi-août 2026).
+
+Méthodologie : compter sur 30 jours de signaux Tik la proportion de
+cycles où `osint_conviction × veracity > 0.6`. Si > 80% des cycles
+passent ce seuil → seuil trop bas (Tik module trop souvent). Si <
+10% → seuil trop haut (Tik n'apporte presque rien). Cible idéale
+~30-50% des cycles.
+
+#### B.3 — Re-mesure DXY/COT GOLD post période bear (amendement ADR-018 P2)
+
+Décision désactivation `gold_dxy_cot_overlays_enabled = False` faite
+le 2026-05-07 sur backtest 12m bullish. Critère de réactivation
+explicite (cf. ADR-018 amendement P2) :
+
+> Sur une période diversifiée (incluant idéalement un drawdown gold
+> ≥ 5 %) :
+> - Si IC Spearman DXY @ 120h **redevient négatif** ET cas extrêmes
+>   hit rate ≥ 50 % → réactiver `TIK_GOLD_DXY_COT_OVERLAYS_ENABLED=true`
+> - Sinon : maintenir désactivés et planifier P4 (refonte mappings
+>   sources)
+
+### C. Conditionnel — Câblage Zeta (post 3 mois shadow Tik vs Zeta)
+
+#### C.1 — Adoption pattern overlay Paquet 22
+
+Quand le Garde-fou 1 (mode shadow Tik vs Zeta 3 mois) sera levé (~mi-
+août 2026 si trading manuel J+14 = 2026-05-14), le pattern
+`docs/integration_zeta.md` Paquet 22 doit être adopté dans
+`cranial_bot/turbo_v2.py` :
+- Utiliser `tik.osint_conviction` (alias SDK 0.6.0+) au lieu de
+  `tik.confidence`
+- Implémenter le seuil `OSINT_MIN_STRENGTH = 0.6` avant modulation
+- Utiliser le pattern `adjustment` proportionnel au-dessus du seuil
+
+NE PAS revenir au pattern linéaire 2026-04-30 sans relire ADR-018 +
+CLAUDE.md Paquet 22.
+
+### Résumé : « Que faire concrètement avec ces calibrations ? »
+
+| Quand | Action | Effort |
+|---|---|---|
+| Prochaine session Mac/HP | A.1 re-run backtest GDELT + A.2 pytest validation + A.3 restart ingesters | ~30 min |
+| Post-J+30 (mi-juin 2026) | B.1 recalibration seuils P6 selon distributions réelles | ~1h analyse |
+| Post-période bear gold | B.3 re-mesure DXY/COT, possible réactivation overlays | ~30 min mesure |
+| Post-câblage Zeta shadow (mi-août 2026) | B.2 validation `OSINT_MIN_STRENGTH` + C.1 adoption pattern | Conditionnel |
+
+### Risque rappelé
+
+Garde-fou 1 inchangé. Garde-fou 2-bis inchangé. ADR-003 inchangé.
+ADR-004 inchangé. ADR-011 inchangé. ADR-018 renforcé (calibrations
+listées ici amélioreront empiriquement les choix pifomètre actuels).
