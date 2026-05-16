@@ -181,7 +181,14 @@ class TestFetchGdeltToneHistory:
         assert result[0]["value"] == -1.5
         assert result[1]["value"] == 0.5
 
-    async def test_429_retry_then_success(self):
+    async def test_429_retry_then_success(self, monkeypatch):
+        # Override le backoff minimum pour ne pas ralentir les tests
+        # (bug fix P3 GDELT du 2026-05-16 : production utilise 6 s pour
+        # respecter le rate-limit GDELT 1 req / 5 s).
+        monkeypatch.setattr(
+            "tik_core.scripts.fetch_numeric_history.GDELT_MIN_BACKOFF_S",
+            0,
+        )
         call_count = {"n": 0}
 
         async def handler(request: httpx.Request) -> httpx.Response:
@@ -198,7 +205,11 @@ class TestFetchGdeltToneHistory:
         assert call_count["n"] == 2  # 1 raté + 1 réussi
         assert len(result) == 1
 
-    async def test_429_persistent_returns_empty(self):
+    async def test_429_persistent_returns_empty(self, monkeypatch):
+        monkeypatch.setattr(
+            "tik_core.scripts.fetch_numeric_history.GDELT_MIN_BACKOFF_S",
+            0,
+        )
         call_count = {"n": 0}
 
         async def handler(request: httpx.Request) -> httpx.Response:
@@ -211,6 +222,39 @@ class TestFetchGdeltToneHistory:
         # 4 tentatives totales (initiale + 3 retries)
         assert call_count["n"] == 4
         assert result == []
+
+    async def test_429_backoff_respects_min_floor(self, monkeypatch):
+        """Vérifie le fix P3 GDELT (2026-05-16) : le backoff retry est
+        capé en bas par GDELT_MIN_BACKOFF_S pour respecter le rate-limit
+        GDELT 1 req / 5 s. Sans ce fix, le 1er retry à 2 s retombait
+        systématiquement sur 429 et on épuisait les 4 tentatives en 30 s
+        sans jamais récupérer la donnée (cause du bug 0 points backtest
+        P2). Test : backoff >= GDELT_MIN_BACKOFF_S même si exponentiel
+        donnerait moins.
+        """
+        sleeps: list[float] = []
+
+        async def fake_sleep(s: float) -> None:
+            sleeps.append(s)
+
+        monkeypatch.setattr(
+            "tik_core.scripts.fetch_numeric_history.asyncio.sleep",
+            fake_sleep,
+        )
+        monkeypatch.setattr(
+            "tik_core.scripts.fetch_numeric_history.GDELT_MIN_BACKOFF_S",
+            6,
+        )
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(429, text="Too Many Requests")
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            await fetch_gdelt_tone_history(days_back=30, client=client)
+
+        # 3 retries → 3 backoffs. Pattern attendu : max(6, 2^(n+1))
+        # → max(6, 2)=6, max(6, 4)=6, max(6, 8)=8
+        assert sleeps == [6, 6, 8]
 
     async def test_malformed_timeline_returns_empty(self):
         async def handler(request: httpx.Request) -> httpx.Response:

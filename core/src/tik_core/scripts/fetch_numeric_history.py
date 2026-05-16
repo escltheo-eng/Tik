@@ -32,6 +32,16 @@ GOLD_COMEX_CODE = "088691"
 
 GDELT_USER_AGENT = "tik-osint-bot/0.1 (research; contact escltheo@gmail.com)"
 
+# GDELT impose un rate limit de 1 requête / 5 secondes par IP (cf. message
+# d'erreur 429 "Please limit requests to one every 5 seconds"). Le backoff
+# du retry doit donc respecter ce minimum, sinon le 1er retry retombe sur
+# 429 et on épuise les 4 tentatives avant que la fenêtre rate-limit se
+# libère. Cause racine du bug Paquet 19 P2 backtest GDELT 0 points (cf.
+# CLAUDE.md investigation P3 du 2026-05-16). Module-level pour permettre
+# le monkey-patch dans les tests (sinon backoff 6 s × 3 retries = 18 s par
+# test 429 = trop lent).
+GDELT_MIN_BACKOFF_S = 6
+
 
 async def fetch_fear_greed_history(
     days_back: int = 365,
@@ -115,7 +125,10 @@ async def fetch_gdelt_tone_history(
                 break
             except httpx.HTTPStatusError as exc:
                 if exc.response.status_code == 429 and attempt < 3:
-                    backoff_s = 2 ** (attempt + 1)  # 2, 4, 8, 16s
+                    # Cf. constante GDELT_MIN_BACKOFF_S ci-dessus pour le
+                    # raisonnement (1 req / 5 s GDELT, fix bug 0 points
+                    # backtest P2). Backoff = max(min, exponentiel).
+                    backoff_s = max(GDELT_MIN_BACKOFF_S, 2 ** (attempt + 1))
                     log.warning(
                         "fetch_gdelt_history.rate_limited",
                         attempt=attempt + 1,
