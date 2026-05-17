@@ -51,6 +51,10 @@ services:
       TIK_REDIS_HOST: redis
     ports:
       - "8200:8200"
+    extra_hosts:
+      # Permet aux containers d'atteindre Ollama installé sur l'hôte.
+      # `host-gateway` est un alias Docker → IP du hôte sur la bridge.
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy
@@ -78,6 +82,8 @@ services:
     environment:
       TIK_DB_HOST: postgres
       TIK_REDIS_HOST: redis
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       core:
         condition: service_started
@@ -102,6 +108,8 @@ services:
     environment:
       TIK_DB_HOST: postgres
       TIK_REDIS_HOST: redis
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       core:
         condition: service_started
