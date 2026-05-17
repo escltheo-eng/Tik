@@ -102,9 +102,22 @@ async def ws_signals(
                 continue
             try:
                 parsed = json.loads(data) if isinstance(data, str) else data
+            except (json.JSONDecodeError, TypeError) as exc:
+                # Payload mal formé côté publisher — on log et on continue
+                # avec le message suivant (les autres clients reçoivent OK).
+                log.warning("ws.payload_invalid", error=str(exc))
+                continue
+            try:
                 await websocket.send_json({"type": "signal", "payload": parsed})
             except Exception as exc:  # noqa: BLE001
-                log.warning("ws.send_failed", error=str(exc))
+                # Client déconnecté (RuntimeError "Cannot call 'send' once a
+                # close message has been sent." / ConnectionClosed). Sortie
+                # de la boucle pour laisser le finally libérer pubsub/redis,
+                # sinon coroutine zombie qui spam les warnings à chaque
+                # nouveau signal Redis publié → event loop sature → API
+                # FastAPI hang sur /api/v1/* (cf. bug runtime 2026-05-17).
+                log.info("ws.client_gone", client_id=key.client_id, error=str(exc))
+                break
     except WebSocketDisconnect:
         log.info("ws.disconnected", client_id=key.client_id)
     finally:
