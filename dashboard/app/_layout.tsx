@@ -57,7 +57,7 @@ function RootLayoutNav() {
           </Stack>
         </WatchlistProvider>
       </AlertsProvider>
-      <StatusBar style="dark" />
+      <StatusBar style="auto" />
     </ThemeProvider>
   );
 }
