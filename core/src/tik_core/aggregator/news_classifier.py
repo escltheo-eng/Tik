@@ -107,11 +107,11 @@ class NewsClassifier(ABC):
         """Retourne (n_bull, n_bear) — chaque valeur est 0 ou 1 par titre."""
         ...
 
-    def reset_batch(self) -> None:
+    def reset_batch(self) -> None:  # noqa: B027 — hook intentionnellement no-op par défaut, surchargé par OllamaClassifier
         """Hook appelé en début de cycle. No-op par défaut, surchargé par
         OllamaClassifier pour réarmer son circuit breaker."""
 
-    async def aclose(self) -> None:
+    async def aclose(self) -> None:  # noqa: B027 — hook intentionnellement no-op par défaut (libération de ressources optionnelle)
         """Libère les ressources (clients HTTP, etc.). No-op par défaut."""
 
 

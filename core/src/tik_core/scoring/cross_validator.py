@@ -240,10 +240,10 @@ def cross_validate(
     outliers = detect_outliers_modified_zscore(biases, threshold=zscore_threshold)
 
     valid_biases = [v for src, v in biases.items() if src not in outliers]
-    if valid_biases:
-        combined = sum(valid_biases) / len(valid_biases)
-    else:
-        combined = statistics.median(values)
+    combined = (
+        sum(valid_biases) / len(valid_biases) if valid_biases
+        else statistics.median(values)
+    )
 
     # Status par ratio d'outliers individuels
     ratio = len(outliers) / n
