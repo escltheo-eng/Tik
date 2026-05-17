@@ -1,0 +1,370 @@
+# Backlog couches OSINT structurées — décision 2026-05-17
+
+## Pourquoi ce fichier existe
+
+Tik est une plateforme OSINT modulaire conçue comme cerveau analytique
+en amont de Zeta + Totem + bots futurs (cf. CLAUDE.md sections 1 et 3).
+Le SDK Python Paquet 2 existe pour servir ces consommateurs. Tik doit
+être plus complet et structuré qu'un simple outil de trading manuel :
+il doit produire des **couches stables exploitables programmatiquement
+par des bots**.
+
+Ce fichier existe pour **trois raisons distinctes** :
+
+1. **CLAUDE.md fait déjà ~263 KB** (largement au-dessus du seuil de
+   confort 218 KB documenté dans le prompt initial). Ajouter encore
+   200+ lignes de backlog OSINT directement dedans alourdit son
+   chargement automatique pour toute future session Claude.
+
+2. **Séparation des préoccupations** : CLAUDE.md documente l'**état
+   actuel** du projet (Paquets livrés, ADRs acceptés, bugs résolus,
+   garde-fous opérationnels). Ce fichier documente une **stratégie de
+   roadmap** sous condition (Vagues 1/2/3 à activer selon mesures
+   empiriques). Les deux ont des cycles de mise à jour différents :
+   CLAUDE.md évolue à chaque livraison, ce fichier évolue à chaque
+   point de réévaluation (J+44, J+90, etc.).
+
+3. **Sécurisation gestion couches futures** : ce backlog liste
+   explicitement ce qui est REFUSÉ (Arkham, Mempool Space,
+   Blockchain.com Explorer en doublon de Whale Alert ; miners flows ;
+   etc.). Cela protège contre les ajouts impulsifs en future session
+   qui ne respecteraient pas le principe directeur "pas d'ajout sans
+   manque mesuré".
+
+**Date de création** : 2026-05-17 (J+17 sur J+44 du trading manuel
+post-ADR-018).
+
+**Date de réévaluation prévue** : 2026-06-30 (J+44 du trading manuel
+décalé au 2026-05-24). Réévaluation post-J+90 prévue ~2026-08-22.
+
+---
+
+## Engagements méthodologiques actifs
+
+Ces principes encadrent **toute** future décision d'ajout/retrait des
+couches OSINT listées dans ce backlog. Ils ne sont pas négociables sans
+mise à jour explicite de ce fichier.
+
+### Principe directeur "pas d'ajout sans manque mesuré"
+
+Applicable aux Vagues 2 et 3 (pas à la Vague 1 dont la justification
+structurelle est documentée ci-dessous). Une instance Claude future
+qui voudrait coder une source Vague 2/3 doit d'abord prouver
+empiriquement (chiffres à l'appui) que son absence a fait rater des
+trades mesurables dans le journal de trading manuel.
+
+### Engagements 13bis (CLAUDE.md section 13bis)
+
+1. Lire le code AVANT d'affirmer
+2. Distinguer vision (CLAUDE.md / ce backlog) vs réalité (code)
+3. Se challenger quand la formulation suggère une réalité fragile
+4. Ne JAMAIS inventer de chiffres
+5. Vérifier hypothèses avant verdict
+6. Mea culpa déclaratif quand erreur découverte
+7. Re-questionnement sérieux si question reposée
+8. Mentionner 3-4 limites connues à chaque livraison
+9. Format pour/contre/verdict pour décisions techniques
+10. Mesurer plutôt que spéculer quand données accessibles
+11. Ne pas cumuler spécialisation marketing et implémentation hybride
+
+### Discipline opérationnelle Vague 1
+
+- **Une source à la fois**, pas en parallèle
+- **2 semaines de mesure** après chaque ajout AVANT la suivante
+- **Whale Alert avec seuils stricts** (≥ 10 M USD) pour éviter le bruit
+- **Documenter les hypothèses causales** pour chaque source
+  (pourquoi elle DOIT améliorer un signal Tik, avec arguments testables)
+
+### Métriques de mesure rigoureuses (engagement audit 2026-05-17)
+
+Quand on évalue si une source produit "des signaux exploitables", on
+mesure obligatoirement :
+
+- **IC Spearman** entre la nouvelle source et `delta_pct` futur (méthodo
+  Paquet 19 P2 backtest sources numériques)
+- **Hit rate par palier de bias** sur 6-12 mois historique
+- **Stabilité cycle-à-cycle** (variance des sorties, comme cache
+  sentiment Lacune C Paquet 9)
+- **Coverage** : % de cycles où la source produit un signal non-neutre
+
+Sans ces 4 métriques chiffrées, "2 semaines de mesure" reste de
+l'observation subjective.
+
+---
+
+## VAGUE 1 — À CODER POST-J+14 (justification structurelle)
+
+**Garde-fou timing** : recommandation explicite NE RIEN coder avant le
+trading manuel J+14 (décalé au 2026-05-24). Stabilité du runtime >
+nouveautés. Tik doit rester sur l'infra connue pendant que la
+trader manuelle se familiarise avec BTC + GOLD existants.
+
+Les 5 éléments suivants sont à coder **dans cet ordre** (séquentiel
+strict, une source à la fois, mesure 2 semaines entre chaque).
+
+### V1.1 — Silver (XAG/USD) en **entité tradable indépendante**
+
+**Statut** : à coder en Vague 1, premier élément si la trader veut
+diversifier vers les métaux. **Distinction critique vs prompt initial
+ChatGPT** : Silver est PRODUIT INDÉPENDANT tradable, PAS overlay
+contextuel GOLD.
+
+**Justification structurelle** : (a) métal précieux corrélé GOLD avec
+décalage temporel exploitable, (b) volatilité 2-3× supérieure à GOLD
+(opportunités trades plus fréquentes), (c) infra Tik 80 % réutilisable
+côté BTC/GOLD existants.
+
+**Stack technique attendu** :
+- Ingester prix : Yahoo Finance `SI=F` (futures) ou `XAGUSD=X` (spot).
+  Polling identique à GOLD (60s).
+- Overlays disponibles : Google News (query "silver price"), GDELT
+  (mapping à recalibrer car silver n'a pas la même sémantique safe
+  haven que gold), COT silver (CFTC publie aussi), possiblement
+  r/Silverbugs (Reddit) si volume suffisant.
+- Engine swing : adaptation de `analyze_swing_gold` (mêmes seuils
+  directionnalité initialement, à recalibrer post-J+30).
+- Track record + hit rate : extension automatique via dispatch horizon
+  (déjà supporté Paquet 17).
+- Dashboard : ajouter `SILVER` à `ENTITY_FILTERS` des écrans Signals,
+  Watchlist, KPIs Home. Ajouter à `HORIZON_SPECS_BY_SIGNAL_HORIZON` si
+  flash silver pertinent (à valider — Yahoo a 15 min de délai comme
+  GOLD donc pas de flash silver, cohérent ADR-005).
+
+**Effort estimé** : ~4-6 h backend + ~1-2 h dashboard.
+
+**Hypothèses causales à valider** :
+1. Le Gold/Silver Ratio mesuré comme metric Tik secondaire (pas overlay)
+   peut produire des signaux de retour à la moyenne lors d'extrêmes
+2. Le COT silver montre-t-il des positionnements directionnels distincts
+   du COT gold (corrélation, pas identité) ?
+3. Les news "silver" sont-elles dominées par les mêmes publishers que
+   "gold" (Mining.com, KITCO, FXEmpire) ou diversifiées (Silver Institute,
+   etc.) ?
+
+**Marqueurs de réussite à 2 semaines** : IC Spearman ≥ 0.10 sur 6 mois
+historique × au moins un overlay, hit rate signaux directionnels swing
+silver > 35 % (vs 33 % random), coverage ≥ 30 % des cycles.
+
+---
+
+### V1.2 — WGC + SPDR GLD ETF flows Gold
+
+**Statut** : couche structurée OSINT, intégrée comme overlay swing GOLD
+(pas entité indépendante).
+
+**Justification structurelle** : (a) Tik a perdu ses 2 overlays GOLD
+(DXY + COT désactivés Paquet 19 amendement P2 par calibration empirique
+inversée), GOLD émet quasi exclusivement neutral aujourd'hui ; (b)
+demande institutionnelle ETF est l'angle dominant gold post-2024
+(SPDR GLD a ~70 G USD AUM, WGC publie monthly + weekly flows
+gratuitement) ; (c) data free, API stables (WGC publie en JSON
+téléchargeable).
+
+**Stack technique attendu** :
+- Ingester `wgc_etf_flows_ingester.py` : polling daily (les flows ETF
+  ne changent pas en intra-day), fetch WGC monthly + SPDR GLD daily.
+- Overlay `_enrich_with_gold_etf_flows` dans `analyze_swing_gold` :
+  inflow ETF persistant → bull GOLD ; outflow → bear GOLD.
+- Calibration mapping seuils : à mesurer post-déploiement sur 6 mois
+  historique (la mémoire WGC remonte à 2003).
+
+**Effort estimé** : ~3-5 h backend.
+
+**Hypothèses causales à valider** :
+1. Le delta hebdomadaire AUM SPDR GLD anticipe-t-il les mouvements gold
+   sur 5-30 jours (IC Spearman significatif) ?
+2. Le mapping trend-following (inflow = bull) tient-il aux extrêmes ?
+3. Coverage suffisante (~52 mesures hebdo/an pour SPDR + ~12 mensuelles
+   pour WGC) pour produire des signaux Tik ?
+
+---
+
+### V1.3 — Farside ETF flows BTC
+
+**Statut** : couche structurée OSINT, overlay swing BTC.
+
+**Justification structurelle** : (a) ETF BTC US ont >50 G USD AUM
+post-janvier 2024, dominant institutionnel mesurable ; (b) Farside
+publie quotidiennement le détail par fonds gratuitement ; (c) signal
+fortement actionable (inflow persistant net = thèse institutionnelle
+haussière).
+
+**Risque structurel identifié (audit 2026-05-17)** : Farside n'a pas
+d'API officielle, scrape HTML est fragile. **Plan B obligatoire dans
+le code** :
+- Fallback 1 : CoinShares Digital Asset Fund Flows Weekly Report (PDF
+  hebdo, lien stable, free)
+- Fallback 2 : SoSoValue API (en bêta mais agrégée propre)
+- Alerte si 3 cycles consécutifs sans data → log error + email/push
+
+**Stack technique attendu** :
+- Ingester `farside_btc_etf_ingester.py` : scrape HTML quotidien avec
+  fallback intégré.
+- Overlay `_enrich_with_btc_etf_flows` dans `analyze_swing_btc`.
+
+**Effort estimé** : ~4-6 h backend (dont fallback + monitoring).
+
+**À coder APRÈS V1.2** (mesure 2 semaines V1.2 d'abord).
+
+---
+
+### V1.4 — CoinGlass free tier (OI, funding, liquidations BTC)
+
+**Statut** : couche structurée OSINT, overlay swing BTC.
+
+**Justification structurelle** : détection baleines indirecte via
+positionnement dérivés (OI agrégé, funding rates extrêmes, liquidations
+massives).
+
+**Vérification rigoureuse OBLIGATOIRE avant code** : CoinGlass free tier
+expose-t-il vraiment les métriques utiles ? Aux dernières infos publiques
+(à revérifier au moment du codage) :
+- Free tier : OI agrégé multi-exchanges, funding agrégé. **Bon.**
+- Pro tier 29 $/mois : OI par exchange, funding par paire, données
+  granulaires. **Risque coût caché si on veut ces données fines.**
+
+**Plan d'action** :
+1. Auditer exactement ce que le free tier expose au moment du codage
+2. Si insuffisant → reporter à Vague 3 (avec ROI freemium démontré)
+3. Si suffisant → coder l'ingester + overlay
+
+**Effort estimé** : ~3-5 h (si free tier suffisant).
+
+**À coder APRÈS V1.3** (mesure 2 semaines V1.3 d'abord).
+
+---
+
+### V1.5 — Whale Alert BTC free tier
+
+**Statut** : couche structurée OSINT, overlay swing BTC.
+
+**Justification structurelle** : détection baleines directe (transferts
+on-chain > seuil USD).
+
+**Risques structurels documentés** :
+1. Les vraies baleines institutionnelles utilisent OTC desks (Coinbase
+   Prime, Genesis, Cumberland, B2C2) → **pas visibles on-chain**
+2. Whale Alert capte essentiellement les rebalancing inter-exchange
+   (rarement représentatif d'un trader directionnel)
+3. Signal/bruit difficile à calibrer sans dataset golden
+
+**Plan d'action** :
+- Seuil strict ≥ 10 M USD (engagement prompt initial)
+- Filtre direction : wallet → exchange = pression vendeuse ; exchange
+  → wallet = accumulation (mais souvent rebalancing exchange, pas trader)
+- **Calibration sur 6-12 mois historique obligatoire avant intégration
+  overlay** — si IC Spearman < 0.05, ne pas activer comme overlay,
+  garder en source d'evidence uniquement (visible dans dashboard mais
+  pas impact signal direction)
+
+**Effort estimé** : ~3-5 h dev + 1-2 h calibration.
+
+**À coder APRÈS V1.4** (mesure 2 semaines V1.4 d'abord, sauf décision
+de skip V1.4 si free tier CoinGlass insuffisant).
+
+---
+
+## VAGUE 2 — POST-J+44 (uniquement si manques mesurés)
+
+Date d'activation : pas avant 2026-06-30 (J+44 du trading manuel
+décalé). Codage **conditionné à manques récurrents documentés dans le
+journal de trading**.
+
+| Source | Condition de codage |
+|---|---|
+| Détection d'anomalies sur flux Vague 1 | Si Vague 1 codée et baseline accumulée ≥ 4 semaines |
+| Régime marché (risk-on/risk-off, classifieur FRED) | Si bots futurs (Zeta/Totem) en demandent un classifieur structuré |
+| Stress systémique (MOVE index, TED spread, crédit) | Si périodes bear/range observées rendent Vague 1 insuffisante |
+| Géopolitique (réactivation GDELT calibrée) | Si régime change vs périodes 2025-2026 calibrées Paquet 19 P2 |
+| Détection comportementale (euphorie/panique narrative) | Si signaux narratif Ollama existants insuffisants pour capter les renversements |
+
+**Pour chaque source, à fournir au moment de l'activation** :
+- 3 exemples de trades manqués documentés dans le journal qui auraient
+  été pris correctement si cette source avait existé
+- Métrique de coverage attendue
+- Plan B si source indisponible (similaire fallback Farside V1.3)
+
+---
+
+## VAGUE 3 — POST-J+90 (uniquement si edge mesurable)
+
+Date d'activation : pas avant ~2026-08-22 (J+90 du trading manuel
+décalé). Codage **conditionné à un edge mesurable des Vagues 1+2** sur
+journal de trading.
+
+| Source | Condition |
+|---|---|
+| Glassnode Pro / CryptoQuant Pro (30-50 $/mois) | Si ROI freemium démontré (delta hit rate ≥ 5 points) justifie l'investissement |
+| Corrélation dynamique multi-actifs | Si complexité statistique justifiée par bots futurs Zeta/Totem |
+| Platinum (XPT/USD), Palladium (XPD/USD) | Si Silver V1.1 démontre sa valeur en cross-asset |
+| **EUR/USD comme entité tradable** | Réservé. Activable plus tôt si trader change d'avis (cf. message utilisatrice 2026-05-17). Mesure d'avant : divergence DXY/EUR-USD a-t-elle fait rater des trades Gold ? |
+| ETH comme entité tradable | Réservé. À reconsidérer si la trader veut diversifier post-J+90 |
+
+**Mes 4 limites rappelées** (cf. engagements 13bis) :
+1. Le coût payant 30-50 $/mois doit être justifié par un edge mesurable,
+   pas par "ça pourrait être utile"
+2. EUR/USD réintroduit la logique forex différente de crypto/métaux —
+   architecture pipeline OSINT actuel pas testée sur cette classe
+3. ETH ajout massif côté infra mais reuse 90 % du code BTC = bon ratio
+4. Platinum/Palladium illiquides, info OSINT limitée — coût/bénéfice
+   incertain hors cycle économique chinois fort
+
+---
+
+## REFUSÉ INDÉFINIMENT (sauf justification nouvelle documentée)
+
+- **Arkham + Mempool Space + Blockchain.com Explorer** en plus de
+  Whale Alert (V1.5) → doublons fonctionnels
+- **Miners flows** → pertinence faible documentée par la communauté
+  crypto post-2022 (hash rate ne corrèle plus prix BTC depuis l'ère
+  ETF)
+
+Une instance Claude future qui voudrait réactiver l'un de ces refus
+doit d'abord fournir un argumentaire écrit chiffré ET valider l'ajout
+de la justification dans ce fichier.
+
+---
+
+## Checklist réévaluation J+44 (2026-06-30)
+
+À remplir à la date de réévaluation par la session Claude qui pilote
+cette revue.
+
+```
+Vague 1 — état :
+[ ] Combien de sources codées : ___ / 5
+[ ] Lesquelles : _________________
+[ ] Depuis quand chacune (date première mesure) : _________________
+
+Pour chaque source codée — produit-elle des signaux exploitables ?
+[ ] V1.1 Silver : IC Spearman = ___ , hit rate = ___ %, coverage = ___ %
+[ ] V1.2 WGC GLD : IC Spearman = ___ , hit rate = ___ %, coverage = ___ %
+[ ] V1.3 Farside BTC : IC Spearman = ___ , hit rate = ___ %, coverage = ___ %
+[ ] V1.4 CoinGlass : IC Spearman = ___ , hit rate = ___ %, coverage = ___ %
+[ ] V1.5 Whale Alert : IC Spearman = ___ , hit rate = ___ %, coverage = ___ %
+
+Trading journal accumulé :
+[ ] Nombre de trades documentés depuis J+14 : ___
+[ ] Hit rate trader manuelle (signaux suivis) : ___ %
+[ ] Manques récurrents identifiés (3 max) : _________________
+
+Vague 2 — décision conditionnelle :
+[ ] Détection d'anomalies : manque récurrent confirmé ? oui / non
+[ ] Régime marché : bot futur en a-t-il demandé ? oui / non
+[ ] Stress systémique : période bear/range observée ? oui / non
+[ ] GDELT réactivation : régime de marché a-t-il changé ? oui / non
+[ ] Comportemental : signaux narratif insuffisants ? oui / non
+
+→ Coder en Vague 2 UNIQUEMENT les sources dont le manque est mesuré.
+→ Documenter chaque décision (coder ou skip) avec 3 lignes
+  d'argumentaire dans CLAUDE.md.
+```
+
+---
+
+## Historique des modifications
+
+- **2026-05-17** : création du fichier suite à demande utilisatrice
+  post-audit UX. Vague 1 cadrée (Silver en entité tradable, EUR/USD
+  reporté Vague 3 ou réactivable si demande utilisatrice). Engagements
+  méthodologiques rappelés. Date réévaluation J+44 fixée.
