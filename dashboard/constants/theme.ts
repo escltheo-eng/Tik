@@ -6,7 +6,12 @@
 import { Platform } from 'react-native';
 
 const tintColorLight = '#0a7ea4';
-const tintColorDark = '#fff';
+// 2026-05-17 : `#fff` posait un bug (boutons primary + pills actives avec
+// `backgroundColor: palette.tint` devenaient blancs avec texte blanc =
+// invisible). Choix d'un bleu accessible plus clair que le tint light
+// pour rester lisible sur fond `#151718` du mode sombre. Texte blanc
+// hardcodé sur ces boutons reste lisible sur ce bleu.
+const tintColorDark = '#4dabf5';
 
 export const Colors = {
   light: {
