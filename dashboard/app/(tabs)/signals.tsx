@@ -158,8 +158,8 @@ export default function SignalsScreen() {
       style={({ pressed }) => [
         styles.pill,
         {
-          backgroundColor: active ? Colors.light.tint : 'transparent',
-          borderColor: active ? Colors.light.tint : palette.icon,
+          backgroundColor: active ? palette.tint : 'transparent',
+          borderColor: active ? palette.tint : palette.icon,
           opacity: pressed ? 0.7 : 1,
         },
       ]}>

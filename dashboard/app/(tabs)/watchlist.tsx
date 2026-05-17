@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import { useMemo } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -56,6 +56,25 @@ export default function WatchlistScreen() {
     [entries],
   );
 
+  const confirmRemove = (entry: WatchlistEntry) => {
+    Alert.alert(
+      'Retirer de la watchlist ?',
+      `${entry.entityId} · ${entry.direction.toUpperCase()} · ${entry.horizon}`,
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Retirer',
+          style: 'destructive',
+          onPress: () => remove(entry.signalId),
+        },
+      ],
+    );
+  };
+
+  // F2 audit UX 2026-05-17 : 2 lignes lisibles.
+  //   Ligne 1 : entity · direction badge · horizon   |   timestamp
+  //   Ligne 2 : outcome badge · veracity %           (confidence retiré,
+  //             déjà visible dans le détail du signal)
   const renderEntry = (entry: WatchlistEntry) => {
     const dirColor = directionColor(entry.direction);
     const outcomeColor = OUTCOME_COLORS[entry.outcome];
@@ -74,32 +93,31 @@ export default function WatchlistScreen() {
               : 'transparent',
           },
         ]}>
-        <View style={styles.rowHeader}>
-          <ThemedText type="defaultSemiBold">{entry.entityId}</ThemedText>
+        <View style={styles.rowLine}>
+          <ThemedText type="defaultSemiBold" style={styles.entityLabel}>
+            {entry.entityId}
+          </ThemedText>
           <View style={[styles.directionBadge, { backgroundColor: dirColor }]}>
             <ThemedText style={styles.directionLabel}>
               {entry.direction.toUpperCase()}
             </ThemedText>
           </View>
+          <ThemedText style={styles.horizonLabel}>{entry.horizon}</ThemedText>
           <ThemedText style={styles.timestamp}>{timeAgo(entry.addedAt)}</ThemedText>
         </View>
-        <View style={styles.metaLine}>
-          <ThemedText style={styles.metaItem}>{entry.horizon}</ThemedText>
-          <ThemedText style={styles.metaItem}>
-            verac {(entry.veracity * 100).toFixed(0)}%
-          </ThemedText>
-          <ThemedText style={styles.metaItem}>
-            conf {(entry.confidence * 100).toFixed(0)}%
-          </ThemedText>
+        <View style={styles.rowLine}>
           <View style={[styles.outcomeBadge, { borderColor: outcomeColor }]}>
             <ThemedText style={[styles.outcomeLabel, { color: outcomeColor }]}>
               {OUTCOME_LABELS[entry.outcome]}
             </ThemedText>
           </View>
+          <ThemedText style={styles.veracityLabel}>
+            verac {(entry.veracity * 100).toFixed(0)}%
+          </ThemedText>
         </View>
         <Pressable
-          onPress={() => remove(entry.signalId)}
-          hitSlop={8}
+          onPress={() => confirmRemove(entry)}
+          hitSlop={12}
           style={({ pressed }) => [styles.removeBtn, { opacity: pressed ? 0.4 : 0.7 }]}
           accessibilityRole="button"
           accessibilityLabel="Retirer de la watchlist">
@@ -226,13 +244,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 8,
     padding: 12,
-    gap: 6,
+    paddingRight: 40,
+    gap: 8,
     position: 'relative',
   },
-  rowHeader: {
+  rowLine: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+  },
+  entityLabel: {
+    fontSize: 15,
   },
   directionBadge: {
     paddingHorizontal: 8,
@@ -245,45 +267,42 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.4,
   },
+  horizonLabel: {
+    fontSize: 12,
+    opacity: 0.7,
+    textTransform: 'uppercase',
+  },
   timestamp: {
     fontSize: 11,
     opacity: 0.6,
     marginLeft: 'auto',
   },
-  metaLine: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 2,
-  },
-  metaItem: {
-    fontSize: 11,
-    opacity: 0.7,
-    textTransform: 'uppercase',
-  },
   outcomeBadge: {
     borderWidth: 1,
     borderRadius: 4,
-    paddingHorizontal: 6,
+    paddingHorizontal: 8,
     paddingVertical: 2,
   },
   outcomeLabel: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '600',
+  },
+  veracityLabel: {
+    fontSize: 12,
+    opacity: 0.75,
   },
   removeBtn: {
     position: 'absolute',
-    top: 6,
-    right: 8,
-    width: 24,
-    height: 24,
+    top: 8,
+    right: 10,
+    width: 28,
+    height: 28,
     alignItems: 'center',
     justifyContent: 'center',
   },
   removeBtnLabel: {
-    fontSize: 20,
-    lineHeight: 22,
+    fontSize: 22,
+    lineHeight: 24,
     fontWeight: '700',
   },
 });

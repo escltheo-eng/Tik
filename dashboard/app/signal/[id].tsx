@@ -226,7 +226,7 @@ export default function SignalDetailScreen() {
           onPress={() => void fetchSignal()}
           style={({ pressed }) => [
             styles.retry,
-            { backgroundColor: Colors.light.tint, opacity: pressed ? 0.7 : 1 },
+            { backgroundColor: palette.tint, opacity: pressed ? 0.7 : 1 },
           ]}>
           <ThemedText style={styles.retryLabel}>Réessayer</ThemedText>
         </Pressable>

@@ -110,7 +110,7 @@ export function HitRateCard({
                 style={({ pressed }) => [
                   styles.selectorBtn,
                   {
-                    backgroundColor: active ? Colors.light.tint : 'transparent',
+                    backgroundColor: active ? palette.tint : 'transparent',
                     borderColor: palette.icon,
                     opacity: pressed ? 0.7 : 1,
                   },
@@ -140,7 +140,7 @@ export function HitRateCard({
                 style={({ pressed }) => [
                   styles.selectorBtn,
                   {
-                    backgroundColor: active ? Colors.light.tint : 'transparent',
+                    backgroundColor: active ? palette.tint : 'transparent',
                     borderColor: palette.icon,
                     opacity: pressed ? 0.7 : 1,
                   },
@@ -214,8 +214,8 @@ export function HitRateCard({
                 style={[
                   styles.checkbox,
                   {
-                    backgroundColor: includeFlagged ? Colors.light.tint : 'transparent',
-                    borderColor: includeFlagged ? Colors.light.tint : palette.icon,
+                    backgroundColor: includeFlagged ? palette.tint : 'transparent',
+                    borderColor: includeFlagged ? palette.tint : palette.icon,
                   },
                 ]}>
                 {includeFlagged ? <ThemedText style={styles.checkboxMark}>✓</ThemedText> : null}

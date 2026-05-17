@@ -27,7 +27,9 @@ import { useTopHeadlines } from '@/src/hooks/useTopHeadlines';
 import { useUpcomingMacroEvents } from '@/src/hooks/useUpcomingMacroEvents';
 import { timeAgo } from '@/src/utils/time';
 
-const APP_VERSION = '0.5.7';
+import pkg from '../../package.json';
+
+const APP_VERSION = pkg.version;
 
 const HEALTH_REFRESH_INTERVAL_MS = 30_000;
 
@@ -260,7 +262,7 @@ export default function HomeScreen() {
         <MiniSparkline
           values={kpis.veracitySeries}
           height={80}
-          color={Colors.light.tint}
+          color={palette.tint}
           thresholds={[0.7, 0.85]}
           autoScale
           emptyMessage="Pas assez de signaux pour tracer"
@@ -306,7 +308,7 @@ export default function HomeScreen() {
           style={({ pressed }) => [
             styles.refreshBtn,
             {
-              backgroundColor: Colors.light.tint,
+              backgroundColor: palette.tint,
               opacity: pressed || healthState.status === 'loading' ? 0.7 : 1,
             },
           ]}>
@@ -362,8 +364,8 @@ export default function HomeScreen() {
               style={({ pressed }) => [
                 styles.tabButton,
                 {
-                  backgroundColor: isActive ? Colors.light.tint : 'transparent',
-                  borderColor: isActive ? Colors.light.tint : palette.icon,
+                  backgroundColor: isActive ? palette.tint : 'transparent',
+                  borderColor: isActive ? palette.tint : palette.icon,
                   opacity: pressed ? 0.7 : 1,
                 },
               ]}>

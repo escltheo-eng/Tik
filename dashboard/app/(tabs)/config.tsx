@@ -195,7 +195,7 @@ export default function ConfigScreen() {
                 }}
                 style={({ pressed }) => [
                   styles.primaryBtn,
-                  { backgroundColor: Colors.light.tint, opacity: pressed ? 0.7 : 1 },
+                  { backgroundColor: palette.tint, opacity: pressed ? 0.7 : 1 },
                 ]}>
                 <ThemedText style={styles.primaryLabel}>Modifier</ThemedText>
               </Pressable>
@@ -251,7 +251,7 @@ export default function ConfigScreen() {
                 disabled={submitting}
                 style={({ pressed }) => [
                   styles.primaryBtn,
-                  { backgroundColor: Colors.light.tint, opacity: pressed || submitting ? 0.7 : 1 },
+                  { backgroundColor: palette.tint, opacity: pressed || submitting ? 0.7 : 1 },
                 ]}>
                 {submitting ? (
                   <ActivityIndicator color="#fff" size="small" />
@@ -297,7 +297,7 @@ export default function ConfigScreen() {
           style={({ pressed }) => [
             styles.primaryBtn,
             {
-              backgroundColor: Colors.light.tint,
+              backgroundColor: palette.tint,
               opacity: pressed || pushLoading || Platform.OS === 'web' ? 0.5 : 1,
             },
           ]}>

@@ -99,7 +99,7 @@ export default function MacroEventsScreen() {
                 style={({ pressed }) => [
                   styles.filterBtn,
                   {
-                    backgroundColor: active ? Colors.light.tint : 'transparent',
+                    backgroundColor: active ? palette.tint : 'transparent',
                     borderColor: palette.icon,
                     opacity: pressed ? 0.7 : 1,
                   },
