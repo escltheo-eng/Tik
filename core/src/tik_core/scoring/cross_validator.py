@@ -206,18 +206,31 @@ def cross_validate(
 
     if n == 2:
         combined = sum(biases.values()) / 2
+        values = list(biases.values())
+        # Dispersion via pstdev (population std) car on a une "population"
+        # complète de 2 sources, pas un échantillon estimant une population
+        # plus grande. Sur biais bornés [-1, +1] : pstdev([+1, -1]) = 1.0 (max),
+        # pstdev([+0.5, -0.5]) = 0.5, pstdev([+0.5, +0.5]) = 0. Cohérent avec
+        # les paliers 0.2/0.4/0.6/0.8 de `_veracity_from_dispersion` dans les
+        # engines swing/flash. Résout un bug structurel post-Paquet 18 où
+        # dispersion restait à 0.0 (default dataclass) → veracity figée 0.95
+        # sur tous les signaux N=2 (100 % flash BTC, 100 % swing GOLD
+        # post-Paquet 19, ~99.5 % swing BTC quand des ingesters sont down).
+        dispersion = statistics.pstdev(values)
         if detect_disagreement_n2(biases, threshold=disagreement_threshold):
             return CrossValidationResult(
                 combined_bias=combined,
                 circuit_breaker_status="degraded",
                 n_sources=2,
                 method="disagreement_n2",
+                dispersion=dispersion,
             )
         return CrossValidationResult(
             combined_bias=combined,
             circuit_breaker_status="ok",
             n_sources=2,
             method="disagreement_n2",
+            dispersion=dispersion,
         )
 
     # N ≥ 3 : Modified Z-score (outliers individuels) + dispersion globale (std)

@@ -183,6 +183,54 @@ def test_cross_validate_n2_disagreement_degrades_status():
 
 
 # =====================================================================
+# cross_validate — Dispersion pour N=2 (fix bug post-Paquet 18)
+#
+# Avant le fix : dispersion restait à 0.0 (default dataclass) pour N=2 →
+# `_veracity_from_dispersion(0.0)` retournait 0.95 systématiquement →
+# tous les signaux flash BTC + swing GOLD à veracity 0.95 fixée.
+# Mesure empirique 2026-05-17 : 99.93 % des signaux post-Paquet 18
+# (1463 sur 1464) sortaient à 0.95 avec ce bug.
+# =====================================================================
+
+def test_cross_validate_n2_dispersion_when_aligned_is_zero():
+    # 2 sources parfaitement alignées → dispersion 0 → veracity 0.95 légitime
+    cv = cross_validate({"a": 0.5, "b": 0.5})
+    assert cv.dispersion == pytest.approx(0.0)
+    assert cv.circuit_breaker_status == "ok"
+
+
+def test_cross_validate_n2_dispersion_when_opposed_max_is_one():
+    # 2 sources aux extrêmes opposés → dispersion = 1.0 (pstdev max sur [-1,+1])
+    # → veracity tomberait à 0.70 (palier le plus bas dans _veracity_from_dispersion)
+    cv = cross_validate({"a": 1.0, "b": -1.0})
+    assert cv.dispersion == pytest.approx(1.0)
+
+
+def test_cross_validate_n2_dispersion_partial_alignment():
+    # 2 sources partiellement divergentes (±0.5) → dispersion = 0.5
+    # → veracity tomberait à 0.85 (palier alignement modéré)
+    cv = cross_validate({"a": 0.5, "b": -0.5})
+    assert cv.dispersion == pytest.approx(0.5)
+
+
+def test_cross_validate_n2_disagreement_carries_dispersion():
+    # Cas réel du bug : disagreement (status=degraded) DOIT aussi porter
+    # une dispersion non nulle. Avant le fix, dispersion=0.0 → veracity 0.95
+    # malgré un status degraded — incohérence.
+    cv = cross_validate({"a": 0.7, "b": -0.5})
+    assert cv.circuit_breaker_status == "degraded"
+    assert cv.dispersion > 0.5  # pstdev([0.7, -0.5]) = 0.6
+
+
+def test_cross_validate_n1_dispersion_remains_zero():
+    # N=1 : pas de dispersion possible logiquement (1 seule source),
+    # default dataclass à 0.0 reste correct. Vérifie qu'on ne casse pas N=1.
+    cv = cross_validate({"a": 0.7})
+    assert cv.dispersion == pytest.approx(0.0)
+    assert cv.circuit_breaker_status == "ok"
+
+
+# =====================================================================
 # cross_validate — N ≥ 3 (Modified Z-score)
 # =====================================================================
 

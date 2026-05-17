@@ -164,7 +164,7 @@ class OllamaClassifier(NewsClassifier):
         model: str,
         asset_name: str = "Bitcoin",
         fallback: NewsClassifier | None = None,
-        timeout_s: float = 10.0,
+        timeout_s: float = 30.0,
         redis: Redis | None = None,
     ) -> None:
         self.url = url.rstrip("/")
@@ -211,7 +211,8 @@ class OllamaClassifier(NewsClassifier):
             self._consecutive_failures += 1
             log.warning(
                 "news_classifier.ollama_error",
-                error=str(exc),
+                error=str(exc) or repr(exc),
+                error_type=type(exc).__name__,
                 asset=self.asset_name,
                 consecutive_failures=self._consecutive_failures,
             )
