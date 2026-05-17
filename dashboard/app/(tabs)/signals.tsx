@@ -33,6 +33,18 @@ const HORIZON_FILTERS: { label: string; value: string | undefined }[] = [
   { label: 'Macro', value: 'macro' },
 ];
 
+// Fenêtres temporelles pour le preload signaux historiques.
+// 24h utilise /signals/latest (cap 200, mais on demande 100). 5j/30j
+// utilisent /signals (search) qui supporte jusqu'à 720h et limit 1000.
+// Le WebSocket continue de prepend les nouveaux signaux par-dessus.
+// Avec ~100 signaux/jour, 30j ≈ 3000 signaux → cap backend 1000 → on
+// affiche les 1000 plus récents sur la fenêtre demandée (≈ 10j réels).
+const DURATION_FILTERS: { label: string; sinceHours: number | undefined; preloadLimit: number }[] = [
+  { label: '24h', sinceHours: undefined, preloadLimit: 100 },
+  { label: '5j',  sinceHours: 120,       preloadLimit: 500 },
+  { label: '30j', sinceHours: 720,       preloadLimit: 1000 },
+];
+
 function directionColor(direction: string): string {
   switch (direction) {
     case 'long':
@@ -83,10 +95,16 @@ export default function SignalsScreen() {
 
   const [entity, setEntity] = useState<string | undefined>(undefined);
   const [horizon, setHorizon] = useState<string | undefined>(undefined);
+  const [durationIdx, setDurationIdx] = useState<number>(0);
+
+  const duration = DURATION_FILTERS[durationIdx];
 
   const { signals, connectionState, error, preloadLoading, preloadError } = useSignalStream({
     entity,
     horizon,
+    sinceHours: duration.sinceHours,
+    preloadLimit: duration.preloadLimit,
+    maxSignals: duration.preloadLimit,
   });
   // Force re-render des items FlatList toutes les 30 s pour rafraîchir les
   // libellés "il y a X" (la FlatList mémoïse ses rows par défaut).
@@ -119,7 +137,7 @@ export default function SignalsScreen() {
 
         <ThemedView style={[styles.rowFooter, { backgroundColor: 'transparent' }]}>
           <ThemedText style={styles.metric}>
-            conf {(item.confidence * 100).toFixed(0)}%
+            conv {(item.confidence * 100).toFixed(0)}%
           </ThemedText>
           <ThemedText style={styles.metric}>
             verac {(item.veracity * 100).toFixed(0)}%
@@ -162,6 +180,12 @@ export default function SignalsScreen() {
               {connectionLabel(connectionState)}
             </ThemedText>
           </ThemedView>
+        </ThemedView>
+
+        <ThemedView style={styles.filterRow}>
+          {DURATION_FILTERS.map((d, idx) =>
+            filterPill(d.label, durationIdx === idx, () => setDurationIdx(idx)),
+          )}
         </ThemedView>
 
         <ThemedView style={styles.filterRow}>

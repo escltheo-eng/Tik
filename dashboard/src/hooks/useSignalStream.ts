@@ -11,7 +11,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import { getLatestSignals } from '@/src/api/endpoints';
+import { getLatestSignals, searchSignals } from '@/src/api/endpoints';
 import { ConnectionState, TikStream } from '@/src/api/stream';
 import { Signal } from '@/src/api/types';
 import { useAuth } from '@/src/auth/AuthContext';
@@ -21,6 +21,13 @@ export interface UseSignalStreamOptions {
   horizon?: string;
   maxSignals?: number;
   preloadLimit?: number;
+  /**
+   * Fenêtre temporelle de preload en heures. Si fourni, bascule sur
+   * `/signals` (search) au lieu de `/signals/latest` pour accéder à
+   * l'historique au-delà de 24h. Valeurs typiques : 24 (défaut),
+   * 120 (5 jours), 720 (30 jours). Plafonné côté backend à 720h.
+   */
+  sinceHours?: number;
 }
 
 export interface UseSignalStreamResult {
@@ -36,7 +43,7 @@ const DEFAULT_PRELOAD_LIMIT = 20;
 
 export function useSignalStream(options: UseSignalStreamOptions = {}): UseSignalStreamResult {
   const { client, baseUrl, apiKey } = useAuth();
-  const { entity, horizon } = options;
+  const { entity, horizon, sinceHours } = options;
   const maxSignals = options.maxSignals ?? DEFAULT_MAX_SIGNALS;
   const preloadLimit = options.preloadLimit ?? DEFAULT_PRELOAD_LIMIT;
 
@@ -68,15 +75,25 @@ export function useSignalStream(options: UseSignalStreamOptions = {}): UseSignal
     }
 
     // Précharge les derniers signaux via REST avant d'ouvrir la WS.
+    // Si sinceHours est fourni, on utilise /signals (search) qui supporte
+    // jusqu'à 720h et limit 1000. Sinon /signals/latest (limit max 200,
+    // fenêtre temporelle implicite).
     setPreloadLoading(true);
     setPreloadError(null);
     void (async () => {
       try {
-        const latest = await getLatestSignals(client, {
-          entity,
-          horizon,
-          limit: preloadLimit,
-        });
+        const latest = sinceHours
+          ? await searchSignals(client, {
+              entity,
+              horizon,
+              sinceHours,
+              limit: Math.min(preloadLimit, 1000),
+            })
+          : await getLatestSignals(client, {
+              entity,
+              horizon,
+              limit: Math.min(preloadLimit, 200),
+            });
         if (cancelled) return;
         // L'endpoint retourne déjà du plus récent au plus ancien.
         setSignals(latest.slice(0, maxSignals));
@@ -115,7 +132,7 @@ export function useSignalStream(options: UseSignalStreamOptions = {}): UseSignal
       stream.stop();
       streamRef.current = null;
     };
-  }, [client, baseUrl, apiKey, entity, horizon, maxSignals, preloadLimit]);
+  }, [client, baseUrl, apiKey, entity, horizon, maxSignals, preloadLimit, sinceHours]);
 
   // Stable shape pour éviter des re-renders inutiles côté consumer.
   return useMemo(

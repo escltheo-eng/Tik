@@ -52,8 +52,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="bots"
         options={{
-          title: 'Bots',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="cpu" color={color} />,
+          href: null,
         }}
       />
       <Tabs.Screen
@@ -66,8 +65,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="about"
         options={{
-          title: 'About',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="paperplane.fill" color={color} />,
+          href: null,
         }}
       />
     </Tabs>

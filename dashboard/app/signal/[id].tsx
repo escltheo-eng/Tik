@@ -12,6 +12,7 @@ import { TikError } from '@/src/api/errors';
 import { Signal, SignalTrackRecord, TrackRecordRow } from '@/src/api/types';
 import { useAuth } from '@/src/auth/AuthContext';
 import { isLlmCandidateValid } from '@/src/utils/llm';
+import { isGoldMarketClosed } from '@/src/utils/markets';
 import { formatLocal, parseUtcIso } from '@/src/utils/time';
 import { useWatchlist } from '@/src/watchlist/WatchlistContext';
 
@@ -39,7 +40,7 @@ function timeUntil(targetIso: string): string {
   return `dans ${mins}min`;
 }
 
-function TrackRecordBadge({ row }: { row: TrackRecordRow }) {
+function TrackRecordBadge({ row, entityId }: { row: TrackRecordRow; entityId: string }) {
   switch (row.badge) {
     case 'correct':
       return (
@@ -60,7 +61,16 @@ function TrackRecordBadge({ row }: { row: TrackRecordRow }) {
         </View>
       );
     default:
-      // données_manquantes
+      // données_manquantes : badge spécifique "marché fermé" si GOLD week-end.
+      // Yahoo ne renvoie aucune bougie hors fenêtre forex (ven 22h UTC →
+      // dim 22h UTC). Cause structurelle, pas un bug Tik.
+      if (entityId === 'GOLD' && isGoldMarketClosed(row.target_iso)) {
+        return (
+          <View style={[trStyles.badge, { backgroundColor: '#34495e' }]}>
+            <ThemedText style={trStyles.badgeText}>🌙</ThemedText>
+          </View>
+        );
+      }
       return (
         <View style={[trStyles.badge, { backgroundColor: '#95a5a6' }]}>
           <ThemedText style={trStyles.badgeText}>?</ThemedText>
@@ -116,24 +126,32 @@ function TrackRecordSection({
       <ThemedText style={trStyles.subtitle}>
         Direction {record.direction.toUpperCase()} · horizon {record.horizon}
       </ThemedText>
-      {record.rows.map((row) => (
-        <View key={row.label} style={trStyles.row}>
-          <ThemedText style={trStyles.label}>{row.label}</ThemedText>
-          <TrackRecordBadge row={row} />
-          <ThemedText style={trStyles.value}>
-            {row.badge === 'en_attente'
-              ? timeUntil(row.target_iso)
-              : row.badge === 'données_manquantes'
-              ? 'données non disponibles'
-              : row.delta_pct != null
-              ? `${row.delta_pct >= 0 ? '+' : ''}${row.delta_pct.toFixed(2)}%`
-              : '—'}
-          </ThemedText>
-          {row.badge === 'correct' || row.badge === 'raté' ? (
-            <ThemedText style={trStyles.threshold}>seuil {row.threshold_pct}%</ThemedText>
-          ) : null}
-        </View>
-      ))}
+      {record.rows.map((row) => {
+        const marketClosed =
+          row.badge === 'données_manquantes' &&
+          record.entity_id === 'GOLD' &&
+          isGoldMarketClosed(row.target_iso);
+        return (
+          <View key={row.label} style={trStyles.row}>
+            <ThemedText style={trStyles.label}>{row.label}</ThemedText>
+            <TrackRecordBadge row={row} entityId={record.entity_id} />
+            <ThemedText style={trStyles.value}>
+              {row.badge === 'en_attente'
+                ? timeUntil(row.target_iso)
+                : row.badge === 'données_manquantes'
+                ? marketClosed
+                  ? 'marché GOLD fermé'
+                  : 'données non disponibles'
+                : row.delta_pct != null
+                ? `${row.delta_pct >= 0 ? '+' : ''}${row.delta_pct.toFixed(2)}%`
+                : '—'}
+            </ThemedText>
+            {row.badge === 'correct' || row.badge === 'raté' ? (
+              <ThemedText style={trStyles.threshold}>seuil {row.threshold_pct}%</ThemedText>
+            ) : null}
+          </View>
+        );
+      })}
       {/* Footer min-max dynamique : adapté aux 3 horizons (flash/swing/macro)
           dont les seuils diffèrent. Affiche "Seuil : X %" si min === max,
           sinon "Seuils : X % à Y % selon l'horizon mesuré". */}
