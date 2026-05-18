@@ -653,3 +653,135 @@ Si ratio ≥ 1.5 sur ≥ 3 meetings observés, bumper BoE de MEDIUM à HIGH.
 Garde-fou 1 inchangé. Garde-fou 2-bis inchangé. ADR-003 inchangé.
 ADR-004 inchangé. ADR-011 inchangé. ADR-018 renforcé (calibrations
 listées ici amélioreront empiriquement les choix pifomètre actuels).
+
+## 8. Limite structurelle `detect_volume_spike` sur CryptoCompare (identifiée 2026-05-18, post-J+14)
+
+Découverte lors de l'audit Issue #4 baseline WRONGTYPE (Paquet 26 →
+résolution post-rebuild 2026-05-17). La clé `tik.anomaly.baseline.cryptocompare.btc`
+est désormais propre (string, 20 points, mature, 0 erreur runtime sur 24h),
+mais une limite structurelle a été mise en évidence.
+
+### Constat factuel
+
+L'API CryptoCompare `/data/v2/news/` retourne **~50 articles par défaut**
+(le code `cryptocompare_ingester.py:_fetch` ne passe pas de paramètre
+`lTs` ou `feeds` qui limiterait/étendrait la pagination). La baseline
+mesurée en Redis est `[50, 50, 50, ..., 50]` — 20 entrées identiques.
+
+Conséquence sur `detect_volume_spike` (Paquet 21 P6, ADR-011 surcouche) :
+
+- Seuils définis : `medium` à ratio ≥ 3×, `high` à ratio ≥ 5×
+- Avec baseline mean = 50, il faudrait `len(articles) ≥ 150` pour
+  déclencher `medium` → **structurellement inatteignable** tant que
+  l'API CC retourne le default 50
+
+**La détection volume spike CC est donc dormante en pratique** depuis
+le Paquet 21 (~25 jours de runtime). Aucun flag `cryptocompare.anomaly_detected`
+de severity ≠ ok n'a été levé. **Non régressif** (l'anti fake-news
+ADR-011 cross-validation Modified Z-score reste opérationnel, et les
+détecteurs Reddit brigading + Google News dominance fonctionnent).
+
+### Options envisagées (à choisir post-J+14)
+
+| Option | Description | Risque | Bénéfice |
+|---|---|---|---|
+| **A** | Demander plus d'articles à l'API CC via pagination `lTs` | Risque API quota (free tier 11k req/mois, déjà ~720 req/mois actuels — marge confortable) | Détection volume spike fonctionnelle ; potentiel faux positif si volume API variable selon heure |
+| **B** | Changer la métrique : compter `len(set(headlines.publisher))` (publishers distincts) | Aucun (pas de changement API) | Pic publishers distincts = événement majeur (ex. ETF approval, hack) → corrélation potentielle plus pertinente que volume brut |
+| **C** | Mesurer vélocité publication (articles/heure si polling infra-horaire) | Nécessite changement polling | Métrique plus fine, capte les bursts ; mais polling > 1×/h coûte plus de quota |
+| **D** | Accepter détection dormante, retirer le code mort | Aucun | Code plus simple, pas de fausse impression de couverture |
+
+### Verdict préliminaire
+
+**Option B** semble la plus alignée avec la philosophie OSINT pure (ADR-018) :
+un pic de publishers distincts est un signal qualitatif plus riche qu'un
+pic de volume brut. À valider empiriquement sur un dataset historique
+post-J+30 avant de coder.
+
+### Quand l'attaquer
+
+Post-J+14, dans la séquence P6+ du plan stratégique fiabilité signaux
+(cf. CLAUDE.md section 8). Pas urgent : (1) la détection volume CC
+n'a jamais déclenché donc aucune régression par rapport au pre-Paquet 21,
+(2) Reddit brigading + Google News dominance couvrent déjà la surcouche
+P6 sur d'autres sources, (3) anti fake-news ADR-011 reste opérationnel
+sur les agrégats croisés.
+
+### Risque rappelé
+
+Garde-fou 1 inchangé. Garde-fou 2-bis inchangé. ADR-003 inchangé.
+ADR-004 inchangé. ADR-011 inchangé (la cross-validation Modified Z-score
+n'est pas affectée — elle agit sur les biais agrégés, pas sur la
+détection upstream par ingester). ADR-018 inchangé.
+
+## 9. Recalibration / archivage GDELT post-J+30 (identifié 2026-05-18, P3 plan stratégique fiabilité)
+
+Décision P3 prise le 2026-05-18 : **NE PAS déployer GDELT BTC** et
+**recalibrer les seuils GDELT GOLD post-J+30** (cf. CLAUDE.md section 8).
+
+### Constat factuel runtime HP (mesure 2026-05-18)
+
+Sur les 5 jours de runtime HP depuis le premier signal en DB :
+
+- 239 observations GDELT GOLD swing (couverture 92.6 % des 258 signaux GOLD)
+- Distribution du tone : **100 % en zone neutre** `[-1, +1]` du mapping ADR-010
+  - min = 0.070, max = 0.700, avg = 0.376, std = 0.208
+  - 0 observations en zone `bull` (≤ -1.0)
+  - 0 observations en zone `bear` (≥ 1.0)
+- **Conséquence** : `_compute_gdelt_bias` retourne `bias = 0.0` sur 100 % des cycles
+- **GDELT GOLD a apporté zéro information directionnelle au pipeline depuis le déploiement**
+
+Cohérent avec le verdict Paquet 19 P2 : backtest historique 12m = 0 points
+mesurables (rate-limit GDELT public sur fetch historique long). Le mapping
+ADR-010 ±1/±3 est issu de littérature GDELT générique, pas de la
+distribution réelle du tone sur la query "gold price" sourcelang:eng.
+
+### Hypothèse sur la cause
+
+Le query "gold price" + lang:eng retourne un mix d'articles éditoriaux
+financiers et de cours techniques quotidiens → tone moyen lissé proche
+de zéro, naturellement loin des seuils ±1. Le régime 2025-2026 est
+plutôt "stable + faible crise géopol immédiate", contrairement à 2008
+(GFC), 2020 (pandémie), 2022 (Ukraine) ou 2023 (SVB) où le tone GDELT
+aurait probablement basculé dans la zone négative (tensions globales).
+
+### Critère de décision post-J+30 (à appliquer ~2026-06-17)
+
+Re-mesurer la distribution du tone GDELT GOLD sur 30j de runtime
+(idéalement avec un événement de stress macro dans la fenêtre — FOMC,
+NFP surprise, CPI choc, géopol majeur).
+
+| Mesure observée sur 30j | Action |
+|---|---|
+| **> 80 % en zone neutre** `[-1, +1]` ET aucun événement extrême observé | Recalibrer seuils à `±0.5 / ±1.5` (au prorata `std_observed × 2.5 / 5.0`) puis re-mesurer 30j supplémentaires |
+| **> 80 % en zone neutre** ET événement extrême observé sans bascule du tone | Archiver GDELT (ingester + `_enrich_with_gdelt` + entry `SOURCE_SCORES`) — le tone GDELT ne capte pas les régimes de stress que la query "gold price" devrait pourtant refléter |
+| **Distribution s'élargit naturellement** (≥ 20 % hors zone neutre) | Valider mapping contrarian sur GOLD via IC Spearman vs delta 720h ; si IC négatif significatif → déployer GDELT BTC avec mapping à valider de la même façon |
+
+### Critère secondaire : query alternative
+
+Si recalibration tente une dernière fois avant archivage, envisager
+un query plus restrictif :
+
+- `"gold" AND (crisis OR war OR sanctions OR recession)` → focus
+  événements générateurs de tensions, devrait amplifier les bascules
+- `"federal reserve" "monetary policy"` → focus politique monétaire
+  US (probablement plus volatile en tone que "gold price")
+
+À tester côté script CLI avant tout changement du ingester runtime.
+
+### Quand l'attaquer
+
+Post-J+30 (~2026-06-17), dans la séquence P3+ du plan stratégique
+fiabilité signaux (cf. CLAUDE.md section 8). Pas urgent : GDELT GOLD
+émet bias = 0.0 systématique donc équivalent à un overlay absent —
+zéro impact négatif sur le pipeline (ADR-018 OSINT pur reste opérationnel
+sur les 3 autres overlays GOLD : Google News + DXY/COT désactivés
+amendement P2 + technical evidence informatif).
+
+### Risque rappelé
+
+Garde-fou 1 inchangé. Garde-fou 2-bis inchangé. ADR-003 inchangé.
+ADR-004 (multi-overlay) inchangé — on optimise la qualité OSINT par
+recalibration empirique, pas par ajout aveugle d'overlays. ADR-010
+(GDELT mapping initial) à amender lors de la recalibration. ADR-011
+(anti fake-news) inchangé. ADR-018 (OSINT pur) renforcé empiriquement
+par le respect strict de l'engagement "pas d'ajout sans manque mesuré".
