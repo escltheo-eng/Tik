@@ -785,3 +785,118 @@ recalibration empirique, pas par ajout aveugle d'overlays. ADR-010
 (GDELT mapping initial) à amender lors de la recalibration. ADR-011
 (anti fake-news) inchangé. ADR-018 (OSINT pur) renforcé empiriquement
 par le respect strict de l'engagement "pas d'ajout sans manque mesuré".
+
+## 10. Reddit IP-ban full sur IP HP — Option B unban en cours + Option C source alternative post-J+14 (identifié 2026-05-18, Paquet 27, Bug 11)
+
+**Contexte** : audit santé pré-J+14 du 2026-05-18 (Paquet 27) a révélé
+que Reddit est **totalement IP-bannie sur l'IP publique HP
+`204.168.220.47`** depuis le déploiement HP entier (5 jours
+d'historique en DB). 0/1778 signaux contiennent `reddit_btc` dans
+l'evidence. Test 7 endpoints HTTP : tous bloqués (403) sauf
+`/api/v1/access_token` (401, joignable mais inutile car
+`oauth.reddit.com` aussi 403). Cf. CLAUDE.md section 9 Bug 11 pour le
+diagnostic complet.
+
+**Conséquence pipeline structurelle** : Tik tourne avec **3 overlays
+sentiment au lieu de 4** sur BTC swing → veracity capée à 0.85-0.89
+quand FG diverge contrarian des news (cas typique marché bear actuel),
+**0/36 signaux BTC swing à veracity ≥ 0.90 sur 9h post-fix N=2**. Bug
+N=2 du Paquet 25 (fixé 2026-05-17 20:47 UTC) masquait cette réalité.
+
+### Option A retenue immédiatement (cf. Paquet 27 décision D1+D4)
+
+Accepter Tik à 3 overlays + Garde-fou 2-bis transitoire seuil **0.85
+sur BTC swing** (au lieu de 0.90). Réversible automatiquement quand
+Reddit revient. **Aucun code modifié**, juste doc.
+
+### Option B en cours (cf. Paquet 27 décision D2)
+
+Demande unban formelle soumise par l'utilisatrice le 2026-05-18 soir
+via le formulaire officiel Reddit
+`support.reddithelp.com/hc/en-us/requests/new?ticket_form_id=21879292693140`
+("Demande d'aide bloquée") avec :
+
+- Adresse IP `204.168.220.47`
+- Justification OSINT research non commerciale
+- Engagement à migrer vers OAuth authentifié dès l'unban
+- User-Agent descriptif conforme rules Reddit
+  (`tik-osint-bot/0.1 (research; contact escltheo@gmail.com)`)
+
+**Délai retour Reddit inconnu** (24h → plusieurs semaines, souvent
+3-10 jours). À surveiller via email utilisatrice
+(`escltheo@gmail.com`).
+
+**Si retour positif Reddit** : vérification rapide `curl -s -o
+/dev/null -w "%{http_code}\n" -H "User-Agent: test"
+https://www.reddit.com/r/Bitcoin/hot.json` depuis container ingesters
+→ si 200 → `docker compose up -d --force-recreate ingesters` → Reddit
+réintégré au pipeline en ~5 min → automatiquement retour à 4 overlays
+sans changement code.
+
+### Option C à activer post-J+14 SI Reddit refuse définitivement (~4-5h dev)
+
+Remplacer Reddit par une source sentiment alternative. **À ne pas
+activer pré-J+14** (trop risqué de réécrire un ingester sentiment à
+< 1 semaine du trading manuel).
+
+**Sources évaluées** :
+
+| Source | Pour | Contre | Score utilité |
+|---|---|---|---|
+| **Hacker News (Algolia HN Search API)** | Gratuit, JSON propre, communauté tech crédible (couverture crypto + macro), pas d'IP-ban historique | Volume crypto plus faible que Reddit (~10-20 titres pertinents/jour), tonalité tech-skeptique | 7/10 |
+| **StockTwits API** | Free tier, focus crypto/symbols (`$BTC.X`, `$ETH.X`), sentiment natif bull/bear annoté par les utilisateurs | Demande inscription, rate limits stricts, communauté trader US plus retail que macro | 6/10 |
+| **4chan /biz/ (4chan API JSON)** | Gratuit, signal contrarian fort (retail extrême) | Très bruité, ironie/troll non capté par LLM 3B, qualité éditoriale faible | 4/10 |
+| **X/Twitter via snscrape** | Gratuit, volume énorme, signal crypto-natif | Fragile (X durcit régulièrement), snscrape peut casser, risque IP-ban X aussi | 4/10 |
+| **Lemmy / Mastodon crypto instances** | Gratuit, fédéré, pas d'IP-ban | Très faible volume (~1-5 titres pertinents/jour), niche | 3/10 |
+| **Bitcointalk forum** | Volume crypto historique fort | Pas d'API officielle, scraping HTML fragile, ban IP potentiel | 3/10 |
+
+**Verdict préliminaire** : **Option C.1 Hacker News** (Algolia HN
+Search API endpoint `https://hn.algolia.com/api/v1/search`) — score
+utilité 7/10, infra propre, gratuit, pas d'IP-ban historique. À
+valider empiriquement post-J+14 si Reddit refuse.
+
+### Option D structurelle (ultime, ~1-2 sessions + coût mensuel)
+
+Si Reddit refuse l'unban ET Option C ne convient pas → migrer Tik
+core vers un VPS commercial avec IP propre (DigitalOcean, Hetzner,
+Scaleway... ~5-10€/mois pour 2 GB RAM + 1 vCPU). L'IP serait dédiée à
+Tik, sans réputation negative, et Reddit serait re-accessible.
+
+**Trade-offs** :
+- ✅ Résout tous les ban IP futurs (pas que Reddit)
+- ✅ Améliore la résilience générale (plus de dépendance internet
+  domestique)
+- ❌ Coût mensuel ~60-120€/an
+- ❌ Migration ~1-2 sessions (DB export/import + DNS + monitoring)
+- ❌ Hébergement déjà HP serveur local qui marche bien sinon
+
+À considérer **seulement si** Reddit refuse définitivement + Option C
+ne convient pas + utilisatrice OK pour passer en VPS payant.
+
+### Quand l'attaquer
+
+| Action | Quand | Effort |
+|---|---|---|
+| Surveiller email pour réponse Reddit | Dès maintenant, asynchrone | 0 min |
+| Si retour Reddit OK avant J+14 | Restart ingesters + vérif curl | 5 min |
+| Si pas de retour Reddit dans 14 jours post-J+14 (= 2026-06-07) | Activer Option C (Hacker News ingester + ADR-021) | 4-5h |
+| Si Option C insuffisante OU besoin résilience générale | Activer Option D (VPS migration) | 1-2 sessions + 5-10€/mois |
+
+### Critère de réévaluation cette entry
+
+**Date péremption** : 2026-06-15 (J+22 trading manuel). À cette date :
+- Si Reddit a répondu (positivement ou négativement) → fermer cette
+  entry et documenter résolution dans CLAUDE.md
+- Si pas de retour Reddit + Option C activée → entry 11 dédiée à
+  l'ingester Hacker News
+- Si pas de retour Reddit + Option C pas activée → réévaluer
+  l'urgence selon le hit rate Tik mesuré J+30
+
+### Risque rappelé
+
+Garde-fou 1 (Tik shadow vs Zeta 3 mois) inchangé. ADR-003 (pas de
+bypass V01-V15) inchangé. ADR-004 (multi-overlay) inchangé — Tik
+continue de fonctionner avec N-1 overlays, c'est la beauté du pattern
+extensible. ADR-011 (anti fake-news) inchangé. ADR-018 (OSINT pur)
+renforcé empiriquement (preuve que l'archi multi-overlay tolère bien
+une source manquante sans casser le pipeline).
