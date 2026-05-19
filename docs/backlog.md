@@ -88,6 +88,111 @@ manuelle du golden dataset)
 > traduction FR sera donc ADR-014** au moment de l'attaquer. Le périmètre
 > s'élargit toujours depuis ADR-012 : l'hypothèse contextualisée ~150 mots
 > rejoint la liste des champs à traduire.
+>
+> **MAJ 2026-05-19** : débat à 6 angles mené en session J-5 du trading manuel
+> J+24. **Verdict : différer ADR-014 plein à post-J+30, attaquer Option E
+> (glossaire enrichi) à la place si besoin pré-J+24.** Voir section
+> *« Débat 6 angles 2026-05-19 »* en bas de cette entrée.
+
+### Débat 6 angles 2026-05-19 (J-5 trading manuel)
+
+**Faits factuels établis lors du débat** :
+
+- **Champs textuels par signal** (lus dans `core/src/tik_core/storage/schemas.py`
+  + `scoring/hypothesis_generator.py`) : `hypothesis` (~150 mots LLM, depuis
+  ADR-012), `evidence[].fact` (3-4 strings courts par signal), `counter_scenarios[].mitigation`
+  (2 strings), `advisory.notes` (souvent null), `advisory.llm_hypothesis_candidate`
+  (~150 mots en mode shadow), `advisory.template_hypothesis` (en mode active).
+  **~7-10 strings/signal**.
+- **Volume runtime** : 79 signaux/6h mesurés Paquet 26 → ~316 signaux/jour →
+  ~3160 traductions/j à cache froid.
+- **Bug `supply ↔ demand` mesuré empiriquement** dans Paquet 4 Session 4 : le
+  modèle Ollama llama3.2:3b *"inverse parfois la sémantique sur le jargon
+  précis"*. Pas une spéculation — fait documenté.
+- **Glossaire FR existant** (Paquet 29) : 17 entrées dans
+  `dashboard/src/glossary.ts` mais ciblées sur les **termes Tik** (veracity,
+  conviction, AFN), PAS sur le jargon EN de l'hypothesis (RSI, rally,
+  breakdown, supply).
+- **Plan stratégique post-audit fiabilité signaux** (CLAUDE.md section 8)
+  classe explicitement la traduction FR dans *"Recommandations dépriorisées
+  (zéro impact fiabilité signal)"*, aux côtés de EAS Build dev, ACLs Tailscale,
+  Phase C UX cosmétique.
+
+**Synthèse 6 angles** :
+
+| # | Angle | Verdict |
+|---|---|---|
+| 1 | Qualité du signal (fiabilité traduction Ollama 3B) | 🟡 Risque inversion sémantique mesuré (`supply↔demand`, `rally`, `tip`, `support`, `breakdown`). Pas de dataset golden FR pour valider. |
+| 2 | Effort réel vs annoncé | 🔴 Probable 5-6h pas 2-3h. Backlog sous-estimait (a) debug Ollama timeout VPS, (b) tests inversions sémantiques (impossible sans golden), (c) ADR-014 sérieux, (d) câblage SDK + dashboard + UI toggle, (e) validation runtime 24h. |
+| 3 | Surface de bug et régression | 🟢 Technique faible (fallback EN si Ollama plante, aucun impact engines/DB/scoring/ADR-003). 🟡 UX moyenne (signaux EN sporadiques font douter la trader débutante, pire = traduction partielle EN+FR mélangée). |
+| 4 | Maintenance long terme | 🟡 Modeste mais réelle. Suivre évolutions Ollama 3B, jargon finance évolutif (`tariff` politiquement chargé 2025-2026), pas de golden FR pour détecter régressions silencieuses. |
+| 5 | Cohérence avec stratégie globale Tik | 🔴 Conflit direct avec plan post-audit fiabilité signaux (CLAUDE.md section 8). Engagement utilisatrice transposé 2026-05-14 → 2026-05-24 : *"ne jamais ajouter une feature qui dilue le focus avant le trading manuel"*. |
+| 6 | Alternative low-effort qui résout 80 % du besoin | 🟢 **Option E** (glossaire enrichi ~30-45 min) couvre 80 % du besoin pour ~10 % de l'effort, zéro Ollama, zéro risque inversion. |
+
+**Verdict final** : NON pour ADR-014 plein avant J+24. 3 raisons cumulées :
+
+1. Risque sémantique mesuré sur signal pré-trade débutante.
+2. Conflit explicite avec stratégie post-audit fiabilité signaux.
+3. Alternative Option E disponible à ~10 % du coût.
+
+### Option E — Glossaire EN→FR enrichi (alternative recommandée pré-J+24)
+
+**Effort estimé** : ~30-45 min.
+
+**Périmètre** :
+
+- Ajouter ~20-30 termes trader EN→FR dans `dashboard/src/glossary.ts` (déjà
+  17 entrées Tik depuis Paquet 29). Liste indicative (à raffiner au moment
+  d'attaquer) :
+  - Direction & momentum : `long`, `short`, `bullish`, `bearish`, `rally`,
+    `dip`, `breakdown`, `breakout`, `pullback`, `consolidation`, `range-bound`
+  - Technique : `RSI`, `MACD`, `EMA`, `support`, `resistance`, `crossover`,
+    `divergence`, `momentum`, `oversold`, `overbought`
+  - Marché : `supply`, `demand`, `volume spike`, `liquidity`, `volatility`,
+    `whipsaw`, `chop`
+- Composant `InfoTooltip` déjà en place (Paquet 29) avec mapping `entryKey`,
+  pas de nouveau dev composant nécessaire.
+- Attacher tooltips tap-ables aux termes pertinents dans la carte hypothesis
+  du détail signal `dashboard/app/signal/[id].tsx`.
+- Pas de bouton "switcher FR/EN" — l'EN reste affiché, le tooltip donne le
+  sens FR + 1 ligne de contexte trading. Pédagogie active : la trader apprend
+  en lisant ses signaux, capital cognitif long terme.
+
+**Avantages** :
+
+- Zéro dépendance Ollama runtime → zéro risque inversion sémantique.
+- Zéro modification backend → aucun risque sur les engines / pipeline scoring /
+  cross-validation / ADR-003.
+- Cohérent avec préférence utilisatrice in-app (memory `in_app_preference.md`).
+- Survit à la refonte UX finale (glossaire = couche données, pas couche
+  visuelle).
+- Effort divisé par 10 vs ADR-014 plein.
+
+**Limites assumées** :
+
+1. Couvre uniquement les termes du glossaire — un mot EN absent du dict reste
+   en anglais sans tooltip. À élargir empiriquement selon retour terrain.
+2. Tooltips tap-ables : friction +1 tap vs traduction inline native. Compromis
+   accepté pour zéro risque sémantique.
+3. Détection auto des termes dans le texte hypothesis = parsing simple
+   regex/split. Pas de NLP. Suffisant pour le besoin.
+4. Pas de pédagogie sur l'hypothesis 6 sections en entier — uniquement
+   vocabulaire trader. Pour comprendre la structure d'une hypothesis, la
+   trader utilisera la carte Glossaire de l'onglet Config (déjà livrée Paquet
+   29).
+
+### Comment demander à Claude future
+
+- **« Attaque Option E glossaire EN→FR enrichi »** → ~30-45 min, périmètre
+  défini ci-dessus. Cohérent stratégie post-audit fiabilité signaux.
+- **« Attaque ADR-014 plein traduction FR via Ollama »** → ~5-6h réaliste,
+  voir sections Options A/B/C ci-dessous + ADR-014 à créer. Sort consciemment
+  du focus fiabilité signaux. À privilégier post-J+30 quand runtime trading
+  stabilisé.
+
+---
+
+### Historique pré-2026-05-19 (Options A/B/C ADR-014 plein)
 
 **Contexte** : tous les champs textuels produits par Tik aujourd'hui sont en
 anglais (cohérent : les sources Google News, CryptoCompare, GDELT, Reddit
