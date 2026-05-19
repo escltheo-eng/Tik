@@ -162,6 +162,27 @@ export default function HomeScreen() {
   // Marché : vue trading manuel quotidien (cf. backlog #5 Levier B+D).
   const renderMarketTab = () => (
     <>
+      <ThemedView style={[styles.disciplineCard, { borderColor: '#e67e22' }]}>
+        <ThemedText style={styles.disciplineTitle}>
+          ✓ Avant chaque trade — discipline J+24
+        </ThemedText>
+        <ThemedText style={styles.disciplineLine}>
+          • Pas de macro event HIGH dans ±4h (voir Calendrier macro)
+        </ThemedText>
+        <ThemedText style={styles.disciplineLine}>
+          • BTC uniquement — pas de GOLD (Tik à 4,8 % de hit rate GOLD)
+        </ThemedText>
+        <ThemedText style={styles.disciplineLine}>
+          • Direction long ou short — pas neutral
+        </ThemedText>
+        <ThemedText style={styles.disciplineLine}>
+          • Veracity ≥ 85 % sur swing BTC (seuil transitoire Reddit IP-banni)
+        </ThemedText>
+        <ThemedText style={styles.disciplineLine}>
+          • Sizing 1 % du capital max — montée progressive après période profitable
+        </ThemedText>
+      </ThemedView>
+
       <TopHeadlinesCard
         headlines={headlinesState.headlines}
         entityId={headlinesEntity}
@@ -502,5 +523,22 @@ const styles = StyleSheet.create({
   versionText: {
     fontSize: 12,
     opacity: 0.5,
+  },
+  disciplineCard: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 14,
+    gap: 6,
+    backgroundColor: 'rgba(230, 126, 34, 0.08)',
+  },
+  disciplineTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#e67e22',
+    marginBottom: 2,
+  },
+  disciplineLine: {
+    fontSize: 13,
+    lineHeight: 18,
   },
 });
