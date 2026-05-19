@@ -181,6 +181,33 @@ export interface HitRateByVeracity {
   cache_hit: boolean;
 }
 
+// ----- Feedback (Phase C Session 2 trading manuel J+10) -----
+
+/**
+ * Schéma POST /api/v1/feedback côté core (cf. `core/src/tik_core/storage/schemas.py:FeedbackIn`).
+ * Vocabulaire trading-specific (`win` / `loss` / `breakeven` / `not_taken`).
+ * Le mapping watchlist → feedback est fait dans `src/watchlist/outcome.ts`.
+ */
+export type FeedbackOutcome = 'win' | 'loss' | 'breakeven' | 'not_taken';
+
+export interface FeedbackPayload {
+  signal_id: string;
+  trade_id?: string | null;
+  outcome: FeedbackOutcome;
+  pnl_points?: number | null;
+  pnl_pct?: number | null;
+  duration_held_s?: number | null;
+  exit_reason?: string | null;
+}
+
+export interface FeedbackResponse {
+  id: string;
+  signal_id: string;
+  client_id: string;
+  outcome: string;
+  received_at: string;
+}
+
 // ----- Track record (Phase A.3 trading manuel J+10) -----
 
 export type TrackRecordBadge = 'correct' | 'raté' | 'données_manquantes' | 'en_attente';

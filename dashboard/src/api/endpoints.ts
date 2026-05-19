@@ -11,6 +11,8 @@
 import { HttpClient } from './client';
 import {
   Entity,
+  FeedbackPayload,
+  FeedbackResponse,
   Headline,
   Health,
   HitRate,
@@ -213,4 +215,19 @@ export async function getSignalTrackRecord(
   return client.get<SignalTrackRecord>(
     `/metrics/signal_track_record/${encodeURIComponent(signalId)}`,
   );
+}
+
+// ----- Feedback (Phase C Session 2 trading manuel J+10) -----
+
+/**
+ * POST /api/v1/feedback : alimente la recalibration source credibility ADR-011.
+ * Scope requis : `write:feedback`. Si la clé API du dashboard n'a pas ce scope,
+ * l'appel échoue 401/403 — le caller doit swallow et logger (cf.
+ * `useAutoResolveWatchlist`).
+ */
+export async function reportFeedback(
+  client: HttpClient,
+  payload: FeedbackPayload,
+): Promise<FeedbackResponse> {
+  return client.post<FeedbackResponse>('/feedback', payload);
 }

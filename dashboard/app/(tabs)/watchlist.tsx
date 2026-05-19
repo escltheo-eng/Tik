@@ -1,15 +1,34 @@
 import { useRouter } from 'expo-router';
-import { useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { PersonalHitRateCard } from '@/components/watchlist/personal-hit-rate-card';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { getHitRate, reportFeedback } from '@/src/api/endpoints';
+import type { HitRate } from '@/src/api/types';
+import { useAuth } from '@/src/auth/AuthContext';
 import { useTick } from '@/src/hooks/use-tick';
 import { timeAgo } from '@/src/utils/time';
-import { useWatchlist, type WatchlistEntry } from '@/src/watchlist/WatchlistContext';
+import {
+  formatExitReason,
+  formatTradeId,
+  mapOutcomeToFeedback,
+} from '@/src/watchlist/outcome';
+import {
+  computePersonalStats,
+  dominantEntity,
+  dominantHorizon,
+} from '@/src/watchlist/stats';
+import { useAutoResolveWatchlist } from '@/src/watchlist/useAutoResolveWatchlist';
+import {
+  useWatchlist,
+  type WatchlistEntry,
+  type WatchlistOutcome,
+} from '@/src/watchlist/WatchlistContext';
 
 const OUTCOME_LABELS: Record<WatchlistEntry['outcome'], string> = {
   pending: 'En attente',
@@ -41,15 +60,56 @@ export default function WatchlistScreen() {
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme() ?? 'light';
   const palette = Colors[colorScheme];
-  const { entries, remove, clear, hydrated } = useWatchlist();
+  const { entries, remove, setOutcome, clear, hydrated } = useWatchlist();
+  const { client, isAuthenticated } = useAuth();
   useTick();
 
-  const stats = useMemo(() => {
-    const total = entries.length;
-    const pending = entries.filter((e) => e.outcome === 'pending').length;
-    const resolved = total - pending;
-    return { total, pending, resolved };
+  // Hook auto-resolution (Phase C Session 2). Cycle au boot + interval 5 min.
+  useAutoResolveWatchlist(client, isAuthenticated);
+
+  const personalStats = useMemo(() => computePersonalStats(entries), [entries]);
+
+  // Référence Tik global comparable (horizon × entity dominant de la watchlist).
+  const [globalRef, setGlobalRef] = useState<HitRate | null>(null);
+  const [globalLoading, setGlobalLoading] = useState(false);
+  const [globalError, setGlobalError] = useState<string | null>(null);
+
+  const comparison = useMemo(() => {
+    const h = dominantHorizon(entries);
+    const e = dominantEntity(entries);
+    if (!h || !e) return null;
+    return {
+      horizon: h,
+      entity: e,
+      label: `${e} ${h} — 30j`,
+    };
   }, [entries]);
+
+  useEffect(() => {
+    if (!comparison || !isAuthenticated) {
+      setGlobalRef(null);
+      return;
+    }
+    let cancelled = false;
+    setGlobalLoading(true);
+    setGlobalError(null);
+    getHitRate(client, comparison.entity, comparison.horizon, {
+      sinceDays: 30,
+      includeFlagged: false,
+    })
+      .then((res) => {
+        if (!cancelled) setGlobalRef(res);
+      })
+      .catch((err) => {
+        if (!cancelled) setGlobalError((err as Error).message ?? 'erreur');
+      })
+      .finally(() => {
+        if (!cancelled) setGlobalLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [client, isAuthenticated, comparison]);
 
   const sortedEntries = useMemo(
     () => [...entries].sort((a, b) => b.addedAt.localeCompare(a.addedAt)),
@@ -70,6 +130,42 @@ export default function WatchlistScreen() {
       ],
     );
   };
+
+  const openOverrideModal = useCallback(
+    (entry: WatchlistEntry) => {
+      const applyOverride = (chosen: WatchlistOutcome) => {
+        setOutcome(entry.signalId, chosen, null);
+        // Fire-and-forget POST /feedback côté backend.
+        const feedbackOutcome = mapOutcomeToFeedback(chosen);
+        if (feedbackOutcome !== null) {
+          reportFeedback(client, {
+            signal_id: entry.signalId,
+            trade_id: formatTradeId('manual', entry.signalId),
+            outcome: feedbackOutcome,
+            exit_reason: formatExitReason('manual', entry.horizon, chosen),
+          }).catch((err) => {
+            console.warn(
+              `[watchlist] POST /feedback manual override failed for ${entry.signalId}:`,
+              (err as Error).message,
+            );
+          });
+        }
+      };
+
+      Alert.alert(
+        'Résultat observé',
+        `${entry.entityId} · ${entry.direction.toUpperCase()} · ${entry.horizon}\nChoisis le verdict après observation du marché.`,
+        [
+          { text: 'Confirmé ✓', onPress: () => applyOverride('confirmed') },
+          { text: 'Infirmé ✗', onPress: () => applyOverride('refuted') },
+          { text: 'Sans verdict', onPress: () => applyOverride('n_a') },
+          { text: 'Annuler', style: 'cancel' },
+        ],
+        { cancelable: true },
+      );
+    },
+    [client, setOutcome],
+  );
 
   // F2 audit UX 2026-05-17 : 2 lignes lisibles.
   //   Ligne 1 : entity · direction badge · horizon   |   timestamp
@@ -106,11 +202,23 @@ export default function WatchlistScreen() {
           <ThemedText style={styles.timestamp}>{timeAgo(entry.addedAt)}</ThemedText>
         </View>
         <View style={styles.rowLine}>
-          <View style={[styles.outcomeBadge, { borderColor: outcomeColor }]}>
+          <Pressable
+            onPress={() => openOverrideModal(entry)}
+            hitSlop={6}
+            accessibilityRole="button"
+            accessibilityLabel="Modifier le résultat observé"
+            style={({ pressed }) => [
+              styles.outcomeBadge,
+              {
+                borderColor: outcomeColor,
+                opacity: pressed ? 0.55 : 1,
+              },
+            ]}>
             <ThemedText style={[styles.outcomeLabel, { color: outcomeColor }]}>
               {OUTCOME_LABELS[entry.outcome]}
+              {entry.manuallyResolved ? ' ✎' : ''}
             </ThemedText>
-          </View>
+          </Pressable>
           <ThemedText style={styles.veracityLabel}>
             verac {(entry.veracity * 100).toFixed(0)}%
           </ThemedText>
@@ -132,25 +240,18 @@ export default function WatchlistScreen() {
       <View style={styles.header}>
         <ThemedText type="title">Watchlist</ThemedText>
         <ThemedText style={styles.subtitle}>
-          Signaux marqués pour follow-up. L&apos;outcome (confirmé / infirmé) sera renseigné automatiquement à l&apos;expiration de l&apos;horizon dans une prochaine session.
+          Signaux marqués pour follow-up. L&apos;outcome est résolu automatiquement à l&apos;expiration de l&apos;horizon (1h flash / 5j swing / 90j macro). Tape un badge pour ajuster le verdict manuellement.
         </ThemedText>
-        {stats.total > 0 ? (
-          <View style={styles.statsLine}>
-            <ThemedText style={styles.statsItem}>
-              <ThemedText type="defaultSemiBold">{stats.total}</ThemedText> suivi
-              {stats.total > 1 ? 's' : ''}
-            </ThemedText>
-            <ThemedText style={styles.statsDot}>·</ThemedText>
-            <ThemedText style={styles.statsItem}>
-              {stats.pending} en attente
-            </ThemedText>
-            <ThemedText style={styles.statsDot}>·</ThemedText>
-            <ThemedText style={styles.statsItem}>
-              {stats.resolved} résolu{stats.resolved > 1 ? 's' : ''}
-            </ThemedText>
-          </View>
+        {personalStats.total > 0 ? (
+          <PersonalHitRateCard
+            stats={personalStats}
+            globalReference={globalRef}
+            comparisonLabel={comparison?.label ?? null}
+            loading={globalLoading}
+            error={globalError}
+          />
         ) : null}
-        {stats.total > 0 ? (
+        {personalStats.total > 0 ? (
           <View style={styles.actions}>
             <Pressable
               onPress={clear}
@@ -194,19 +295,6 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 13,
     opacity: 0.7,
-  },
-  statsLine: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 4,
-  },
-  statsItem: {
-    fontSize: 13,
-  },
-  statsDot: {
-    fontSize: 13,
-    opacity: 0.5,
   },
   actions: {
     flexDirection: 'row',

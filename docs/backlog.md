@@ -194,8 +194,8 @@ LLM enrichi reportée post-J+30).
 | | ✅ **Phase 1.1 — Lacunes OSINT pro essentielles A+G+C** (livrée 2026-05-05). Persistance DB titres + flag anti fake-news visible + cache Redis sentiment 7j. | ~6-7h ✅ | Audit historique + sentiment stable + transparence anti fake-news. |
 | **J+3-4** | ✅ **Carte Home "Hit rate live"** (livrée 2026-05-04 soir, Phase A.2 + A.2-bis). Pourcentage de signaux Tik corrects sur les 30 derniers jours par horizon × asset, hit rate par tranche de veracity. | ~1 session ✅ | Calibre ta confiance. Insight clé : 67% sur veracity 0.95+ vs 24% global → filtre veracity ≥ 0.90 recommandé. |
 | **J+5-6** | ✅ **Lacune B Phase B1 — Calendrier macro/géopolitique** (livrée 2026-05-06, ADR-017). FRED Releases API + FOMC dates statiques + carte Home compact + route détail. | ~7-8h ✅ | Outil de risk management : éviter d'entrer en swing 4h avant un FOMC. Pendant la phase d'observation sans edge démontré, c'est la discipline simple qui réduit le drawdown. |
-| **J+7-8** | **Vue "Track record signal"** dans le détail signal. Pour chaque signal historique, affiche le delta de prix après 1h/6h/24h/5j. Badges visuels ✓ correct / ✗ raté / ⚠ neutre. | ~1 session | Tu apprends à reconnaître les types de signaux qui marchent vs ceux qui ratent. Ton oeil se forme avant le live. |
-| **J+8-9** | **Workflow "Watchlist post-trade"** — bouton "j'ai pris ce trade" sur le détail signal qui ajoute le signal à une watchlist persistée (AsyncStorage, pattern déjà déployé pour Alerts cf. bug A résolu 2026-05-04). Onglet Watchlist dédié. | ~1 session | Discipline opérationnelle. Tu sais quel signal a déclenché quel trade. Indispensable pour tirer des leçons après. |
+| **J+7-8** | ✅ **Vue "Track record signal"** dans le détail signal (livrée 2026-05-05, Paquet 12 puis refactoré granularité adaptée par horizon Paquet 17 2026-05-06). Pour chaque signal historique, affiche le delta de prix après 1h/6h/24h/5j (swing) ou paliers adaptés (flash/macro). Badges visuels ✓ correct / ✗ raté / ⚠ neutre. | ~1 session ✅ | Tu apprends à reconnaître les types de signaux qui marchent vs ceux qui ratent. Ton oeil se forme avant le live. |
+| **J+8-9** | ✅ **Workflow Watchlist Session 1** (livré 2026-05-05, Paquet 13) — bouton ★ Suivre sur détail signal + onglet Watchlist dédié + persistance AsyncStorage cap 200. **Session 2 LIVRÉE 2026-05-19 (Paquet 28)** : auto-resolution outcome via track record, hit rate perso vs Tik global avec disclaimer biais de sélection < 20, bouton override Alert.alert natif + POST /feedback systématique nourrissant la recalibration source credibility ADR-011. | ~1 session ✅ | Discipline opérationnelle + calibration empirique. Tu sais quel signal a déclenché quel trade. Indispensable pour tirer des leçons après. |
 | **J+9-10** | **Run de validation finale + calibration mentale** — usage Tik en mode "préparation trading" pendant 2 jours sans prendre de trade pour de vrai. Identification des manques. | 0 dev | Calibration mentale avant le live. Identification des features manquantes pour itérer post-J+10. |
 
 ### Décisions structurantes prises
@@ -900,3 +900,56 @@ continue de fonctionner avec N-1 overlays, c'est la beauté du pattern
 extensible. ADR-011 (anti fake-news) inchangé. ADR-018 (OSINT pur)
 renforcé empiriquement (preuve que l'archi multi-overlay tolère bien
 une source manquante sans casser le pipeline).
+
+## 11. Tests Jest dashboard — dette technique (identifié 2026-05-19, Paquet 28)
+
+**Contexte** : Phase C Session 2 (Paquet 28) a livré ~810 lignes de
+code dans 4 fichiers nouveaux + 5 modifiés côté dashboard, dont
+2 modules de helpers purs (`src/watchlist/outcome.ts` et
+`src/watchlist/stats.ts`) qui mériteraient une couverture pytest-style.
+Pattern Phase C Session 1 (Paquet 13) conservé : **pas de framework
+Jest dashboard à ce stade**, validation runtime iPhone Expo Go côté HP.
+
+### Constat factuel
+
+Côté `core/` : ~988 tests pytest verts au 2026-05-18, frameworks
+matures (pytest + httpx.MockTransport + AsyncMock). Côté `dashboard/`
+: **0 tests**, validation strictement runtime.
+
+Conséquences :
+- Régressions silencieuses possibles sur des helpers purs simples
+  (cf. bug latent `pick_new(quota=0)` corrigé Paquet 4 Session 4 par
+  test pytest — équivalent possible côté `dominantHorizon` ou
+  `isEligibleForAutoResolve` côté dashboard)
+- Refactor frileux car pas de filet de sécurité
+
+### Options évaluées
+
+| Option | Effort | Couverture |
+|---|---|---|
+| **A.** Jest setup vanilla + tests `outcome.ts` / `stats.ts` | ~1-2h setup + ~50 tests | Helpers purs uniquement |
+| **B.** Jest + React Native Testing Library + tests composants | ~2-3h setup + ~30 tests | Helpers + composants (PersonalHitRateCard, modal) |
+| **C.** Maestro / Detox tests E2E iPhone | ~4-6h setup + ~10 scénarios | UI bout-en-bout sur device réel |
+| **D.** Statu quo + validation runtime iPhone | 0h | Aucune |
+
+### Verdict préliminaire
+
+**Option A** post-J+14 — minimum vital : couvrir les helpers purs
+de `outcome.ts` + `stats.ts` + `useAutoResolveWatchlist` (factory
+`createResolveEntryFn`). Sortie test : Jest + ts-jest, ~50 tests
+trivials qui pourraient passer en 1-2 sec.
+
+Option B reportée post-J+30 selon volume de bugs UX rapportés.
+Option C reportée indéfiniment (overkill MVP solo).
+
+### Quand l'attaquer
+
+Post-J+14, dans la semaine du 2026-05-24 → 2026-06-01 si la trader
+n'est pas dans le rush du premier trade. Sinon différer au mois
+suivant. Pas urgent — les helpers purs sont relus visuellement et
+TypeScript strict catch ~80 % des erreurs de typage.
+
+### Risque rappelé
+
+Garde-fou 1 inchangé. ADR-003 inchangé. Dette technique purement
+qualité de code, zéro impact runtime ou business.

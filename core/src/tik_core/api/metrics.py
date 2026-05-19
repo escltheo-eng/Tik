@@ -72,11 +72,17 @@ TRACK_RECORD_CACHE_TTL_SECONDS = 6 * 3600
 # fiabilité 2026-05-06 — refactor Paquet 12). La granularité s'adapte pour
 # que les horizons mesurés (cf. HORIZON_SPECS_BY_SIGNAL_HORIZON) tombent sur
 # des klines suffisamment fines.
-#   flash → klines 15m × 96  ≈ 24h (mesure 15min/30min/1h/4h)
+#   flash → klines 15m × 672 ≈ 7j (mesure 15min/30min/45min/1h — cf. Paquet 17)
 #   swing → klines 1h  × 1000 ≈ 41j (mesure 1h/6h/24h/5j — historique)
 #   macro → klines 1d  × 365 = 1y  (mesure 1j/7j/30j/90j)
+#
+# La fenêtre flash a été étendue 2026-05-19 (Paquet 28 fix) de 96 (24h) à
+# 672 (7j) car un signal flash émis il y a plus de 24h voyait son row 1h
+# "résolu" mais tombait hors fenêtre klines → badge "données_manquantes"
+# alors que les rows devraient être correct/raté. 672 reste sous le cap
+# Binance limit=1000.
 TRACK_RECORD_BINANCE_PARAMS: dict[str, dict] = {
-    "flash": {"interval": "15m", "limit": 96},
+    "flash": {"interval": "15m", "limit": 672},
     "swing": {"interval": "1h",  "limit": 1000},
     "macro": {"interval": "1d",  "limit": 365},
 }
@@ -464,7 +470,10 @@ async def get_signal_track_record(
     redis = aioredis.from_url(settings.redis_url, decode_responses=True)
     # Version v2 dans la clé : invalide les caches Paquet 12 au déploiement
     # (le format des rows change avec les nouveaux horizons flash/macro).
-    cache_key = f"tik.track_record.v2.{signal_id}"
+    # Bumpé v2 → v3 le 2026-05-19 (Paquet 28 fix) suite à l'extension de la
+    # fenêtre klines flash de 24h à 7j. Invalide les caches antérieurs qui
+    # retournaient badge "données_manquantes" sur les signaux flash > 24h.
+    cache_key = f"tik.track_record.v3.{signal_id}"
 
     try:
         try:
