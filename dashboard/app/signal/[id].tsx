@@ -5,6 +5,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'reac
 import { AntiFakeNewsBadge } from '@/components/dashboard/anti-fake-news-badge';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { InfoTooltip } from '@/components/ui/info-tooltip';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getSignal, getSignalTrackRecord } from '@/src/api/endpoints';
@@ -112,7 +113,10 @@ function TrackRecordSection({
   if (loading) {
     return (
       <ThemedView style={cardStyle}>
-        <ThemedText type="subtitle">Track record</ThemedText>
+        <View style={trStyles.headerRow}>
+          <ThemedText type="subtitle">Track record</ThemedText>
+          <InfoTooltip entryKey="trackRecord" />
+        </View>
         <ActivityIndicator size="small" style={{ marginTop: 8 }} />
       </ThemedView>
     );
@@ -122,7 +126,10 @@ function TrackRecordSection({
 
   return (
     <ThemedView style={cardStyle}>
-      <ThemedText type="subtitle">Track record</ThemedText>
+      <View style={trStyles.headerRow}>
+        <ThemedText type="subtitle">Track record</ThemedText>
+        <InfoTooltip entryKey="trackRecord" />
+      </View>
       <ThemedText style={trStyles.subtitle}>
         Direction {record.direction.toUpperCase()} · horizon {record.horizon}
       </ThemedText>
@@ -250,13 +257,19 @@ export default function SignalDetailScreen() {
           </View>
         </ThemedView>
 
-        <ThemedText style={styles.heroSubtitle}>
-          horizon {signal.horizon} • {signal.sources_count} sources
-        </ThemedText>
+        <View style={styles.heroSubtitleRow}>
+          <ThemedText style={styles.heroSubtitle}>
+            horizon {signal.horizon} • {signal.sources_count} sources
+          </ThemedText>
+          <InfoTooltip entryKey="horizon" />
+        </View>
 
         <ThemedView style={[styles.metricsRow, { backgroundColor: 'transparent' }]}>
           <ThemedView style={[styles.metricBox, { backgroundColor: 'transparent' }]}>
-            <ThemedText style={styles.metricLabel}>Conviction OSINT</ThemedText>
+            <View style={styles.metricLabelRow}>
+              <ThemedText style={styles.metricLabel}>Conviction OSINT</ThemedText>
+              <InfoTooltip entryKey="conviction" />
+            </View>
             <ThemedText type="title" style={styles.metricValue}>
               {(signal.confidence * 100).toFixed(0)}%
             </ThemedText>
@@ -265,7 +278,10 @@ export default function SignalDetailScreen() {
             </ThemedText>
           </ThemedView>
           <ThemedView style={[styles.metricBox, { backgroundColor: 'transparent' }]}>
-            <ThemedText style={styles.metricLabel}>Veracity</ThemedText>
+            <View style={styles.metricLabelRow}>
+              <ThemedText style={styles.metricLabel}>Veracity</ThemedText>
+              <InfoTooltip entryKey="veracity" />
+            </View>
             <ThemedText type="title" style={styles.metricValue}>
               {(signal.veracity * 100).toFixed(0)}%
             </ThemedText>
@@ -442,6 +458,11 @@ const trStyles = StyleSheet.create({
     padding: 16,
     gap: 8,
   },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
   subtitle: {
     fontSize: 12,
     opacity: 0.6,
@@ -543,6 +564,11 @@ const styles = StyleSheet.create({
     opacity: 0.7,
     textTransform: 'lowercase',
   },
+  heroSubtitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
   metricsRow: {
     flexDirection: 'row',
     gap: 16,
@@ -550,6 +576,11 @@ const styles = StyleSheet.create({
   },
   metricBox: {
     flex: 1,
+  },
+  metricLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   metricLabel: {
     fontSize: 12,

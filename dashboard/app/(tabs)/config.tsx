@@ -19,14 +19,30 @@ import { HttpClient } from '@/src/api/client';
 import { getHealth, listEntities } from '@/src/api/endpoints';
 import { AuthError, NetworkError, TikError } from '@/src/api/errors';
 import { useAuth } from '@/src/auth/AuthContext';
+import { GLOSSARY } from '@/src/glossary';
 import { fetchExpoPushToken, getStoredPushToken, type PushTokenInfo } from '@/src/notifications/push-token';
+import pkg from '../../package.json';
 
-const APP_VERSION = '0.5.0';
+const APP_VERSION = pkg.version;
 
 function maskApiKey(key: string | null): string {
   if (!key) return '—';
   if (key.length <= 8) return '••••';
   return `${key.slice(0, 4)}…${key.slice(-4)}`;
+}
+
+function GlossaryRow({ entryKey }: { entryKey: keyof typeof GLOSSARY }) {
+  const entry = GLOSSARY[entryKey];
+  if (!entry) return null;
+  return (
+    <View style={styles.glossaryRow}>
+      <ThemedText style={styles.glossaryTerm}>{entry.term}</ThemedText>
+      <ThemedText style={styles.glossaryShort}>{entry.short}</ThemedText>
+      {entry.ref ? (
+        <ThemedText style={styles.glossaryRef}>— {entry.ref}</ThemedText>
+      ) : null}
+    </View>
+  );
 }
 
 export default function ConfigScreen() {
@@ -312,6 +328,54 @@ export default function ConfigScreen() {
       </ThemedView>
 
       <ThemedView style={[styles.card, { borderColor: palette.icon }]}>
+        <ThemedText type="subtitle">Glossaire</ThemedText>
+        <ThemedText style={styles.muted}>
+          Vocabulaire technique Tik. Tape l&apos;icône ? à côté d&apos;un terme dans
+          l&apos;app pour voir sa définition rapide.
+        </ThemedText>
+
+        <Collapsible title="Scoring du signal">
+          <ThemedView style={[styles.glossaryList, { backgroundColor: 'transparent' }]}>
+            {(['veracity', 'conviction', 'combinedBias', 'dispersion', 'seuil'] as const).map((k) => (
+              <GlossaryRow key={k} entryKey={k} />
+            ))}
+          </ThemedView>
+        </Collapsible>
+
+        <Collapsible title="Sources et preuves">
+          <ThemedView style={[styles.glossaryList, { backgroundColor: 'transparent' }]}>
+            {(['sourceScores', 'evidence', 'triggers', 'counterScenarios'] as const).map((k) => (
+              <GlossaryRow key={k} entryKey={k} />
+            ))}
+          </ThemedView>
+        </Collapsible>
+
+        <Collapsible title="Anti fake-news et fiabilité">
+          <ThemedView style={[styles.glossaryList, { backgroundColor: 'transparent' }]}>
+            {(['afn'] as const).map((k) => (
+              <GlossaryRow key={k} entryKey={k} />
+            ))}
+          </ThemedView>
+        </Collapsible>
+
+        <Collapsible title="Track record et horizons">
+          <ThemedView style={[styles.glossaryList, { backgroundColor: 'transparent' }]}>
+            {(['trackRecord', 'horizon'] as const).map((k) => (
+              <GlossaryRow key={k} entryKey={k} />
+            ))}
+          </ThemedView>
+        </Collapsible>
+
+        <Collapsible title="Workflow et discipline">
+          <ThemedView style={[styles.glossaryList, { backgroundColor: 'transparent' }]}>
+            {(['outcome', 'hypothesis', 'advisory', 'gardeFou2bis', 'shadow'] as const).map((k) => (
+              <GlossaryRow key={k} entryKey={k} />
+            ))}
+          </ThemedView>
+        </Collapsible>
+      </ThemedView>
+
+      <ThemedView style={[styles.card, { borderColor: palette.icon }]}>
         <ThemedText type="subtitle">À propos</ThemedText>
         <ThemedView style={[styles.kv, { backgroundColor: 'transparent' }]}>
           <ThemedText style={styles.kvLabel}>Dashboard</ThemedText>
@@ -487,5 +551,26 @@ const styles = StyleSheet.create({
     opacity: 0.85,
     lineHeight: 20,
     marginBottom: 4,
+  },
+  glossaryList: {
+    gap: 12,
+    paddingTop: 4,
+  },
+  glossaryRow: {
+    gap: 2,
+  },
+  glossaryTerm: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  glossaryShort: {
+    fontSize: 13,
+    opacity: 0.85,
+    lineHeight: 18,
+  },
+  glossaryRef: {
+    fontSize: 11,
+    opacity: 0.55,
+    fontStyle: 'italic',
   },
 });

@@ -263,12 +263,16 @@ export default function HomeScreen() {
           values={kpis.veracitySeries}
           height={80}
           color={palette.tint}
-          thresholds={[0.7, 0.85]}
+          thresholds={[0.7]}
+          personalThreshold={0.85}
+          personalThresholdColor="#27ae60"
           autoScale
           emptyMessage="Pas assez de signaux pour tracer"
         />
         <ThemedView style={styles.legendRow}>
-          <ThemedText style={styles.legendItem}>tirets : seuils 0,70 et 0,85</ThemedText>
+          <ThemedText style={styles.legendItem}>
+            ligne verte 85 % = ton seuil J+24 (Garde-fou 2-bis transitoire) · tirets gris 70 % = plancher rejet
+          </ThemedText>
         </ThemedView>
       </ThemedView>
 

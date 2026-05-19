@@ -24,6 +24,7 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { InfoTooltip } from '@/components/ui/info-tooltip';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { HitRateByVeracity, HitRateByVeracityBucket } from '@/src/api/types';
@@ -93,7 +94,10 @@ export function HitRateByVeracityCard({
   return (
     <ThemedView style={[styles.card, { borderColor: palette.icon }]}>
       <ThemedView style={[styles.header, { backgroundColor: 'transparent' }]}>
-        <ThemedText type="defaultSemiBold">Hit rate par veracity</ThemedText>
+        <View style={styles.titleRow}>
+          <ThemedText type="defaultSemiBold">Hit rate par veracity</ThemedText>
+          <InfoTooltip entryKey="veracity" />
+        </View>
         <ThemedText style={styles.periodLabel}>
           {entityId} · {horizon}
         </ThemedText>
@@ -140,6 +144,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     flexWrap: 'wrap',
     gap: 4,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   periodLabel: {
     fontSize: 12,

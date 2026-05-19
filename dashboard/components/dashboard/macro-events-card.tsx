@@ -110,34 +110,45 @@ export function MacroEventsCard({
         </ThemedText>
       ) : (
         <>
-          {/* Featured: next event HIGH/MEDIUM/LOW avec countdown */}
-          <ThemedView
-            style={[
-              styles.featured,
-              { borderColor: importanceColor(featured.importance) },
-            ]}>
-            <ThemedView
-              style={[styles.featuredTopRow, { backgroundColor: 'transparent' }]}>
+          {/* Featured: next event HIGH/MEDIUM/LOW avec countdown.
+              Tappable → /macro (F6 audit UX). */}
+          <Link href="/macro" asChild>
+            <Pressable
+              style={({ pressed }) => [
+                styles.featured,
+                {
+                  borderColor: importanceColor(featured.importance),
+                  opacity: pressed ? 0.7 : 1,
+                },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel={`Voir tout le calendrier macro. Prochain : ${eventLabel(featured)} ${timeUntil(featured.scheduled_for)}`}>
               <ThemedView
-                style={[
-                  styles.importanceBadge,
-                  { backgroundColor: importanceColor(featured.importance) },
-                ]}>
-                <ThemedText style={styles.importanceLabel}>
-                  {importanceLabel(featured.importance)}
-                </ThemedText>
+                style={[styles.featuredTopRow, { backgroundColor: 'transparent' }]}>
+                <ThemedView
+                  style={[
+                    styles.importanceBadge,
+                    { backgroundColor: importanceColor(featured.importance) },
+                  ]}>
+                  <ThemedText style={styles.importanceLabel}>
+                    {importanceLabel(featured.importance)}
+                  </ThemedText>
+                </ThemedView>
+                <ThemedView style={[styles.featuredRightCol, { backgroundColor: 'transparent' }]}>
+                  <ThemedText style={styles.featuredCountdown}>
+                    {timeUntil(featured.scheduled_for)}
+                  </ThemedText>
+                  <ThemedText style={styles.chevron}>›</ThemedText>
+                </ThemedView>
               </ThemedView>
-              <ThemedText style={styles.featuredCountdown}>
-                {timeUntil(featured.scheduled_for)}
+              <ThemedText style={styles.featuredEventLabel}>
+                {eventLabel(featured)}
               </ThemedText>
-            </ThemedView>
-            <ThemedText style={styles.featuredEventLabel}>
-              {eventLabel(featured)}
-            </ThemedText>
-            <ThemedText style={styles.metaLabel}>
-              {formatLocal(featured.scheduled_for)} · {featured.assets_impacted.join(', ')}
-            </ThemedText>
-          </ThemedView>
+              <ThemedText style={styles.metaLabel}>
+                {formatLocal(featured.scheduled_for)} · {featured.assets_impacted.join(', ')}
+              </ThemedText>
+            </Pressable>
+          </Link>
 
           {/* Liste compacte des events suivants */}
           {followUps.length > 0 ? (
@@ -235,6 +246,16 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     opacity: 0.85,
+  },
+  featuredRightCol: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  chevron: {
+    fontSize: 18,
+    fontWeight: '700',
+    opacity: 0.55,
   },
   importanceBadge: {
     paddingHorizontal: 6,

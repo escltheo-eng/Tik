@@ -1,6 +1,7 @@
 import { StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
+import { InfoTooltip } from '@/components/ui/info-tooltip';
 
 const VERACITY_HIGH = 0.85;
 const VERACITY_MEDIUM = 0.7;
@@ -31,7 +32,10 @@ export function VeracityGauge({ value, status }: VeracityGaugeProps) {
   return (
     <View style={styles.container}>
       <View style={styles.headerRow}>
-        <ThemedText type="defaultSemiBold">Veracity globale</ThemedText>
+        <View style={styles.titleRow}>
+          <ThemedText type="defaultSemiBold">Veracity globale</ThemedText>
+          <InfoTooltip entryKey="veracity" />
+        </View>
         <ThemedText style={[styles.percent, { color }]}>{pct.toFixed(0)}%</ThemedText>
       </View>
       <View style={styles.track}>
@@ -50,6 +54,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   percent: {
     fontSize: 18,

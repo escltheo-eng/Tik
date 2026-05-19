@@ -13,6 +13,10 @@ export interface MiniSparklineProps {
   yMax?: number;
   thresholds?: number[];
   thresholdColor?: string;
+  /** Seuil mis en évidence (ligne pleine colorée vs pointillée grise pour `thresholds`).
+      F7 audit UX : seuil personnel Garde-fou 2-bis transitoire. */
+  personalThreshold?: number;
+  personalThresholdColor?: string;
   emptyMessage?: string;
   autoScale?: boolean;
   minAmplitude?: number;
@@ -28,6 +32,8 @@ export function MiniSparkline({
   yMax = 1,
   thresholds,
   thresholdColor = 'rgba(127, 140, 141, 0.3)',
+  personalThreshold,
+  personalThresholdColor = '#27ae60',
   emptyMessage = 'Pas assez de points pour tracer',
   autoScale = false,
   minAmplitude = 0.1,
@@ -43,7 +49,11 @@ export function MiniSparkline({
   let effectiveMin = yMin;
   let effectiveMax = yMax;
   if (autoScale) {
-    const refs = thresholds ? [...values, ...thresholds] : values;
+    const refs = [
+      ...values,
+      ...(thresholds ?? []),
+      ...(personalThreshold !== undefined ? [personalThreshold] : []),
+    ];
     const dataMin = Math.min(...refs);
     const dataMax = Math.max(...refs);
     const span = Math.max(dataMax - dataMin, minAmplitude);
@@ -97,6 +107,18 @@ export function MiniSparkline({
             />
           );
         })}
+        {personalThreshold !== undefined &&
+        personalThreshold >= effectiveMin &&
+        personalThreshold <= effectiveMax ? (
+          <Line
+            x1={padding}
+            x2={width - padding}
+            y1={padding + (1 - (personalThreshold - effectiveMin) / range) * innerH}
+            y2={padding + (1 - (personalThreshold - effectiveMin) / range) * innerH}
+            stroke={personalThresholdColor}
+            strokeWidth={1.5}
+          />
+        ) : null}
         <Polyline
           points={points.join(' ')}
           fill="none"

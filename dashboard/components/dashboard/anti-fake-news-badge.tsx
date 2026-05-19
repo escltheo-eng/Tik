@@ -18,7 +18,7 @@
  * Lacune G du plan trading manuel J+10 (Phase 1.1).
  */
 
-import { StyleSheet, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -73,10 +73,21 @@ export function AntiFakeNewsBadge({ status, compact }: AntiFakeNewsBadgeProps) {
   }
 
   if (compact) {
+    const onPress = () => {
+      Alert.alert(content.fullLabel, `${content.description}\n\n— ADR-011`, [
+        { text: 'OK', style: 'default' },
+      ]);
+    };
     return (
-      <View style={[styles.compactBadge, { backgroundColor: content.color }]}>
-        <ThemedText style={styles.compactLabel}>{content.shortLabel}</ThemedText>
-      </View>
+      <Pressable
+        onPress={onPress}
+        hitSlop={6}
+        accessibilityRole="button"
+        accessibilityLabel={`${content.fullLabel} — appuyer pour en savoir plus`}>
+        <View style={[styles.compactBadge, { backgroundColor: content.color }]}>
+          <ThemedText style={styles.compactLabel}>{content.shortLabel}</ThemedText>
+        </View>
+      </Pressable>
     );
   }
 
