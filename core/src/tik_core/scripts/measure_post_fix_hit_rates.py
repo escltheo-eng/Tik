@@ -173,6 +173,18 @@ def _filter_by_entity(signals: list[Signal], entity: str) -> list[Signal]:
     return [s for s in signals if s.entity_id == entity]
 
 
+def _filter_by_cb_status(signals: list[Signal], status: str) -> list[Signal]:
+    """Filtre les signaux par statut anti-fake-news (circuit_breaker_status).
+
+    Permet de TESTER la valeur prédictive de l'AFN : comparer le hit rate des
+    signaux `ok` vs `degraded` vs `tripped` au même horizon. Si `ok` surperforme
+    `degraded`, le flag AFN a une valeur démontrable. `all` désactive le filtre.
+    """
+    if status == "all":
+        return signals
+    return [s for s in signals if s.circuit_breaker_status == status]
+
+
 def _print_level_section(
     results: list[dict],
     *,
@@ -300,6 +312,17 @@ async def main() -> None:
         ),
     )
     parser.add_argument(
+        "--cb-status",
+        type=str,
+        choices=["ok", "degraded", "tripped", "all"],
+        default="all",
+        help=(
+            "Filtre par statut anti-fake-news (circuit_breaker_status). Pour "
+            "TESTER la valeur prédictive de l'AFN : comparer le hit rate "
+            "'ok' vs 'degraded' au même horizon. Défaut 'all'."
+        ),
+    )
+    parser.add_argument(
         "--since-iso",
         type=str,
         default=FIX_BUG_N2_ISO,
@@ -339,7 +362,10 @@ async def main() -> None:
     print("=" * 76)
     print(f"  Période  : {since_dt.isoformat()} → {until_dt.isoformat()} UTC")
     print(f"  Horizon  : {horizon_label} après émission signal")
-    print(f"  Filtre   : signal-horizon={args.signal_horizon} · entity={args.entity}")
+    print(
+        f"  Filtre   : signal-horizon={args.signal_horizon} · entity={args.entity}"
+        f" · cb_status={args.cb_status}"
+    )
     print(f"  Seuil    : ±{args.threshold}% (directionnalité)")
     print(f"  Warning  : si bucket N < {args.min_samples}")
     print("=" * 76)
@@ -365,6 +391,9 @@ async def main() -> None:
     signals = _filter_by_entity(signals, args.entity)
     if args.entity != "all":
         print(f"  → {len(signals)} signaux après filtre entity='{args.entity}'")
+    signals = _filter_by_cb_status(signals, args.cb_status)
+    if args.cb_status != "all":
+        print(f"  → {len(signals)} signaux après filtre cb_status='{args.cb_status}'")
 
     # Filtre éligibilité (signal + horizon ≤ until_dt = signal mûr)
     eligible_cutoff = until_dt - horizon_td
