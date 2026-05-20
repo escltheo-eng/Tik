@@ -15,11 +15,14 @@ baselines (Tik vs Random vs Always LONG/SHORT/NEUTRAL).
 
 Usage :
 
-    # Mesure standard à J+10 post-fix (à lancer 2026-05-27+)
-    python -m tik_core.scripts.measure_post_fix_hit_rates --horizon-days 5
+    # Mesure SWING officielle à J+10 post-fix (à lancer 2026-05-27+) —
+    # swing uniquement, à son horizon de design 5j
+    python -m tik_core.scripts.measure_post_fix_hit_rates \\
+        --signal-horizon swing --horizon-days 5
 
-    # Mesure flash (horizon 1h)
-    python -m tik_core.scripts.measure_post_fix_hit_rates --horizon-hours 1
+    # Mesure FLASH uniquement, à son horizon de design 1h
+    python -m tik_core.scripts.measure_post_fix_hit_rates \\
+        --signal-horizon flash --horizon-hours 1
 
     # Validation logique sur données pré-fix (anti-régression script,
     # doit reproduire approximativement les chiffres Paquet 27)
@@ -33,8 +36,10 @@ Limitations connues :
 - Seuil directionnalité par défaut 0.5 % (hérité backtest.py), pas la
   granularité Paquet 17 (flash 0.30 %, swing 0.50 %, macro 1 %+).
   Override via --threshold si besoin de la granularité fine.
-- Pas de séparation flash/swing/macro automatique — l'utilisatrice
-  lance le script plusieurs fois (1 par horizon).
+- Séparation flash/swing/macro via --signal-horizon (flash|swing|macro|all).
+  IMPORTANT : mélanger les horizons (défaut 'all') fausse la mesure — flash est
+  conçu pour ~1h, swing pour ~5j. Toujours apparier --signal-horizon avec un
+  --horizon-* cohérent (flash↔1h, swing↔5j).
 - Seuil 0.85 transitoire codé en dur (MIN_VERACITY_TRANSITOIRE).
   Si Garde-fou 2-bis revient à 0.90 (retour Reddit), modifier la
   constante (1 ligne).
@@ -139,6 +144,19 @@ def _filter_by_veracity(results: list[dict], min_veracity: float) -> list[dict]:
     if min_veracity <= 0.0:
         return results
     return [r for r in results if r["veracity"] >= min_veracity]
+
+
+def _filter_by_signal_horizon(signals: list[Signal], horizon: str) -> list[Signal]:
+    """Filtre les signaux par leur horizon contractuel (flash/swing/macro).
+
+    Crucial : flash est conçu pour ~1h, swing pour ~5j. Les mélanger dans
+    une seule mesure à horizon forward unique fausse le hit rate des deux
+    (un signal flash évalué à 5j, ou un swing évalué à 1h, n'a pas de sens).
+    `all` désactive le filtre (rétrocompat, mais mesure peu concluante).
+    """
+    if horizon == "all":
+        return signals
+    return [s for s in signals if s.horizon == horizon]
 
 
 def _print_level_section(
@@ -246,6 +264,17 @@ async def main() -> None:
         help="Seuil de variation en %% pour validation directionnelle. Défaut 0.5.",
     )
     parser.add_argument(
+        "--signal-horizon",
+        type=str,
+        choices=["flash", "swing", "macro", "all"],
+        default="all",
+        help=(
+            "Filtre les signaux par horizon contractuel. Apparier avec "
+            "--horizon-* (flash<->1h, swing<->5j). Défaut 'all' (rétrocompat, "
+            "mais mélange les horizons -> mesure peu concluante)."
+        ),
+    )
+    parser.add_argument(
         "--since-iso",
         type=str,
         default=FIX_BUG_N2_ISO,
@@ -285,6 +314,7 @@ async def main() -> None:
     print("=" * 76)
     print(f"  Période  : {since_dt.isoformat()} → {until_dt.isoformat()} UTC")
     print(f"  Horizon  : {horizon_label} après émission signal")
+    print(f"  Filtre   : signal-horizon={args.signal_horizon}")
     print(f"  Seuil    : ±{args.threshold}% (directionnalité)")
     print(f"  Warning  : si bucket N < {args.min_samples}")
     print("=" * 76)
@@ -301,6 +331,12 @@ async def main() -> None:
         result = await session.execute(stmt)
         signals = list(result.scalars().all())
     print(f"  → {len(signals)} signaux dans la période")
+
+    # Filtre par horizon contractuel (flash/swing/macro) AVANT la maturité —
+    # ne pas mélanger des horizons de design différents dans une même mesure.
+    signals = _filter_by_signal_horizon(signals, args.signal_horizon)
+    if args.signal_horizon != "all":
+        print(f"  → {len(signals)} signaux après filtre horizon='{args.signal_horizon}'")
 
     # Filtre éligibilité (signal + horizon ≤ until_dt = signal mûr)
     eligible_cutoff = until_dt - horizon_td

@@ -2319,6 +2319,56 @@ purement infra de test + sécurité données. Branche `work-from-hp` non touché
 (règle d'isolation respectée : commit sur `main` uniquement, l'implémentation
 officielle).
 
+### Paquet 32 — Audit fiabilité signaux pré-trading + filtre horizon mesure (2026-05-20)
+
+Audit fiabilité signaux exécuté sur le système live à **J-4 du trading manuel**
+(2026-05-24), axe stratégique #1. Lecture seule, zéro modif pipeline. Objectif :
+réponse honnête mesurée à « Tik produit-il des signaux fiables depuis le fix
+Bug N=2 (3 jours) ? ». Fenêtre stable (scheduler `Up 2j` post-fix).
+
+**Pipeline SAIN post-fix** (distribution depuis 2026-05-17 20:47, ~900 signaux) :
+- Veracity de nouveau **variée** (fini le 0.95 figé du bug N=2). Flash BTC
+  0.70-0.95, swing BTC plafonné 0.85 (cohérent Garde-fou 2-bis transitoire
+  Reddit banni → filtre 0.85 confirmé discriminant), GOLD 0.85-0.95.
+- AFN ADR-011 actif : flash BTC 161 degraded/350 ok ; swing BTC 80 degraded /
+  **54 tripped** (direction forcée neutral) / 132 ok. ~20 % des swing BTC tripped.
+- `sources_count` correct : flash=3 (ADR-005), swing BTC=4 (klines+FG+CC+GN,
+  **Reddit absent** cohérent Bug 11), GOLD=3 (avec GDELT) ou 2 (GDELT 429).
+- Cadence stable ~186 flash + ~145 swing/jour. Redis frais, P6 actif (champ
+  `anomaly` dans payloads, severity=ok). Reddit toujours 403, GDELT 429 ~3/4 cycles.
+
+**Renversement direction GOLD swing** : 74 short / 60 neutral / **0 long**
+post-fix, vs Paquet 27 (pré-fix) 60 **long** / 3 short qui donnait 4.8 % hit.
+Le bug N=2 biaisait peut-être les directions GOLD. **NE PAS changer la guidance
+« pas de GOLD » pour autant** — 3 jours, non validé. À ré-évaluer post-J+30.
+
+**Mesures préliminaires (horizons mûrs) — AUCUN edge directionnel démontré** :
+- **Flash BTC @1h** (501 sig, seuil 0.3 %) : Tik 37.9 % > Random 33.3 %, mais
+  porté **uniquement par les neutral** (75.8 % — trivial à 1h). Calls
+  directionnels faibles : long 14.3 %, short 13.8 %.
+- **Swing BTC @1j** (préliminaire) : Tik 27.5 % < Random 33.6 %. SHORT BTC
+  17.7 % — l'« edge » SHORT 63 % du Paquet 27 **ne tient pas** → était
+  **régime-dépendant** (BTC baissait alors, a chopé/monté depuis), pas prédictif.
+- **Swing @5j (mesure officielle)** : pas encore possible (signaux 3j < 5j).
+  Premiers mûrs ~2026-05-22, mesure complète **2026-05-27** (J+10 post-fix).
+
+**Conclusion** : pipeline techniquement sain, mais **pas d'edge directionnel
+mesurable** sur cette fenêtre. **Renforce Garde-fou 2-bis** (sizing 1 %,
+observer ≠ parier, pas d'edge démontré). La vraie mesure go/no-go reste le
+swing 5j du 2026-05-27.
+
+**Amélioration outil (commit séparé)** : `measure_post_fix_hit_rates.py` reçoit
+`--signal-horizon flash|swing|macro|all`. Avant, le script mélangeait flash
+(conçu 1h) et swing (conçu 5j) à un horizon forward unique → mesure faussée.
+Désormais la mesure J+10 officielle se lance proprement par horizon
+(`--signal-horizon swing --horizon-days 5`). Helper pur `_filter_by_signal_horizon`,
+ruff propre, script validé runtime (flash@1h / swing@1j / swing@5j). Limitation
+résolue (cf. Paquet 30 « pas de séparation flash/swing »).
+
+**Garde-fous** : Garde-fou 1 / 2-bis / ADR-003/004/011/018 inchangés. Aucune
+modif pipeline/engines — audit lecture seule + 1 amélioration script CLI de
+mesure. Branche `work-from-hp` non touchée.
+
 ---
 
 ## 9. Bugs connus et résolus
