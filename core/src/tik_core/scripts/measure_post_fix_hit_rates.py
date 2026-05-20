@@ -159,6 +159,20 @@ def _filter_by_signal_horizon(signals: list[Signal], horizon: str) -> list[Signa
     return [s for s in signals if s.horizon == horizon]
 
 
+def _filter_by_entity(signals: list[Signal], entity: str) -> list[Signal]:
+    """Filtre les signaux par actif (BTC/GOLD).
+
+    Utile pour mesurer un actif isolé : les baselines (Tik vs Random vs
+    Always X) et les buckets veracity sont alors calculés sur cet actif
+    seul, sans mélange. Ex : `--entity BTC` retire le bruit GOLD (signaux
+    neutral haute-veracity qui polluent le bucket veracity ≥ 0.85).
+    `all` désactive le filtre (rétrocompat).
+    """
+    if entity == "all":
+        return signals
+    return [s for s in signals if s.entity_id == entity]
+
+
 def _print_level_section(
     results: list[dict],
     *,
@@ -275,6 +289,17 @@ async def main() -> None:
         ),
     )
     parser.add_argument(
+        "--entity",
+        type=str,
+        choices=["BTC", "GOLD", "all"],
+        default="all",
+        help=(
+            "Filtre les signaux par actif. Baselines + buckets veracity "
+            "calculés sur cet actif seul. Ex '--entity BTC' retire le bruit "
+            "GOLD. Défaut 'all'."
+        ),
+    )
+    parser.add_argument(
         "--since-iso",
         type=str,
         default=FIX_BUG_N2_ISO,
@@ -314,7 +339,7 @@ async def main() -> None:
     print("=" * 76)
     print(f"  Période  : {since_dt.isoformat()} → {until_dt.isoformat()} UTC")
     print(f"  Horizon  : {horizon_label} après émission signal")
-    print(f"  Filtre   : signal-horizon={args.signal_horizon}")
+    print(f"  Filtre   : signal-horizon={args.signal_horizon} · entity={args.entity}")
     print(f"  Seuil    : ±{args.threshold}% (directionnalité)")
     print(f"  Warning  : si bucket N < {args.min_samples}")
     print("=" * 76)
@@ -337,6 +362,9 @@ async def main() -> None:
     signals = _filter_by_signal_horizon(signals, args.signal_horizon)
     if args.signal_horizon != "all":
         print(f"  → {len(signals)} signaux après filtre horizon='{args.signal_horizon}'")
+    signals = _filter_by_entity(signals, args.entity)
+    if args.entity != "all":
+        print(f"  → {len(signals)} signaux après filtre entity='{args.entity}'")
 
     # Filtre éligibilité (signal + horizon ≤ until_dt = signal mûr)
     eligible_cutoff = until_dt - horizon_td
