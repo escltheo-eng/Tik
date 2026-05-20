@@ -2255,6 +2255,64 @@ divergeront enfin de manière significative.
   côté HP puis `docker cp` côté local (le container n'a pas de FS persistant
   hors bind-mount).
 
+### Paquet 31 — Fix suite pytest rouge + foot-gun production drop_all (2026-05-20)
+
+Audit santé exécuté sur le VPS Hetzner (où Tik tourne, sur `main`). La suite
+pytest annoncée à « 988 verts » dans la doc était en réalité **rouge** :
+**4 failed + 5 errors**, tous dans les gardes anti-régression Bug 9 (timezone
+DB) + Bug 10 (WS) ajoutés le 2026-05-19 (commit `bf0d360`) — **ces tests
+avaient été commités sans jamais passer** (ni tests, ni lint CI).
+
+**Foot-gun production critique découvert** : la fixture `db_engine`
+(`core/tests/conftest.py`) faisait `Base.metadata.drop_all` sur la base de
+`settings.database_url`, qui vaut `TIK_DB_NAME=tik` (**production, 2390+
+signaux**) dans le conteneur. Lancer `pytest` dans le conteneur de prod aurait
+pu **détruire toutes les données** ; sauvé cette fois uniquement par le bug de
+boucle d'événements concomitant. Données vérifiées intactes (2390 → 2393, le
+scheduler insère normalement).
+
+**Cause racine du rouge** : `db_engine` était en `scope="session"`,
+incompatible avec **pytest-asyncio 1.3.0** (la fixture `event_loop` custom
+session-scoped est dépréciée/ignorée depuis 1.0). Les connexions asyncpg
+créées sur la boucle de session étaient utilisées dans la boucle (différente)
+de chaque test function-scoped → `asyncpg ... another operation is in
+progress`. L'erreur collatérale sur `test_ws_lifespan.py` était un effet de
+bord de cette fixture cassée polluant la boucle partagée.
+
+**Fix (3 fichiers, +55/-15)** :
+- `conftest.py` : `db_engine` passé en **scope `function`** (partage la boucle
+  du test), fixture `event_loop` dépréciée **retirée**, **`drop_all` supprimé**
+  (les tests nettoient leurs propres lignes), et **garde anti-prod**
+  `_is_test_database()` qui fait `pytest.skip` si la base n'est pas une base de
+  test. Impossible désormais de toucher la prod par erreur.
+- `test_publisher_timezone_db.py` : seed idempotent de l'entité BTC (FK
+  `signals.entity_id → entities.id`) dans `clean_signal_row` — sur tik_test
+  vierge la FK manquait, ce qui prouvait que ces tests n'avaient jamais tourné
+  même en CI (DB fraîche).
+- `pyproject.toml` : `asyncio_default_fixture_loop_scope = "function"` (lock +
+  silence le warning ; effectif en CI / au prochain rebuild image).
+
+**Validation (jamais contre la prod)** : base `tik_test` créée dans le
+conteneur postgres (`CREATE DATABASE tik_test OWNER tik`). Suite complète
+contre tik_test = **1052 verts** (vs 4 failed + 5 errors). Contre la prod
+`tik` : les tests DB *skippent* proprement, signaux **inchangés (2393 →
+2393)**. Commande sûre (cf. memory `pytest-run-safely-tik-test`) :
+`docker compose ... exec -T -e TIK_DB_NAME=tik_test core sh -c 'cd /app && pytest -q'`.
+
+**Résout** la dette « test pytest Postgres bout-en-bout en CI » tracée depuis
+Bug 9 (Paquet 7/14) : les gardes anti-régression Bug 9 protègent enfin
+réellement.
+
+**Constat séparé tracé (NON corrigé ici)** : `ruff check src/ tests/` (commande
+CI) = **360 erreurs** + `ruff format --check` = 58 fichiers à reformater
+(dette pré-existante massive, lint CI rouge depuis un moment). Backlog #12.
+
+**Garde-fous** : Garde-fou 1 / 2-bis / ADR-003 / ADR-004 / ADR-011 / ADR-018
+inchangés. Aucune modif des engines / pipeline scoring / cross-validation —
+purement infra de test + sécurité données. Branche `work-from-hp` non touchée
+(règle d'isolation respectée : commit sur `main` uniquement, l'implémentation
+officielle).
+
 ---
 
 ## 9. Bugs connus et résolus

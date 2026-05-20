@@ -44,7 +44,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from tik_core.scoring.publisher import publish_swing_signal
 from tik_core.scoring.swing_engine import SwingDecision
-from tik_core.storage.models import Signal
+from tik_core.storage.models import Entity, Signal
 
 
 class _FakeRedis:
@@ -81,10 +81,20 @@ def _build_decision(ts: datetime) -> SwingDecision:
 
 @pytest_asyncio.fixture
 async def clean_signal_row(db_session: AsyncSession):
-    """Capture le signal_id créé pour le retirer en teardown.
+    """Garantit l'entité BTC (FK) puis nettoie les signaux créés en teardown.
 
-    Évite de polluer la DB partagée avec les tests Bug 9.
+    `signals.entity_id` a une foreign key vers `entities.id`. En production
+    l'entité BTC est seedée ; sur la base de test (`tik_test`, schéma vierge
+    via `create_all`) il faut l'insérer avant tout signal, sinon asyncpg lève
+    `ForeignKeyViolationError`. Insertion idempotente (skip si déjà présente).
+
+    Le signal_id créé par chaque test est capturé puis retiré en teardown
+    pour ne pas accumuler de lignes Bug 9 dans la base de test.
     """
+    if await db_session.get(Entity, "BTC") is None:
+        db_session.add(Entity(id="BTC", domain="crypto", namespace="binance"))
+        await db_session.commit()
+
     inserted: list[str] = []
     yield inserted
     for sid in inserted:

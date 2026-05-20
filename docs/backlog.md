@@ -1058,3 +1058,48 @@ TypeScript strict catch ~80 % des erreurs de typage.
 
 Garde-fou 1 inchangé. ADR-003 inchangé. Dette technique purement
 qualité de code, zéro impact runtime ou business.
+
+## 12. Dette lint/format ruff massive sur src/ + tests/ (identifié 2026-05-20, Paquet 31)
+
+**Contexte** : audit santé du 2026-05-20 (Paquet 31) a fait tourner la
+commande CI exacte `ruff check src/ tests/` dans le conteneur core. Résultat :
+**360 erreurs** ruff + `ruff format --check src/ tests/` voudrait reformater
+**58 fichiers**. Dette pré-existante (pas introduite par le fix Paquet 31, dont
+les 3 fichiers `conftest.py` modifié passent ruff proprement).
+
+### Constat factuel
+
+- `ruff check src/ tests/` : 360 erreurs, dont 188 auto-fixables (`--fix`),
+  20 supplémentaires en `--unsafe-fixes`.
+- Familles d'erreurs observées : `UP017` (datetime.UTC alias), `I001`
+  (import sorting), `SIM105` (contextlib.suppress), etc.
+- `ruff format --check` : 58 fichiers à reformater, 44 déjà OK.
+- Conséquence : les étapes `ruff check` + `ruff format --check` de la CI
+  (`.github/workflows/ci.yml` jobs core-lint et core-test) sont **rouges**
+  depuis un moment. Le commit `bf0d360` (gardes Bug 9/10) a même introduit des
+  `UP017` jamais validés.
+
+### Options évaluées
+
+| Option | Effort | Risque |
+|---|---|---|
+| **A.** `ruff check --fix` + `ruff format` sur tout `src/ tests/` en un coup | ~30 min | Gros diff (58+ fichiers), revue impossible visuellement, risque qu'un auto-fix change un comportement subtil |
+| **B.** Par lots : d'abord `tests/` (sans risque runtime), puis `src/` fichier par fichier avec relance pytest | ~2-3h | Faible — chaque lot validé par la suite verte (1052) contre tik_test |
+| **C.** Seulement `--fix` (pas `--unsafe-fixes`) + format, puis revue ciblée des hunks `src/` | ~1h | Modéré |
+| **D.** Statu quo + ignorer plus de règles dans `[tool.ruff.lint] ignore` | ~10 min | Masque la dette au lieu de la résoudre |
+
+### Verdict préliminaire
+
+**Option B** recommandée (par lots, validée par pytest à chaque étape) — c'est
+la seule qui garde un filet de sécurité. À faire **après** le fix Paquet 31
+(commit séparé), et idéalement **après J+24** si la trader est dans le rush du
+premier trade : c'est de la qualité de code, zéro impact runtime/business
+immédiat (le code tourne, seul le lint CI est rouge).
+
+### Risque rappelé
+
+Garde-fou 1 / ADR-003 inchangés. Dette purement qualité de code. **Mais**
+attention : un `ruff --fix` aveugle sur `src/` pourrait toucher de la logique
+(ex. `RET`/`SIM` réécrivent des structures de contrôle). Toujours relancer la
+suite pytest contre `tik_test` (jamais la prod, cf. memory
+`pytest-run-safely-tik-test`) après chaque lot.

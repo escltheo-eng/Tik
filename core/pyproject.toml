@@ -59,6 +59,11 @@ ignore = ["E501"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+# pytest-asyncio >= 1.0 : verrouille le scope de boucle des fixtures async sur
+# "function" (toutes les fixtures async du conftest sont function-scoped). Évite
+# le mismatch de boucle qui faisait planter les fixtures DB session-scoped
+# (cf. conftest.db_engine + CLAUDE.md section 9 Bug 9 régression guards).
+asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 pythonpath = ["src"]
 
