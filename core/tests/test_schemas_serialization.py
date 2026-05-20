@@ -11,25 +11,22 @@ datetimes en JSON avec `Z` final, que la source soit aware ou naïve.
 """
 
 import json
-from datetime import datetime, timezone
-
-import pytest
+from datetime import UTC, datetime
 
 from tik_core.storage.schemas import (
-    Advisory,
     EntityOut,
     FeedbackOut,
     SignalOut,
     VeracityStatus,
 )
 
-
 # =====================================================================
 # SignalOut.timestamp + expiry
 # =====================================================================
 
+
 def test_signal_out_timestamp_aware_serialized_with_z():
-    aware = datetime(2026, 5, 4, 11, 32, 14, tzinfo=timezone.utc)
+    aware = datetime(2026, 5, 4, 11, 32, 14, tzinfo=UTC)
     sig = SignalOut(
         id="TIK-SWING-BTC-X",
         timestamp=aware,
@@ -63,7 +60,7 @@ def test_signal_out_timestamp_naive_serialized_with_z():
 def test_signal_out_expiry_none_stays_none():
     sig = SignalOut(
         id="X",
-        timestamp=datetime(2026, 5, 4, tzinfo=timezone.utc),
+        timestamp=datetime(2026, 5, 4, tzinfo=UTC),
         entity_id="BTC",
         horizon="swing",
         direction="long",
@@ -78,7 +75,7 @@ def test_signal_out_expiry_none_stays_none():
 def test_signal_out_expiry_naive_serialized_with_z():
     sig = SignalOut(
         id="X",
-        timestamp=datetime(2026, 5, 4, tzinfo=timezone.utc),
+        timestamp=datetime(2026, 5, 4, tzinfo=UTC),
         entity_id="BTC",
         horizon="swing",
         direction="long",
@@ -93,6 +90,7 @@ def test_signal_out_expiry_naive_serialized_with_z():
 # =====================================================================
 # EntityOut.created_at + updated_at
 # =====================================================================
+
 
 def test_entity_out_created_updated_naive_serialized_with_z():
     """Cas typique lecture DB : naïf des deux côtés, Pydantic doit forcer Z."""
@@ -114,8 +112,9 @@ def test_entity_out_created_updated_naive_serialized_with_z():
 # VeracityStatus.last_computed
 # =====================================================================
 
+
 def test_veracity_status_last_computed_aware_serialized_with_z():
-    aware = datetime(2026, 5, 4, 11, 32, 14, tzinfo=timezone.utc)
+    aware = datetime(2026, 5, 4, 11, 32, 14, tzinfo=UTC)
     vs = VeracityStatus(
         global_veracity=0.85,
         sources_count_active=5,
@@ -142,6 +141,7 @@ def test_veracity_status_last_computed_naive_serialized_with_z():
 # FeedbackOut.received_at
 # =====================================================================
 
+
 def test_feedback_out_received_at_naive_serialized_with_z():
     fb = FeedbackOut(
         id="abc",
@@ -157,6 +157,7 @@ def test_feedback_out_received_at_naive_serialized_with_z():
 # =====================================================================
 # Régression bug 8 — JS-compatibility check
 # =====================================================================
+
 
 def test_signal_out_json_parseable_as_utc_in_js():
     """Vérifie que le format JSON sortant est parseable par JS comme UTC.
@@ -177,6 +178,6 @@ def test_signal_out_json_parseable_as_utc_in_js():
     payload = json.loads(sig.model_dump_json())
     ts = payload["timestamp"]
     # Le timestamp doit avoir un suffixe explicite (Z ou ±HH:MM)
-    assert ts.endswith("Z") or ts.endswith("+00:00") or "+0" in ts[-6:] or "-0" in ts[-6:]
+    assert ts.endswith(("Z", "+00:00")) or "+0" in ts[-6:] or "-0" in ts[-6:]
     # On vérifie aussi que c'est bien Z (pas +00:00) — convention Tik
     assert ts.endswith("Z")

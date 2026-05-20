@@ -15,7 +15,7 @@ Cette implémentation est un POINT DE DÉPART. Elle sera enrichie par :
 
 import json
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Literal
 
 import httpx
@@ -24,7 +24,6 @@ import structlog
 from redis.asyncio import Redis
 
 from tik_core.config import get_settings
-from tik_core.scoring.anomaly_detector import AnomalyResult
 from tik_core.scoring.cross_validator import apply_cross_validation_to_decision
 from tik_core.scoring.hypothesis_generator import (
     HypothesisGenerator,
@@ -97,17 +96,19 @@ class SwingDecision:
     entity_id: str
     timestamp: datetime
     direction: Literal["long", "short", "neutral"]
-    confidence: float                      # 0..1 — magnitude du combined_bias OSINT (ADR-018)
+    confidence: float  # 0..1 — magnitude du combined_bias OSINT (ADR-018)
     hypothesis: str
-    veracity: float = 0.85                 # ajustée par cross-validation (0..1)
+    veracity: float = 0.85  # ajustée par cross-validation (0..1)
     counter_scenarios: list[dict] = field(default_factory=list)
     evidence: list[dict] = field(default_factory=list)
     triggers: list[dict] = field(default_factory=list)
-    circuit_breaker_status: str = "ok"     # ok | degraded | tripped (cf. ADR-011)
+    circuit_breaker_status: str = "ok"  # ok | degraded | tripped (cf. ADR-011)
     advisory: dict = field(default_factory=dict)  # candidates LLM (ADR-012), etc.
 
 
-async def _fetch_binance_klines(symbol: str = "BTCUSDT", interval: str = "4h", limit: int = 200) -> pd.DataFrame:
+async def _fetch_binance_klines(
+    symbol: str = "BTCUSDT", interval: str = "4h", limit: int = 200
+) -> pd.DataFrame:
     """Récupère les klines Binance en DataFrame (open, high, low, close, volume)."""
     async with httpx.AsyncClient(timeout=15.0) as client:
         r = await client.get(
@@ -120,8 +121,18 @@ async def _fetch_binance_klines(symbol: str = "BTCUSDT", interval: str = "4h", l
     df = pd.DataFrame(
         raw,
         columns=[
-            "open_time", "open", "high", "low", "close", "volume",
-            "close_time", "_q", "_n", "_tb_base", "_tb_quote", "_ignore",
+            "open_time",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "close_time",
+            "_q",
+            "_n",
+            "_tb_base",
+            "_tb_quote",
+            "_ignore",
         ],
     )
     df["timestamp"] = pd.to_datetime(df["open_time"], unit="ms", utc=True)
@@ -130,7 +141,9 @@ async def _fetch_binance_klines(symbol: str = "BTCUSDT", interval: str = "4h", l
     return df[["timestamp", "open", "high", "low", "close", "volume"]]
 
 
-async def _fetch_yahoo_klines(symbol: str = "GC=F", interval: str = "1h", range_: str = "60d") -> pd.DataFrame:
+async def _fetch_yahoo_klines(
+    symbol: str = "GC=F", interval: str = "1h", range_: str = "60d"
+) -> pd.DataFrame:
     """Récupère les klines Yahoo en DataFrame."""
     url = YAHOO_CHART.format(symbol=symbol)
     async with httpx.AsyncClient(timeout=15.0) as client:
@@ -215,7 +228,9 @@ def _compute_technical_evidence(df: pd.DataFrame) -> SwingDecision:
 
     # Règle 2 — RSI (informatif)
     if current_rsi > 70:
-        triggers.append({"type": "rsi", "value": f"RSI overbought {current_rsi:.1f}", "weight": 0.0})
+        triggers.append(
+            {"type": "rsi", "value": f"RSI overbought {current_rsi:.1f}", "weight": 0.0}
+        )
     elif current_rsi < 30:
         triggers.append({"type": "rsi", "value": f"RSI oversold {current_rsi:.1f}", "weight": 0.0})
     elif current_rsi > 55:
@@ -475,11 +490,7 @@ def _enrich_with_fear_greed(decision: SwingDecision, fg: dict) -> float | None:
         return None
 
     bias, zone = _compute_fg_bias(value)
-    bias_label = (
-        "contrarian bull" if bias > 0
-        else "contrarian bear" if bias < 0
-        else "neutral"
-    )
+    bias_label = "contrarian bull" if bias > 0 else "contrarian bear" if bias < 0 else "neutral"
 
     decision.evidence.append(
         {
@@ -541,11 +552,7 @@ def _enrich_with_cryptocompare(decision: SwingDecision, cc: dict) -> float | Non
         return None
 
     bias, zone = _compute_cryptocompare_bias(score)
-    bias_label = (
-        "bull" if bias > 0
-        else "bear" if bias < 0
-        else "neutral"
-    )
+    bias_label = "bull" if bias > 0 else "bear" if bias < 0 else "neutral"
 
     decision.evidence.append(
         {
@@ -561,9 +568,7 @@ def _enrich_with_cryptocompare(decision: SwingDecision, cc: dict) -> float | Non
             "weight": 0.10,
         }
     )
-    return _apply_anomaly_pondération(
-        decision, "cryptocompare_news", bias, cc.get("anomaly")
-    )
+    return _apply_anomaly_pondération(decision, "cryptocompare_news", bias, cc.get("anomaly"))
 
 
 async def _read_google_news(redis: Redis, entity_id: str) -> dict | None:
@@ -611,17 +616,9 @@ def _enrich_with_google_news(decision: SwingDecision, gn: dict) -> float | None:
         return None
 
     bias, zone = _compute_google_news_bias(score)
-    bias_label = (
-        "bull" if bias > 0
-        else "bear" if bias < 0
-        else "neutral"
-    )
+    bias_label = "bull" if bias > 0 else "bear" if bias < 0 else "neutral"
 
-    top_names = [
-        p.get("name", "?")
-        for p in top_publishers[:3]
-        if isinstance(p, dict)
-    ]
+    top_names = [p.get("name", "?") for p in top_publishers[:3] if isinstance(p, dict)]
     pubs_str = f", top: {', '.join(top_names)}" if top_names else ""
 
     decision.evidence.append(
@@ -642,9 +639,7 @@ def _enrich_with_google_news(decision: SwingDecision, gn: dict) -> float | None:
         }
     )
     # P6 (Paquet 21) : si publisher_dominance severity=high, bias /= 2.
-    return _apply_anomaly_pondération(
-        decision, "google_news_rss", bias, gn.get("anomaly")
-    )
+    return _apply_anomaly_pondération(decision, "google_news_rss", bias, gn.get("anomaly"))
 
 
 async def _read_reddit(redis: Redis, entity_id: str) -> dict | None:
@@ -691,17 +686,9 @@ def _enrich_with_reddit(decision: SwingDecision, rd: dict) -> float | None:
         return None
 
     bias, zone = _compute_reddit_bias(score)
-    bias_label = (
-        "bull" if bias > 0
-        else "bear" if bias < 0
-        else "neutral"
-    )
+    bias_label = "bull" if bias > 0 else "bear" if bias < 0 else "neutral"
 
-    top_names = [
-        f"r/{s.get('name', '?')}"
-        for s in top_subs[:3]
-        if isinstance(s, dict)
-    ]
+    top_names = [f"r/{s.get('name', '?')}" for s in top_subs[:3] if isinstance(s, dict)]
     subs_str = f", top: {', '.join(top_names)}" if top_names else ""
 
     decision.evidence.append(
@@ -722,9 +709,7 @@ def _enrich_with_reddit(decision: SwingDecision, rd: dict) -> float | None:
         }
     )
     # P6 (Paquet 21) : si brigading_reddit severity=high, bias /= 2.
-    return _apply_anomaly_pondération(
-        decision, "reddit_btc", bias, rd.get("anomaly")
-    )
+    return _apply_anomaly_pondération(decision, "reddit_btc", bias, rd.get("anomaly"))
 
 
 async def analyze_swing_btc(
@@ -757,7 +742,9 @@ async def analyze_swing_btc(
 
     if redis is None:
         await apply_llm_hypothesis(
-            decision, "swing", hypothesis_generator,
+            decision,
+            "swing",
+            hypothesis_generator,
             settings.llm_hypothesis_mode,
         )
         return decision
@@ -826,7 +813,9 @@ async def analyze_swing_btc(
 
         # Génération hypothèse contextuelle LLM (post-enrichissements + post-CV)
         await apply_llm_hypothesis(
-            decision, "swing", hypothesis_generator,
+            decision,
+            "swing",
+            hypothesis_generator,
             settings.llm_hypothesis_mode,
         )
 
@@ -908,9 +897,7 @@ def _enrich_with_dxy(decision: SwingDecision, history: list[dict]) -> float | No
     var_pct = (recent - past) / past * 100
 
     bias_label = (
-        "contrarian bull GOLD" if bias > 0
-        else "contrarian bear GOLD" if bias < 0
-        else "neutral"
+        "contrarian bull GOLD" if bias > 0 else "contrarian bear GOLD" if bias < 0 else "neutral"
     )
 
     decision.evidence.append(
@@ -977,9 +964,7 @@ def _enrich_with_cot(decision: SwingDecision, cot: dict) -> float | None:
 
     bias, zone = _compute_cot_bias(net_pct)
     bias_label = (
-        "contrarian bull GOLD" if bias > 0
-        else "contrarian bear GOLD" if bias < 0
-        else "neutral"
+        "contrarian bull GOLD" if bias > 0 else "contrarian bear GOLD" if bias < 0 else "neutral"
     )
 
     decision.evidence.append(
@@ -1049,19 +1034,14 @@ def _enrich_with_gdelt(decision: SwingDecision, gd: dict) -> float | None:
 
     bias, zone = _compute_gdelt_bias(tone)
     bias_label = (
-        "contrarian bull GOLD" if bias > 0
-        else "contrarian bear GOLD" if bias < 0
-        else "neutral"
+        "contrarian bull GOLD" if bias > 0 else "contrarian bear GOLD" if bias < 0 else "neutral"
     )
 
     decision.evidence.append(
         {
             "source": "gdelt_news",
             "score": get_effective_score("gdelt_news", SOURCE_SCORES),
-            "fact": (
-                f"GDELT tone={tone:+.2f} (zone={zone}, "
-                f"agg {n_points} pts / {timespan})"
-            ),
+            "fact": (f"GDELT tone={tone:+.2f} (zone={zone}, agg {n_points} pts / {timespan})"),
         }
     )
     decision.triggers.append(
@@ -1189,7 +1169,9 @@ async def analyze_swing_gold(
 
         # Génération hypothèse contextuelle LLM (post-enrichissements + post-CV)
         await apply_llm_hypothesis(
-            decision, "swing", hypothesis_generator,
+            decision,
+            "swing",
+            hypothesis_generator,
             settings.llm_hypothesis_mode,
         )
 

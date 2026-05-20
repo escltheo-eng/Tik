@@ -49,7 +49,7 @@ def _configure_logging(log_level: str) -> None:
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI):  # noqa: ARG001 — signature imposée par FastAPI lifespan
     """Gère le cycle de vie : init DB, Redis, cleanup."""
     settings = get_settings()
     log = structlog.get_logger()

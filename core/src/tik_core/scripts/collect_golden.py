@@ -37,7 +37,7 @@ import asyncio
 import hashlib
 import json
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import quote_plus
 
@@ -55,9 +55,7 @@ RAW_ITEMS_FILE = DATA_DIR / "raw_items.jsonl"
 # === URLs sources (identiques aux ingesters de prod pour garantir la
 # représentativité du sample) ===
 
-GOOGLE_NEWS_RSS_TPL = (
-    "https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en"
-)
+GOOGLE_NEWS_RSS_TPL = "https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en"
 USER_AGENT_BROWSER = "Mozilla/5.0 (compatible; TikBot/0.1)"
 
 CRYPTOCOMPARE_NEWS_URL = "https://min-api.cryptocompare.com/data/v2/news/"
@@ -98,7 +96,7 @@ class CollectedItem:
 
 def _make_id(asset: str, source: str, text: str) -> str:
     """Hash stable d'un item : sha256(asset|source|text)[:16]."""
-    h = hashlib.sha256(f"{asset}|{source}|{text}".encode("utf-8")).hexdigest()
+    h = hashlib.sha256(f"{asset}|{source}|{text}".encode()).hexdigest()
     return h[:16]
 
 
@@ -122,6 +120,7 @@ def _load_existing_ids(path: Path) -> set[str]:
 
 
 # === Fetchers de prix ===
+
 
 async def fetch_btc_price(client: httpx.AsyncClient) -> float | None:
     try:
@@ -158,6 +157,7 @@ async def fetch_gold_price(client: httpx.AsyncClient) -> float | None:
 
 # === Fetchers de sources textuelles ===
 
+
 def _extract_publisher(entry) -> str:
     """Logique identique à google_news_ingester._extract_publisher."""
     try:
@@ -191,9 +191,7 @@ async def fetch_google_news(
         r.raise_for_status()
         content = r.text
     except Exception as exc:  # noqa: BLE001
-        log.warning(
-            "collect_golden.google_news.error", error=str(exc), asset=asset
-        )
+        log.warning("collect_golden.google_news.error", error=str(exc), asset=asset)
         return []
 
     feed = await asyncio.to_thread(feedparser.parse, content)
@@ -258,9 +256,7 @@ async def fetch_cryptocompare(
         title = (a.get("title") or "").strip()
         if not title:
             continue
-        source_name = (
-            (a.get("source_info") or {}).get("name") or a.get("source") or ""
-        )
+        source_name = (a.get("source_info") or {}).get("name") or a.get("source") or ""
         items.append(
             CollectedItem(
                 id=_make_id("btc", "cryptocompare", title),
@@ -335,9 +331,7 @@ async def fetch_reddit_btc(
                         "subreddit": sub,
                         "score": score,
                         "num_comments": pdata.get("num_comments", 0),
-                        "permalink": (
-                            f"https://www.reddit.com{pdata.get('permalink', '')}"
-                        ),
+                        "permalink": (f"https://www.reddit.com{pdata.get('permalink', '')}"),
                         "created_utc": pdata.get("created_utc"),
                     },
                     fetched_at=fetched_at,
@@ -348,6 +342,7 @@ async def fetch_reddit_btc(
 
 
 # === Quotas par asset ===
+
 
 def quotas_for(asset: str, n_total: int) -> dict[str, int]:
     """Répartit n_total items entre les sources d'un asset.
@@ -397,6 +392,7 @@ def pick_new(
 
 # === Pipeline principal ===
 
+
 async def collect_for_asset(
     client: httpx.AsyncClient,
     asset: str,
@@ -405,7 +401,7 @@ async def collect_for_asset(
     settings,
 ) -> list[CollectedItem]:
     quotas = quotas_for(asset, n_total)
-    fetched_at = datetime.now(tz=timezone.utc).isoformat()
+    fetched_at = datetime.now(tz=UTC).isoformat()
 
     if asset == "btc":
         # Prix snapshoté une seule fois, partagé entre les 3 sources BTC
@@ -413,32 +409,40 @@ async def collect_for_asset(
         price = await fetch_btc_price(client)
 
         gn_task = fetch_google_news(
-            client, "Bitcoin", "btc", price, fetched_at,
+            client,
+            "Bitcoin",
+            "btc",
+            price,
+            fetched_at,
         )
         cc_task = fetch_cryptocompare(
-            client, settings.cryptocompare_api_key, price, fetched_at,
+            client,
+            settings.cryptocompare_api_key,
+            price,
+            fetched_at,
         )
         rd_task = fetch_reddit_btc(
-            client, REDDIT_SUBS_BTC, price, fetched_at,
+            client,
+            REDDIT_SUBS_BTC,
+            price,
+            fetched_at,
         )
-        gn_items, cc_items, rd_items = await asyncio.gather(
-            gn_task, cc_task, rd_task
-        )
+        gn_items, cc_items, rd_items = await asyncio.gather(gn_task, cc_task, rd_task)
 
         new_items: list[CollectedItem] = []
-        new_items.extend(
-            pick_new(gn_items, quotas["google_news"], existing_ids)
-        )
-        new_items.extend(
-            pick_new(cc_items, quotas["cryptocompare"], existing_ids)
-        )
+        new_items.extend(pick_new(gn_items, quotas["google_news"], existing_ids))
+        new_items.extend(pick_new(cc_items, quotas["cryptocompare"], existing_ids))
         new_items.extend(pick_new(rd_items, quotas["reddit"], existing_ids))
         return new_items
 
     if asset == "gold":
         price = await fetch_gold_price(client)
         gn_items = await fetch_google_news(
-            client, '"gold price"', "gold", price, fetched_at,
+            client,
+            '"gold price"',
+            "gold",
+            price,
+            fetched_at,
         )
         return pick_new(gn_items, quotas["google_news"], existing_ids)
 
@@ -490,19 +494,18 @@ async def main() -> None:
     existing_ids = _load_existing_ids(args.output)
     print(f"Items déjà en stock : {len(existing_ids)}")
 
-    assets_to_collect = (
-        ["btc", "gold"] if args.asset == "all" else [args.asset]
-    )
+    assets_to_collect = ["btc", "gold"] if args.asset == "all" else [args.asset]
 
     total_new = 0
     async with httpx.AsyncClient() as client:
         for asset in assets_to_collect:
-            print(
-                f"\n--- Collecte pour {asset.upper()} "
-                f"(cible: {args.n_per_asset}) ---"
-            )
+            print(f"\n--- Collecte pour {asset.upper()} (cible: {args.n_per_asset}) ---")
             new_items = await collect_for_asset(
-                client, asset, args.n_per_asset, existing_ids, settings,
+                client,
+                asset,
+                args.n_per_asset,
+                existing_ids,
+                settings,
             )
 
             by_source: dict[str, int] = {}

@@ -29,7 +29,6 @@ informationnelle pour l'humain.
 from __future__ import annotations
 
 import json
-from datetime import datetime
 from typing import Any
 
 import redis.asyncio as aioredis
@@ -117,9 +116,7 @@ async def list_upcoming(
     - Cache Redis TTL 5 min.
     """
     importance_filter = _parse_importance(importance)
-    cache_key = _make_cache_key(
-        "upcoming", hours, importance_filter, entity_id, limit
-    )
+    cache_key = _make_cache_key("upcoming", hours, importance_filter, entity_id, limit)
 
     settings = get_settings()
     redis = aioredis.from_url(settings.redis_url, decode_responses=True)

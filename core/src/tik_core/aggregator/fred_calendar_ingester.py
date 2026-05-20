@@ -61,9 +61,7 @@ from tik_core.aggregator.macro_calendar_data import (  # noqa: E402, F401
 )
 
 
-def filter_future_dates(
-    dates: list[str], min_date: datetime | None = None
-) -> list[str]:
+def filter_future_dates(dates: list[str], min_date: datetime | None = None) -> list[str]:
     """Filtre les dates ≥ aujourd'hui (UTC) — on ne s'intéresse qu'au futur.
 
     Pour la Phase B1, on persiste aussi les events passés récents (~30 j)
@@ -169,11 +167,7 @@ class FredCalendarIngester(BaseIngester):
             return []
 
         release_dates = data.get("release_dates", [])
-        return [
-            str(item.get("date"))
-            for item in release_dates
-            if item.get("date")
-        ]
+        return [str(item.get("date")) for item in release_dates if item.get("date")]
 
     async def _cycle(self) -> int:
         """Un cycle complet : fetch FRED dynamique + upsert. Retourne n_upserted.

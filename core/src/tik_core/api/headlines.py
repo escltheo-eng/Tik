@@ -22,7 +22,7 @@ lecture Redis et délègue la logique métier aux helpers.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from math import exp
 
 import redis.asyncio as aioredis
@@ -75,16 +75,16 @@ def _parse_iso(value: object) -> datetime | None:
         return None
     if isinstance(value, datetime):
         if value.tzinfo is None:
-            return value.replace(tzinfo=timezone.utc)
-        return value.astimezone(timezone.utc)
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
     try:
         s = str(value)
         if s.endswith("Z"):
             s = s[:-1] + "+00:00"
         dt = datetime.fromisoformat(s)
         if dt.tzinfo is None:
-            return dt.replace(tzinfo=timezone.utc)
-        return dt.astimezone(timezone.utc)
+            return dt.replace(tzinfo=UTC)
+        return dt.astimezone(UTC)
     except (TypeError, ValueError):
         return None
 
@@ -248,9 +248,7 @@ async def get_top_headlines(
                 continue
 
             credibility = get_effective_score(source_id, SOURCE_SCORES)
-            merged.extend(
-                _iter_headlines_from_payload(payload, source_id, credibility, cutoff)
-            )
+            merged.extend(_iter_headlines_from_payload(payload, source_id, credibility, cutoff))
 
         finalized = _finalize_headlines(merged, sort, limit, now_utc())
         return [HeadlineOut(**h) for h in finalized]

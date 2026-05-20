@@ -31,7 +31,7 @@ import argparse
 import asyncio
 import json
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
@@ -66,8 +66,8 @@ def _parse_dt(s: str) -> datetime:
     """Parse une datetime ISO 8601, normalisée en UTC."""
     dt = datetime.fromisoformat(s)
     if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
+        return dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
 
 
 def _load_raw_items(path: Path) -> list[dict]:
@@ -145,7 +145,7 @@ def _compute_deltas_for_item(
         "fetch_price": fetch_price,
         "fetched_at": item["fetched_at"],
         "deltas": deltas,
-        "computed_at": datetime.now(tz=timezone.utc).isoformat(),
+        "computed_at": datetime.now(tz=UTC).isoformat(),
     }
 
 
@@ -155,20 +155,10 @@ def _print_stats(records: list[dict], horizons: list[str]) -> None:
     print(f"  {'horizon':<8s} | {'BTC dispo':>14s} | {'GOLD dispo':>14s}")
     print("  " + "-" * 42)
     for h in horizons:
-        for asset in ("btc", "gold"):
-            pass  # juste pour calcul
         btc_total = sum(1 for r in records if r["asset"] == "btc")
         gold_total = sum(1 for r in records if r["asset"] == "gold")
-        btc_avail = sum(
-            1
-            for r in records
-            if r["asset"] == "btc" and r["deltas"][h]["available"]
-        )
-        gold_avail = sum(
-            1
-            for r in records
-            if r["asset"] == "gold" and r["deltas"][h]["available"]
-        )
+        btc_avail = sum(1 for r in records if r["asset"] == "btc" and r["deltas"][h]["available"])
+        gold_avail = sum(1 for r in records if r["asset"] == "gold" and r["deltas"][h]["available"])
         print(
             f"  {h:<8s} | "
             f"{btc_avail:>3d} / {btc_total:<3d} ({btc_avail / btc_total * 100 if btc_total else 0:5.1f}%) | "
@@ -214,10 +204,7 @@ async def main() -> None:
     for asset, lst in by_asset.items():
         print(f"  {asset}: {len(lst)}")
 
-    print(
-        f"\nFetch des historiques de prix "
-        f"(BTC via Binance, GOLD via Yahoo)..."
-    )
+    print("\nFetch des historiques de prix (BTC via Binance, GOLD via Yahoo)...")
     async with httpx.AsyncClient(timeout=30.0) as client:
         coros = []
         if "btc" in by_asset:
@@ -237,7 +224,7 @@ async def main() -> None:
         idx += 1
         print(f"  → GOLD : {len(histories['gold'])} klines récupérées")
 
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     print(f"\nCalcul des deltas pour les horizons {horizons} (now = {now.isoformat()})")
 
     records: list[dict] = []

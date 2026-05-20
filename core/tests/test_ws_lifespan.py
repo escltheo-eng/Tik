@@ -142,9 +142,8 @@ def test_ws_rejects_invalid_key() -> None:
     """
     with TestClient(app) as client:
         url = "/api/v1/ws/signals?api_key=tik_definitely_not_a_real_key"
-        with pytest.raises(WebSocketDisconnect) as exc_info:
-            with client.websocket_connect(url):
-                pass
+        with pytest.raises(WebSocketDisconnect) as exc_info, client.websocket_connect(url):
+            pass
         assert exc_info.value.code == 1008
 
 
@@ -181,7 +180,7 @@ def test_ws_module_source_has_break_after_client_gone() -> None:
     source = ws_src.read_text(encoding="utf-8")
 
     # Le log doit être présent (signature du fix)
-    assert 'ws.client_gone' in source, (
+    assert "ws.client_gone" in source, (
         "Bug 10 régression : le log info 'ws.client_gone' a été retiré de "
         "ws.py. Cf. CLAUDE.md section 9 Bug 10."
     )
@@ -211,7 +210,7 @@ def test_ws_module_continues_on_payload_parse_error() -> None:
     ws_src = Path(__file__).parent.parent / "src" / "tik_core" / "api" / "ws.py"
     source = ws_src.read_text(encoding="utf-8")
 
-    assert 'ws.payload_invalid' in source, (
+    assert "ws.payload_invalid" in source, (
         "Régression : le log 'ws.payload_invalid' a été retiré. Le bloc "
         "try parse JSON doit logger + continue (cf. Bug 10 fix séparation)."
     )
@@ -248,6 +247,7 @@ def test_ws_disconnects_cleanly_and_app_stays_healthy(ws_api_key: str) -> None:
     docker compose up).
     """
     import json as _json
+
     import redis as sync_redis_lib
 
     settings = get_settings()
@@ -257,15 +257,17 @@ def test_ws_disconnects_cleanly_and_app_stays_healthy(ws_api_key: str) -> None:
     except Exception as exc:  # noqa: BLE001
         pytest.skip(f"Redis non accessible pour ce test d'intégration : {exc}")
 
-    fake_payload = _json.dumps({
-        "id": "TIK-TEST-BUG10",
-        "timestamp": "2026-05-19T10:00:00Z",
-        "entity_id": "BTC",
-        "horizon": "swing",
-        "direction": "neutral",
-        "confidence": 0.0,
-        "veracity": 0.85,
-    })
+    fake_payload = _json.dumps(
+        {
+            "id": "TIK-TEST-BUG10",
+            "timestamp": "2026-05-19T10:00:00Z",
+            "entity_id": "BTC",
+            "horizon": "swing",
+            "direction": "neutral",
+            "confidence": 0.0,
+            "veracity": 0.85,
+        }
+    )
 
     with TestClient(app) as client:
         url = f"/api/v1/ws/signals?api_key={ws_api_key}"
@@ -278,9 +280,7 @@ def test_ws_disconnects_cleanly_and_app_stays_healthy(ws_api_key: str) -> None:
             # de souci de timeout court). receive_json bloque jusqu'à
             # réception ou close.
             msg = ws.receive_json()
-            assert msg.get("type") in ("signal", "heartbeat"), (
-                f"Réception WS inattendue : {msg!r}"
-            )
+            assert msg.get("type") in ("signal", "heartbeat"), f"Réception WS inattendue : {msg!r}"
 
         # Étape 3 : WS fermée (sortie du context manager `with ws:`).
         # La coroutine handler côté serveur DEVRAIT sortir de la boucle
@@ -292,7 +292,9 @@ def test_ws_disconnects_cleanly_and_app_stays_healthy(ws_api_key: str) -> None:
         for i in range(5):
             sync_redis.publish(
                 "tik.signal.BTC.swing",
-                _json.dumps({"id": f"TIK-TEST-BUG10-AFTER-{i}", "timestamp": "2026-05-19T10:00:01Z"}),
+                _json.dumps(
+                    {"id": f"TIK-TEST-BUG10-AFTER-{i}", "timestamp": "2026-05-19T10:00:01Z"}
+                ),
             )
 
         # Étape 5+6 : /health doit répondre rapidement (event loop sain).
@@ -302,6 +304,7 @@ def test_ws_disconnects_cleanly_and_app_stays_healthy(ws_api_key: str) -> None:
         # smoke test source code ci-dessus reste plus fiable comme garde-fou
         # mais ce test prouve le scenario bout-en-bout.
         import time
+
         t0 = time.monotonic()
         response = client.get("/api/v1/health")
         elapsed = time.monotonic() - t0

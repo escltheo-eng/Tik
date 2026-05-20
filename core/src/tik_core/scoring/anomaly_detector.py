@@ -293,7 +293,6 @@ def detect_volume_spike(
         score=round(ratio, 2),
         severity=severity,
         detail=(
-            f"current volume {current_volume} vs baseline mean "
-            f"{mean_baseline:.1f} (×{ratio:.2f})"
+            f"current volume {current_volume} vs baseline mean {mean_baseline:.1f} (×{ratio:.2f})"
         ),
     )

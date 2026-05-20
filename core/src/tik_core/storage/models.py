@@ -29,6 +29,7 @@ class Base(DeclarativeBase):
 
 # ----- Enums -----
 
+
 class DomainType(str, PyEnum):
     TRADING = "trading"
     BETTING = "betting"
@@ -50,6 +51,7 @@ class DirectionType(str, PyEnum):
 
 
 # ----- Tables -----
+
 
 class Entity(Base):
     """Entité observable (BTC, GOLD, event_X)."""
@@ -124,9 +126,7 @@ class Feedback(Base):
 
     __tablename__ = "feedbacks"
 
-    id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, default=lambda: str(uuid4())
-    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     signal_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     signal_timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     client_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
@@ -148,9 +148,7 @@ class BacktestRun(Base):
 
     __tablename__ = "backtest_runs"
 
-    id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, default=lambda: str(uuid4())
-    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     run_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc_naive, index=True)
 
     # Paramètres du run
@@ -185,9 +183,7 @@ class SourceCredibilityHistory(Base):
 
     __tablename__ = "source_credibility_history"
 
-    id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, default=lambda: str(uuid4())
-    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     source: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     computed_at: Mapped[datetime] = mapped_column(
         DateTime, default=now_utc_naive, nullable=False, index=True
@@ -221,20 +217,14 @@ class MacroEvent(Base):
 
     __tablename__ = "macro_events"
 
-    id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, default=lambda: str(uuid4())
-    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     event_code: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     # ex: "FOMC_MEETING", "NFP", "CPI", "PPI", "GDP", "RETAIL_SALES",
     # "INDUSTRIAL_PRODUCTION", "INITIAL_CLAIMS"
     event_name: Mapped[str] = mapped_column(String(128), nullable=False)
     # ex: "FOMC Statement & Press Conference", "Employment Situation (NFP)"
-    scheduled_for: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, index=True
-    )
-    importance: Mapped[str] = mapped_column(
-        String(16), nullable=False, index=True
-    )
+    scheduled_for: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    importance: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
     # "HIGH" | "MEDIUM" | "LOW"
     assets_impacted: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     # ex: ["BTC", "GOLD"]
@@ -242,9 +232,7 @@ class MacroEvent(Base):
     # "fred" | "fed_static"
     release_id: Mapped[int | None] = mapped_column(Integer)
     # Pour les events FRED uniquement (None pour FOMC statique)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=now_utc_naive, nullable=False
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc_naive, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=now_utc_naive, onupdate=now_utc_naive, nullable=False
     )
@@ -268,9 +256,7 @@ class HeadlineRecord(Base):
 
     __tablename__ = "headlines"
 
-    id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, default=lambda: str(uuid4())
-    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     entity_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     source: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     title_hash: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
@@ -293,9 +279,7 @@ class ApiKey(Base):
 
     __tablename__ = "api_keys"
 
-    id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, default=lambda: str(uuid4())
-    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     client_id: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     key_hash: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)

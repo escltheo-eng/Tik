@@ -23,7 +23,6 @@ os.environ.setdefault("TIK_REDIS_HOST", "localhost")
 
 from tik_core.config import get_settings  # noqa: E402
 from tik_core.main import app  # noqa: E402
-from tik_core.storage.database import init_engine, close_engine  # noqa: E402
 from tik_core.storage.models import Base  # noqa: E402
 
 

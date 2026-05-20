@@ -3,16 +3,14 @@
 Couverture : `now_utc`, `now_utc_naive`, `iso_utc` (sérialisation ISO-Z).
 """
 
-from datetime import datetime, timezone
-
-import pytest
+from datetime import UTC, datetime, timezone
 
 from tik_core.utils.time import iso_utc, now_utc, now_utc_naive
-
 
 # =====================================================================
 # now_utc
 # =====================================================================
+
 
 def test_now_utc_returns_aware_datetime():
     dt = now_utc()
@@ -22,7 +20,7 @@ def test_now_utc_returns_aware_datetime():
 
 def test_now_utc_close_to_real_now():
     dt = now_utc()
-    real = datetime.now(timezone.utc)
+    real = datetime.now(UTC)
     delta = abs((real - dt).total_seconds())
     assert delta < 1.0
 
@@ -30,6 +28,7 @@ def test_now_utc_close_to_real_now():
 # =====================================================================
 # now_utc_naive
 # =====================================================================
+
 
 def test_now_utc_naive_returns_naive_datetime():
     dt = now_utc_naive()
@@ -39,7 +38,7 @@ def test_now_utc_naive_returns_naive_datetime():
 def test_now_utc_naive_semantically_utc():
     """La valeur naïve doit être proche de l'UTC réel (en valeur)."""
     naive = now_utc_naive()
-    aware = datetime.now(timezone.utc).replace(tzinfo=None)
+    aware = datetime.now(UTC).replace(tzinfo=None)
     delta = abs((aware - naive).total_seconds())
     assert delta < 1.0
 
@@ -47,6 +46,7 @@ def test_now_utc_naive_semantically_utc():
 # =====================================================================
 # iso_utc — sérialisation
 # =====================================================================
+
 
 def test_iso_utc_none_returns_none():
     assert iso_utc(None) is None
@@ -61,7 +61,7 @@ def test_iso_utc_naive_assumes_utc_and_appends_z():
 
 
 def test_iso_utc_aware_utc_uses_z():
-    aware = datetime(2026, 5, 4, 11, 32, 14, tzinfo=timezone.utc)
+    aware = datetime(2026, 5, 4, 11, 32, 14, tzinfo=UTC)
     out = iso_utc(aware)
     assert out == "2026-05-04T11:32:14Z"
 
@@ -69,6 +69,7 @@ def test_iso_utc_aware_utc_uses_z():
 def test_iso_utc_aware_offset_converts_to_utc():
     """Un datetime aware avec offset non-UTC doit être converti et marqué Z."""
     from datetime import timedelta as td
+
     paris = timezone(td(hours=2))
     aware = datetime(2026, 5, 4, 13, 32, 14, tzinfo=paris)  # = 11:32:14 UTC
     out = iso_utc(aware)
@@ -77,7 +78,7 @@ def test_iso_utc_aware_offset_converts_to_utc():
 
 def test_iso_utc_no_double_suffix_on_existing_z():
     """Si la chaîne ISO finit déjà par +00:00, on remplace par Z, pas Z+00:00."""
-    aware = datetime(2026, 5, 4, 0, 0, 0, tzinfo=timezone.utc)
+    aware = datetime(2026, 5, 4, 0, 0, 0, tzinfo=UTC)
     out = iso_utc(aware)
     assert out is not None
     assert "+00:00" not in out

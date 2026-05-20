@@ -34,7 +34,7 @@ import json
 import random
 import sys
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
@@ -215,9 +215,7 @@ def _prompt_verdict() -> str | None:
     - "quit" : sortir cleanly
     - None : input invalide, on re-prompt
     """
-    raw = input(
-        "  bull (b) / bear (s) / neutral (n) / skip (?) / quit (q) : "
-    ).strip().lower()
+    raw = input("  bull (b) / bear (s) / neutral (n) / skip (?) / quit (q) : ").strip().lower()
     if raw in ("q", "quit"):
         return "quit"
     if raw in ("?", "skip"):
@@ -235,7 +233,7 @@ def _append_annotation(path: Path, item_id: str, verdict: str) -> None:
                 {
                     "id": item_id,
                     "verdict": verdict,
-                    "annotated_at": datetime.now(tz=timezone.utc).isoformat(),
+                    "annotated_at": datetime.now(tz=UTC).isoformat(),
                 },
                 ensure_ascii=False,
             )
@@ -243,9 +241,7 @@ def _append_annotation(path: Path, item_id: str, verdict: str) -> None:
         )
 
 
-def _shuffle_items(
-    items: list[RawItem], seed: int
-) -> list[RawItem]:
+def _shuffle_items(items: list[RawItem], seed: int) -> list[RawItem]:
     rng = random.Random(seed)
     shuffled = list(items)
     rng.shuffle(shuffled)
@@ -363,7 +359,9 @@ def main() -> None:
             translation: str | None = None
             if translate:
                 translation = _translate_to_french(
-                    item.text, settings.ollama_url, settings.ollama_model,
+                    item.text,
+                    settings.ollama_url,
+                    settings.ollama_model,
                 )
             _print_item(item, idx, total, translation=translation)
             while True:

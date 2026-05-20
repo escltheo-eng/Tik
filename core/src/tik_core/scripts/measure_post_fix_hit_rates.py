@@ -215,13 +215,8 @@ def _print_level_section(
         if s["n"] == 0:
             continue
         n_succ = s.get("n_success", 0)
-        hit_str = (
-            f"{n_succ:.1f}/{s['n']}" if isinstance(n_succ, float) else f"{n_succ}/{s['n']}"
-        )
-        print(
-            f"{name:<16} | {hit_str:<14} | "
-            f"{s['hit_rate'] * 100:6.1f}% | {s['avg_gain']:+8.2f}%"
-        )
+        hit_str = f"{n_succ:.1f}/{s['n']}" if isinstance(n_succ, float) else f"{n_succ}/{s['n']}"
+        print(f"{name:<16} | {hit_str:<14} | {s['hit_rate'] * 100:6.1f}% | {s['avg_gain']:+8.2f}%")
     print()
 
 
@@ -342,7 +337,11 @@ async def main() -> None:
     skipped = 0
     for sig in eligible:
         ev = _evaluate_signal_td(
-            sig, horizon_td, args.threshold, btc_history, gold_history,
+            sig,
+            horizon_td,
+            args.threshold,
+            btc_history,
+            gold_history,
         )
         if ev is None:
             skipped += 1

@@ -1103,3 +1103,37 @@ attention : un `ruff --fix` aveugle sur `src/` pourrait toucher de la logique
 (ex. `RET`/`SIM` réécrivent des structures de contrôle). Toujours relancer la
 suite pytest contre `tik_test` (jamais la prod, cf. memory
 `pytest-run-safely-tik-test`) après chaque lot.
+
+### ✅ RÉSOLU 2026-05-20 (même session que Paquet 31)
+
+Approche finalement retenue : **Option B+config** (auto-fixes sûrs + format +
+config ciblée pour les faux positifs framework, jamais de réécriture aveugle
+de logique). Détail :
+
+- **Auto-fixes sûrs** (`ruff check --fix`, **sans** `--unsafe-fixes`) : 260
+  corrections mécaniques (UP017 `timezone.utc`→`datetime.UTC`, I001 tri imports,
+  F401 imports inutilisés, F541, RET501, C420, UP035/041, SIM117/300…).
+- **`ruff format`** : 56 fichiers reformatés (whitespace/quotes/wrapping, zéro
+  logique).
+- **Fixes code genuins/triviaux (validés pytest)** : F821 (vrai import
+  `datetime` manquant dans `test_source_credibility.py` — annotation
+  neutralisée par `from __future__ import annotations`), PIE810 (tuple
+  `endswith`), B007 (suppression d'une boucle morte `for asset: pass` dans
+  `backtest_golden.py`), RET504 (return inline dans `hypothesis_generator`).
+- **Config ruff** (zéro risque code, cf. `pyproject.toml`) :
+  - `flake8-bugbear.extend-immutable-calls` = FastAPI `Depends/Query/...` +
+    `tik_core.auth.require_scope` → tue les 55 B008 (pattern DI idiomatique).
+  - `per-file-ignores` `tests/**` = `ARG001/ARG002/N805/E402` (bruit helpers de
+    test).
+  - `ignore` global += `SIM103/108/105` (style), `B027` (ABC no-op Strategy),
+    `UP042` (enum, churn différé).
+  - 4 ARG src documentés via `# noqa` (conformité d'interface : lifespan
+    FastAPI, adapter advisory, baselines backtest).
+
+**Résultat** : `ruff check src/ tests/` = **All checks passed**, `ruff format
+--check` = 102/102 formatés, **suite pytest 1052 verts** contre tik_test.
+Les étapes lint CI (jobs core-lint + core-test) repassent vertes.
+
+**Limite résiduelle** : 1 `DeprecationWarning` runtime non-lint subsiste
+(`pubsub.close()` → `aclose()` dans `ws.py:127`) — warning bénin, hors scope
+lint, à traiter avec le prochain bump de la lib redis.

@@ -8,7 +8,7 @@ Polling faible fréquence (1h suffit pour la plupart des séries).
 
 import asyncio
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import httpx
 import structlog
@@ -23,13 +23,13 @@ FRED_BASE = "https://api.stlouisfed.org/fred/series/observations"
 
 # Séries utiles pour trading BTC/Gold
 DEFAULT_SERIES = [
-    "DGS10",       # 10-Year Treasury yield
-    "DGS2",        # 2-Year Treasury yield (for curve)
-    "DTWEXBGS",    # DXY-like (Broad Dollar Index)
-    "CPIAUCSL",    # CPI All items
-    "M2SL",        # M2 money supply
-    "FEDFUNDS",    # Effective Fed Funds Rate
-    "UNRATE",      # Unemployment rate
+    "DGS10",  # 10-Year Treasury yield
+    "DGS2",  # 2-Year Treasury yield (for curve)
+    "DTWEXBGS",  # DXY-like (Broad Dollar Index)
+    "CPIAUCSL",  # CPI All items
+    "M2SL",  # M2 money supply
+    "FEDFUNDS",  # Effective Fed Funds Rate
+    "UNRATE",  # Unemployment rate
 ]
 
 
@@ -113,7 +113,7 @@ class FredIngester(BaseIngester):
             return None
 
         try:
-            ts = datetime.fromisoformat(last["date"]).replace(tzinfo=timezone.utc)
+            ts = datetime.fromisoformat(last["date"]).replace(tzinfo=UTC)
         except Exception:  # noqa: BLE001
             ts = now_utc()
 

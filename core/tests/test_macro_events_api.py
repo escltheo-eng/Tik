@@ -11,7 +11,7 @@ validation runtime (suite intégration nécessite Postgres + Redis up).
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 from tik_core.api.macro_events import (
@@ -19,7 +19,6 @@ from tik_core.api.macro_events import (
     _parse_importance,
     _serialize_event,
 )
-
 
 # =============================================================================
 # _parse_importance
@@ -128,7 +127,7 @@ def test_serialize_event_basic():
         id="abc-123",
         event_code="NFP",
         event_name="Employment Situation",
-        scheduled_for=datetime(2026, 6, 5, 12, 30, tzinfo=timezone.utc),
+        scheduled_for=datetime(2026, 6, 5, 12, 30, tzinfo=UTC),
         importance="HIGH",
         assets_impacted=["BTC", "GOLD"],
         source="fred",
@@ -166,7 +165,7 @@ def test_serialize_event_handles_none_assets_impacted():
         id="abc-123",
         event_code="X",
         event_name="x",
-        scheduled_for=datetime(2026, 6, 5, 12, 30, tzinfo=timezone.utc),
+        scheduled_for=datetime(2026, 6, 5, 12, 30, tzinfo=UTC),
         importance="LOW",
         assets_impacted=None,
         source="fred",

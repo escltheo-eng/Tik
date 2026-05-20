@@ -6,7 +6,7 @@ Tests des helpers math : `spearman_correlation`, `_ranks`, `parse_horizons`,
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC
 
 import pytest
 
@@ -40,7 +40,7 @@ class TestParseHorizons:
 class TestParseIsoDate:
     def test_yyyy_mm_dd(self):
         result = parse_iso_date("2025-05-07")
-        assert result.tzinfo is timezone.utc
+        assert result.tzinfo is UTC
         assert result.year == 2025
         assert result.month == 5
         assert result.day == 7
@@ -133,10 +133,13 @@ class TestSpearmanCorrelation:
 
     def test_constant_returns_none(self):
         # Variance nulle (tous les ys identiques) → division par zéro → None
-        assert spearman_correlation(
-            [1.0, 2.0, 3.0, 4.0, 5.0],
-            [10.0, 10.0, 10.0, 10.0, 10.0],
-        ) is None
+        assert (
+            spearman_correlation(
+                [1.0, 2.0, 3.0, 4.0, 5.0],
+                [10.0, 10.0, 10.0, 10.0, 10.0],
+            )
+            is None
+        )
 
     def test_handles_ties(self):
         # Dataset avec ex-aequo, doit retourner une valeur valide

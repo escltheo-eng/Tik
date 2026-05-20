@@ -18,7 +18,6 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import httpx
-import pytest
 
 from tik_core.aggregator.google_news_ingester import (
     GOOGLE_NEWS_RSS_TPL,
@@ -26,7 +25,6 @@ from tik_core.aggregator.google_news_ingester import (
     GoogleNewsIngester,
 )
 from tik_core.aggregator.news_classifier import NewsClassifier
-
 
 # =============================================================================
 # Fixtures et helpers

@@ -19,7 +19,7 @@ Tests purs, aucune dépendance externe.
 
 from __future__ import annotations
 
-from datetime import date, timezone
+from datetime import UTC, date
 
 from tik_core.aggregator.macro_calendar_data import (
     BOE_STATIC_DATES,
@@ -35,7 +35,6 @@ from tik_core.aggregator.macro_calendar_data import (
     date_to_utc_release,
     find_fred_release,
 )
-
 
 # =============================================================================
 # FRED_RELEASES — invariants structurels (Phase B1)
@@ -329,7 +328,7 @@ def test_all_static_events_unique_event_codes_per_source():
 def test_date_to_utc_release_us_eastern_summer_dst():
     """En juin (EDT = UTC-4), 8h30 ET = 12h30 UTC."""
     dt = date_to_utc_release("2026-06-15", 8, 30)
-    assert dt.tzinfo is timezone.utc
+    assert dt.tzinfo is UTC
     assert dt.hour == 12
     assert dt.minute == 30
 
@@ -343,47 +342,35 @@ def test_date_to_utc_release_us_eastern_winter_no_dst():
 
 def test_date_to_utc_release_europe_paris_summer_cest():
     """En juin (CEST = UTC+2), 14h15 ECB Frankfurt = 12h15 UTC."""
-    dt = date_to_utc_release(
-        "2026-06-11", 14, 15, tz_name="Europe/Paris"
-    )
+    dt = date_to_utc_release("2026-06-11", 14, 15, tz_name="Europe/Paris")
     assert dt.hour == 12
     assert dt.minute == 15
 
 
 def test_date_to_utc_release_europe_paris_winter_cet():
     """En janvier (CET = UTC+1), 14h15 ECB Frankfurt = 13h15 UTC."""
-    dt = date_to_utc_release(
-        "2026-01-22", 14, 15, tz_name="Europe/Paris"
-    )
+    dt = date_to_utc_release("2026-01-22", 14, 15, tz_name="Europe/Paris")
     assert dt.hour == 13
     assert dt.minute == 15
 
 
 def test_date_to_utc_release_asia_tokyo_no_dst():
     """Japon = UTC+9 constant. 12h00 JST = 03h00 UTC quel que soit le mois."""
-    dt_jan = date_to_utc_release(
-        "2026-01-23", 12, 0, tz_name="Asia/Tokyo"
-    )
-    dt_jul = date_to_utc_release(
-        "2026-07-31", 12, 0, tz_name="Asia/Tokyo"
-    )
+    dt_jan = date_to_utc_release("2026-01-23", 12, 0, tz_name="Asia/Tokyo")
+    dt_jul = date_to_utc_release("2026-07-31", 12, 0, tz_name="Asia/Tokyo")
     assert dt_jan.hour == 3
     assert dt_jul.hour == 3
 
 
 def test_date_to_utc_release_europe_london_winter_gmt():
     """En janvier (GMT = UTC), 12h00 London = 12h00 UTC."""
-    dt = date_to_utc_release(
-        "2026-02-05", 12, 0, tz_name="Europe/London"
-    )
+    dt = date_to_utc_release("2026-02-05", 12, 0, tz_name="Europe/London")
     assert dt.hour == 12
 
 
 def test_date_to_utc_release_europe_london_summer_bst():
     """En juin (BST = UTC+1), 12h00 London = 11h00 UTC."""
-    dt = date_to_utc_release(
-        "2026-06-19", 12, 0, tz_name="Europe/London"
-    )
+    dt = date_to_utc_release("2026-06-19", 12, 0, tz_name="Europe/London")
     assert dt.hour == 11
 
 

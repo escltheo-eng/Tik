@@ -26,10 +26,10 @@ import asyncio
 import json
 import math
 import os
-import statistics
-from datetime import datetime, timedelta, timezone
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import httpx
 import structlog
@@ -57,9 +57,9 @@ log = structlog.get_logger()
 
 # Seuils directionnalité par horizon (cohérent macro Paquet 17 P5)
 DIRECTIONALITY_THRESHOLDS_PCT: dict[int, float] = {
-    24: 0.5,    # 24h
-    120: 1.0,   # 5j (5 × 24h)
-    720: 2.0,   # 30j
+    24: 0.5,  # 24h
+    120: 1.0,  # 5j (5 × 24h)
+    720: 2.0,  # 30j
 }
 
 # Tolérance find_closest_price : 24h pour daily klines, 48h pour weekly COT
@@ -95,10 +95,10 @@ def parse_iso_date(date_str: str) -> datetime:
     if "T" in date_str:
         # Strip tz info, garde la date
         date_str = date_str.split("T")[0]
-    return datetime.fromisoformat(date_str).replace(tzinfo=timezone.utc)
+    return datetime.fromisoformat(date_str).replace(tzinfo=UTC)
 
 
-def is_success(direction: str, bias: float, delta_pct: float, threshold_pct: float) -> bool | None:
+def is_success(direction: str, bias: float, delta_pct: float, threshold_pct: float) -> bool | None:  # noqa: ARG001 — direction conservé pour la symétrie d'interface
     """Détermine si le delta de prix confirme le bias contrarian/trend.
 
     - direction='contrarian': bias > 0 → on attend bull (delta > +threshold)
@@ -187,16 +187,20 @@ def evaluate_source_simple(
             continue
 
         target_dt = parse_iso_date(date_str)
-        entry_price = find_closest_price(price_history, target_dt, max_diff_ms=PRICE_MATCH_TOLERANCE_MS)
+        entry_price = find_closest_price(
+            price_history, target_dt, max_diff_ms=PRICE_MATCH_TOLERANCE_MS
+        )
         if entry_price is None:
             continue
 
         deltas: dict[int, float] = {}
         for h in horizons_h:
             future_dt = target_dt + timedelta(hours=h)
-            if future_dt > datetime.now(tz=timezone.utc):
+            if future_dt > datetime.now(tz=UTC):
                 continue  # horizon dans le futur
-            future_price = find_closest_price(price_history, future_dt, max_diff_ms=PRICE_MATCH_TOLERANCE_MS)
+            future_price = find_closest_price(
+                price_history, future_dt, max_diff_ms=PRICE_MATCH_TOLERANCE_MS
+            )
             if future_price is None:
                 continue
             deltas[h] = (future_price - entry_price) / entry_price * 100
@@ -204,14 +208,16 @@ def evaluate_source_simple(
         if not deltas:
             continue
 
-        rows.append({
-            "date": date_str,
-            "value": value,
-            "bias": bias,
-            "palier": palier,
-            "entry_price": entry_price,
-            "deltas_pct": deltas,
-        })
+        rows.append(
+            {
+                "date": date_str,
+                "value": value,
+                "bias": bias,
+                "palier": palier,
+                "entry_price": entry_price,
+                "deltas_pct": deltas,
+            }
+        )
 
     return _analyze_rows(rows, direction, horizons_h, asset)
 
@@ -227,7 +233,7 @@ def evaluate_source_dxy(
         if i < 5:
             continue  # besoin de 5 points historiques
         # _compute_dxy_bias attend desc (le plus récent en premier)
-        slice_asc = dxy_history[max(0, i - 9):i + 1]
+        slice_asc = dxy_history[max(0, i - 9) : i + 1]
         slice_desc = list(reversed(slice_asc))
         result = _compute_dxy_bias(slice_desc)
         if result is None:
@@ -236,16 +242,20 @@ def evaluate_source_dxy(
 
         date_str = point["date"]
         target_dt = parse_iso_date(date_str)
-        entry_price = find_closest_price(price_history, target_dt, max_diff_ms=PRICE_MATCH_TOLERANCE_MS)
+        entry_price = find_closest_price(
+            price_history, target_dt, max_diff_ms=PRICE_MATCH_TOLERANCE_MS
+        )
         if entry_price is None:
             continue
 
         deltas: dict[int, float] = {}
         for h in horizons_h:
             future_dt = target_dt + timedelta(hours=h)
-            if future_dt > datetime.now(tz=timezone.utc):
+            if future_dt > datetime.now(tz=UTC):
                 continue
-            future_price = find_closest_price(price_history, future_dt, max_diff_ms=PRICE_MATCH_TOLERANCE_MS)
+            future_price = find_closest_price(
+                price_history, future_dt, max_diff_ms=PRICE_MATCH_TOLERANCE_MS
+            )
             if future_price is None:
                 continue
             deltas[h] = (future_price - entry_price) / entry_price * 100
@@ -253,14 +263,16 @@ def evaluate_source_dxy(
         if not deltas:
             continue
 
-        rows.append({
-            "date": date_str,
-            "value": (recent - past) / past * 100,  # variation 5d %
-            "bias": bias,
-            "palier": palier,
-            "entry_price": entry_price,
-            "deltas_pct": deltas,
-        })
+        rows.append(
+            {
+                "date": date_str,
+                "value": (recent - past) / past * 100,  # variation 5d %
+                "bias": bias,
+                "palier": palier,
+                "entry_price": entry_price,
+                "deltas_pct": deltas,
+            }
+        )
 
     return _analyze_rows(rows, "contrarian", horizons_h, "GOLD")
 
@@ -301,7 +313,9 @@ def _analyze_rows(
             bias = row["bias"]
             value = row["value"]
 
-            entry = by_palier.setdefault(palier, {"n": 0, "n_success": 0, "n_evaluable": 0, "delta_avg": 0.0, "biases": []})
+            entry = by_palier.setdefault(
+                palier, {"n": 0, "n_success": 0, "n_evaluable": 0, "delta_avg": 0.0, "biases": []}
+            )
             entry["n"] += 1
             entry["delta_avg"] += delta_pct
             entry["biases"].append(bias)
@@ -340,7 +354,9 @@ def _analyze_rows(
         # Hit rate cas extrêmes
         n_extreme_evaluable = sum(1 for r in extreme_rows if r["success"] is not None)
         n_extreme_success = sum(1 for r in extreme_rows if r["success"] is True)
-        extreme_hit_rate = n_extreme_success / n_extreme_evaluable if n_extreme_evaluable > 0 else None
+        extreme_hit_rate = (
+            n_extreme_success / n_extreme_evaluable if n_extreme_evaluable > 0 else None
+        )
 
         metrics_by_horizon[f"{h}h"] = {
             "threshold_pct": threshold,
@@ -348,11 +364,12 @@ def _analyze_rows(
             "by_palier": finalized_paliers,
             "ic_spearman": round(ic, 4) if ic is not None else None,
             "ic_expected_sign": ic_expected_sign,
-            "ic_actual_sign": "positive" if (ic is not None and ic > 0) else "negative" if (ic is not None and ic < 0) else None,
-            "ic_sign_correct": (
-                None if ic is None
-                else (ic < 0) == (direction == "contrarian")
-            ),
+            "ic_actual_sign": "positive"
+            if (ic is not None and ic > 0)
+            else "negative"
+            if (ic is not None and ic < 0)
+            else None,
+            "ic_sign_correct": (None if ic is None else (ic < 0) == (direction == "contrarian")),
             "extreme": {
                 "n_total": len(extreme_rows),
                 "n_evaluable": n_extreme_evaluable,
@@ -374,7 +391,9 @@ def build_recommendations(report: dict[str, Any]) -> list[str]:
     recos: list[str] = []
     for source_name, source_data in report["by_source"].items():
         if source_data["n_total"] == 0:
-            recos.append(f"⚠ **{source_name}** : aucun point évaluable, vérifier la source de données.")
+            recos.append(
+                f"⚠ **{source_name}** : aucun point évaluable, vérifier la source de données."
+            )
             continue
 
         for horizon, metrics in source_data["metrics_by_horizon"].items():
@@ -434,7 +453,9 @@ def build_recommendations(report: dict[str, Any]) -> list[str]:
                     )
 
     if not recos:
-        recos.append("ℹ Aucune action urgente — tous les paliers et IC restent dans la zone acceptable.")
+        recos.append(
+            "ℹ Aucune action urgente — tous les paliers et IC restent dans la zone acceptable."
+        )
     return recos
 
 
@@ -447,13 +468,15 @@ def render_markdown(report: dict[str, Any]) -> str:
     lines.append(f"**Date du run** : {args['ran_at']}")
     lines.append(f"**Période** : {args['days_back']} jours (depuis {args['since_date']})")
     lines.append(f"**Horizons mesurés** : {', '.join(args['horizons'])}")
-    lines.append(f"**Seuils directionnalité** : 24h=0.5 % / 5j=1.0 % / 30j=2.0 %")
+    lines.append("**Seuils directionnalité** : 24h=0.5 % / 5j=1.0 % / 30j=2.0 %")
     lines.append("")
     lines.append("## Résumé")
     lines.append("")
 
     # Tableau résumé
-    lines.append("| Source | Asset | Direction | n total | IC max (|.|) | Cas extrême max hit rate |")
+    lines.append(
+        "| Source | Asset | Direction | n total | IC max (|.|) | Cas extrême max hit rate |"
+    )
     lines.append("|---|---|---|---|---|---|")
     for source_name, source_data in report["by_source"].items():
         ic_max = 0.0
@@ -487,7 +510,9 @@ def render_markdown(report: dict[str, Any]) -> str:
     lines.append("")
 
     for source_name, source_data in report["by_source"].items():
-        lines.append(f"### {source_name} (asset={source_data['asset']}, direction={source_data['direction']})")
+        lines.append(
+            f"### {source_name} (asset={source_data['asset']}, direction={source_data['direction']})"
+        )
         lines.append("")
         if source_data["n_total"] == 0:
             lines.append("Aucun point évaluable.")
@@ -528,10 +553,18 @@ def render_markdown(report: dict[str, Any]) -> str:
     lines.append("")
     lines.append("## Limites assumées")
     lines.append("")
-    lines.append("- **Période 12m strongly bullish (2025-2026)** : régime haussier crypto + or. Reco issues ne couvriront pas un régime bear (à reproduire dans 6-12 mois).")
-    lines.append("- **COT hebdomadaire** = ~52 points/12m. IC Spearman bruité, à interpréter prudemment.")
-    lines.append("- **Direction contrarian assumée pour les 4 sources** : le drapeau `🔴 IC sign opposé` signale une remise en question potentielle de la sémantique.")
-    lines.append("- **Pas de prise en compte régime de marché** (bull/bear/range). Calibration globale sur 12m.")
+    lines.append(
+        "- **Période 12m strongly bullish (2025-2026)** : régime haussier crypto + or. Reco issues ne couvriront pas un régime bear (à reproduire dans 6-12 mois)."
+    )
+    lines.append(
+        "- **COT hebdomadaire** = ~52 points/12m. IC Spearman bruité, à interpréter prudemment."
+    )
+    lines.append(
+        "- **Direction contrarian assumée pour les 4 sources** : le drapeau `🔴 IC sign opposé` signale une remise en question potentielle de la sémantique."
+    )
+    lines.append(
+        "- **Pas de prise en compte régime de marché** (bull/bear/range). Calibration globale sur 12m."
+    )
     lines.append("")
     return "\n".join(lines)
 
@@ -548,13 +581,16 @@ async def main() -> None:
         "--output-md",
         default="core/data/numeric_calibration/numeric_calibration_report.md",
     )
-    parser.add_argument("--fred-api-key", default=None,
-                        help="Si non fourni, lit settings.fred_api_key (.env)")
+    parser.add_argument(
+        "--fred-api-key", default=None, help="Si non fourni, lit settings.fred_api_key (.env)"
+    )
     parser.add_argument("--gdelt-query", default="gold price")
     args = parser.parse_args()
 
     horizons_h = parse_horizons(args.horizons)
-    fred_key = args.fred_api_key or os.environ.get("FRED_API_KEY") or get_settings().fred_api_key or ""
+    fred_key = (
+        args.fred_api_key or os.environ.get("FRED_API_KEY") or get_settings().fred_api_key or ""
+    )
     log.info(
         "backtest_numeric.start",
         days_back=args.days_back,
@@ -567,7 +603,9 @@ async def main() -> None:
         log.info("backtest_numeric.fetch.sources_start")
         fg_history, gdelt_history, dxy_history, cot_history = await asyncio.gather(
             fetch_fear_greed_history(args.days_back, client=client),
-            fetch_gdelt_tone_history(query=args.gdelt_query, days_back=args.days_back, client=client),
+            fetch_gdelt_tone_history(
+                query=args.gdelt_query, days_back=args.days_back, client=client
+            ),
             fetch_dxy_history(api_key=fred_key, days_back=args.days_back, client=client),
             fetch_cot_history(args.days_back, client=client),
         )
@@ -604,7 +642,7 @@ async def main() -> None:
         ),
     }
 
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     since = now - timedelta(days=args.days_back)
     report = {
         "meta": {
@@ -640,13 +678,13 @@ async def main() -> None:
     log.info("backtest_numeric.md_written", path=str(out_md))
 
     # Print résumé console
-    print(f"\n=== Backtest paliers sources numériques (P2) ===")
+    print("\n=== Backtest paliers sources numériques (P2) ===")
     print(f"Période : {args.days_back} j ({since.date().isoformat()} → aujourd'hui)")
     print(f"Horizons : {', '.join(report['meta']['horizons'])}")
-    print(f"\nPoints récupérés :")
+    print("\nPoints récupérés :")
     for k, v in report["meta"]["n_history_fetched"].items():
         print(f"  - {k}: {v}")
-    print(f"\nÉvaluation par source :")
+    print("\nÉvaluation par source :")
     for source_name, source_data in by_source.items():
         print(f"  - {source_name}: n_total={source_data['n_total']}, asset={source_data['asset']}")
     print(f"\nRecommandations ({len(report['recommendations'])}):")
@@ -654,7 +692,7 @@ async def main() -> None:
         print(f"  {r}")
     if len(report["recommendations"]) > 10:
         print(f"  ... ({len(report['recommendations']) - 10} autres dans le rapport MD)")
-    print(f"\nRapports écrits :")
+    print("\nRapports écrits :")
     print(f"  - JSON : {out_json}")
     print(f"  - MD : {out_md}")
 

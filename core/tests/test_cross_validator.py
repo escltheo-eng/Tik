@@ -9,16 +9,16 @@ import pytest
 
 from tik_core.scoring.cross_validator import (
     CrossValidationResult,
+    _detect_outliers_zero_mad,
     apply_cross_validation_to_decision,
     compute_mad,
     cross_validate,
     detect_disagreement_n2,
     detect_outliers_modified_zscore,
-    _detect_outliers_zero_mad,
 )
 
-
 # ----- Fake decision pour les tests apply_cross_validation_to_decision -----
+
 
 class FakeDecision:
     """Mimique le contrat duck-typed (SwingDecision/FlashDecision)."""
@@ -38,6 +38,7 @@ class FakeDecision:
 # =====================================================================
 # compute_mad
 # =====================================================================
+
 
 def test_compute_mad_empty_returns_zero():
     assert compute_mad([]) == 0.0
@@ -66,6 +67,7 @@ def test_compute_mad_robust_to_outlier():
 # =====================================================================
 # _detect_outliers_zero_mad (fallback seuil absolu)
 # =====================================================================
+
 
 def test_zero_mad_too_few_samples_returns_empty():
     assert _detect_outliers_zero_mad({"a": 0.1, "b": 0.2}) == set()
@@ -99,6 +101,7 @@ def test_zero_mad_detects_outlier_at_threshold():
 # detect_outliers_modified_zscore
 # =====================================================================
 
+
 def test_zscore_n_less_than_3_returns_empty():
     assert detect_outliers_modified_zscore({"a": 0.5}) == set()
     assert detect_outliers_modified_zscore({"a": 0.5, "b": -0.5}) == set()
@@ -128,6 +131,7 @@ def test_zscore_mad_zero_fallback_to_iqr():
 # detect_disagreement_n2
 # =====================================================================
 
+
 def test_disagreement_n2_opposite_signs_large_gap():
     assert detect_disagreement_n2({"a": 0.6, "b": -0.5}) is True
 
@@ -149,6 +153,7 @@ def test_disagreement_n2_wrong_n_returns_false():
 # =====================================================================
 # cross_validate — N petit (0, 1, 2)
 # =====================================================================
+
 
 def test_cross_validate_empty():
     cv = cross_validate({})
@@ -192,6 +197,7 @@ def test_cross_validate_n2_disagreement_degrades_status():
 # (1463 sur 1464) sortaient à 0.95 avec ce bug.
 # =====================================================================
 
+
 def test_cross_validate_n2_dispersion_when_aligned_is_zero():
     # 2 sources parfaitement alignées → dispersion 0 → veracity 0.95 légitime
     cv = cross_validate({"a": 0.5, "b": 0.5})
@@ -233,6 +239,7 @@ def test_cross_validate_n1_dispersion_remains_zero():
 # =====================================================================
 # cross_validate — N ≥ 3 (Modified Z-score)
 # =====================================================================
+
 
 def test_cross_validate_n3_concordance():
     cv = cross_validate({"a": 0.5, "b": 0.6, "c": 0.4})
@@ -304,6 +311,7 @@ def test_cross_validate_method_is_zero_mad_fallback_when_mad_zero():
 # apply_cross_validation_to_decision — mode "active"
 # =====================================================================
 
+
 def test_apply_active_no_outlier_keeps_decision():
     decision = FakeDecision(direction="long")
     decision.evidence = [
@@ -311,9 +319,7 @@ def test_apply_active_no_outlier_keeps_decision():
         {"source": "b", "fact": "..."},
         {"source": "c", "fact": "..."},
     ]
-    cv = apply_cross_validation_to_decision(
-        decision, {"a": 0.4, "b": 0.5, "c": 0.6}, mode="active"
-    )
+    cv = apply_cross_validation_to_decision(decision, {"a": 0.4, "b": 0.5, "c": 0.6}, mode="active")
     assert decision.direction == "long"
     assert decision.circuit_breaker_status == "ok"
     assert all(ev.get("is_outlier") is None for ev in decision.evidence)
@@ -339,9 +345,7 @@ def test_apply_active_marks_outlier_evidence():
 
 
 def test_apply_active_tripped_forces_neutral_and_rewrites_hypothesis():
-    decision = FakeDecision(
-        direction="long", hypothesis="BTC bull (RSI/MACD confluence)"
-    )
+    decision = FakeDecision(direction="long", hypothesis="BTC bull (RSI/MACD confluence)")
     decision.evidence = [
         {"source": "a", "fact": "..."},
         {"source": "b", "fact": "..."},
@@ -364,9 +368,7 @@ def test_apply_active_n2_disagreement_degrades_but_keeps_direction():
         {"source": "a", "fact": "..."},
         {"source": "b", "fact": "..."},
     ]
-    cv = apply_cross_validation_to_decision(
-        decision, {"a": 0.7, "b": -0.5}, mode="active"
-    )
+    cv = apply_cross_validation_to_decision(decision, {"a": 0.7, "b": -0.5}, mode="active")
     assert decision.circuit_breaker_status == "degraded"
     assert decision.direction == "long"  # degraded ne force PAS neutral, seul tripped le fait
     assert cv.outlier_sources == set()
@@ -377,6 +379,7 @@ def test_apply_active_n2_disagreement_degrades_but_keeps_direction():
 # =====================================================================
 # apply_cross_validation_to_decision — mode "shadow"
 # =====================================================================
+
 
 def test_apply_shadow_does_not_modify_decision():
     decision = FakeDecision(direction="long", hypothesis="X")
@@ -400,9 +403,7 @@ def test_apply_shadow_does_not_modify_decision():
 
 def test_apply_shadow_returns_cv_result():
     decision = FakeDecision()
-    cv = apply_cross_validation_to_decision(
-        decision, {"a": 0.7, "b": -0.5}, mode="shadow"
-    )
+    cv = apply_cross_validation_to_decision(decision, {"a": 0.7, "b": -0.5}, mode="shadow")
     assert cv.circuit_breaker_status == "degraded"
     assert cv.method == "disagreement_n2"
 
@@ -410,6 +411,7 @@ def test_apply_shadow_returns_cv_result():
 # =====================================================================
 # Edge cases
 # =====================================================================
+
 
 def test_cross_validate_all_outliers_uses_median():
     # Cas extrême : si tout est outlier (impossible normalement, mais robuste)

@@ -16,7 +16,7 @@ Voir docs/adr/005-flash-engine.md pour le contexte architectural.
 
 import json
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Literal
 
 import httpx
@@ -77,13 +77,13 @@ class FlashDecision:
     entity_id: str
     timestamp: datetime
     direction: Literal["long", "short", "neutral"]
-    confidence: float                      # 0..1 — magnitude du combined_bias OSINT (ADR-018)
+    confidence: float  # 0..1 — magnitude du combined_bias OSINT (ADR-018)
     hypothesis: str
-    veracity: float = 0.85                 # ajustée par cross-validation (0..1)
+    veracity: float = 0.85  # ajustée par cross-validation (0..1)
     counter_scenarios: list[dict] = field(default_factory=list)
     evidence: list[dict] = field(default_factory=list)
     triggers: list[dict] = field(default_factory=list)
-    circuit_breaker_status: str = "ok"     # ok | degraded | tripped (cf. ADR-011)
+    circuit_breaker_status: str = "ok"  # ok | degraded | tripped (cf. ADR-011)
     advisory: dict = field(default_factory=dict)  # candidates LLM (ADR-012), etc.
 
 
@@ -96,6 +96,7 @@ class LastEmission:
 
 
 # ----- Fetchers REST -----
+
 
 async def _fetch_klines_1m(symbol: str = "BTCUSDT", limit: int = 240) -> pd.DataFrame:
     """Récupère les klines 1m Binance pour le calcul d'indicateurs flash."""
@@ -110,8 +111,18 @@ async def _fetch_klines_1m(symbol: str = "BTCUSDT", limit: int = 240) -> pd.Data
     df = pd.DataFrame(
         raw,
         columns=[
-            "open_time", "open", "high", "low", "close", "volume",
-            "close_time", "_q", "_n", "_tb_base", "_tb_quote", "_ignore",
+            "open_time",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "close_time",
+            "_q",
+            "_n",
+            "_tb_base",
+            "_tb_quote",
+            "_ignore",
         ],
     )
     df["timestamp"] = pd.to_datetime(df["open_time"], unit="ms", utc=True)
@@ -144,6 +155,7 @@ async def _fetch_agg_trades(symbol: str = "BTCUSDT", limit: int = 1000) -> list[
 
 # ----- Check fraîcheur -----
 
+
 async def is_realtime_data_fresh(redis: Redis, max_age_sec: int = STALE_THRESHOLD_SEC) -> bool:
     """Vérifie que `tik.last_price.BTC` a été mis à jour récemment.
 
@@ -159,12 +171,13 @@ async def is_realtime_data_fresh(redis: Redis, max_age_sec: int = STALE_THRESHOL
     except (KeyError, TypeError, ValueError):
         return False
     if ts.tzinfo is None:
-        ts = ts.replace(tzinfo=timezone.utc)
-    age = (datetime.now(timezone.utc) - ts).total_seconds()
+        ts = ts.replace(tzinfo=UTC)
+    age = (datetime.now(UTC) - ts).total_seconds()
     return age <= max_age_sec
 
 
 # ----- Scoring technique pur -----
+
 
 def _compute_technical_evidence_flash(df: pd.DataFrame) -> FlashDecision:
     """Calcule les indicateurs techniques court terme et produit une FlashDecision
@@ -221,13 +234,19 @@ def _compute_technical_evidence_flash(df: pd.DataFrame) -> FlashDecision:
     trend_long = current_ema9 > current_ema21
     trend_short = current_ema9 < current_ema21
     if trend_long:
-        triggers.append({"type": "ema_cross", "value": "EMA9 > EMA21 (micro-uptrend)", "weight": 0.0})
+        triggers.append(
+            {"type": "ema_cross", "value": "EMA9 > EMA21 (micro-uptrend)", "weight": 0.0}
+        )
     elif trend_short:
-        triggers.append({"type": "ema_cross", "value": "EMA9 < EMA21 (micro-downtrend)", "weight": 0.0})
+        triggers.append(
+            {"type": "ema_cross", "value": "EMA9 < EMA21 (micro-downtrend)", "weight": 0.0}
+        )
 
     # Règle 2 — RSI (informatif, seuils 75/25)
     if current_rsi > 75:
-        triggers.append({"type": "rsi", "value": f"RSI overbought {current_rsi:.1f}", "weight": 0.0})
+        triggers.append(
+            {"type": "rsi", "value": f"RSI overbought {current_rsi:.1f}", "weight": 0.0}
+        )
     elif current_rsi < 25:
         triggers.append({"type": "rsi", "value": f"RSI oversold {current_rsi:.1f}", "weight": 0.0})
     elif current_rsi > 55:
@@ -249,17 +268,21 @@ def _compute_technical_evidence_flash(df: pd.DataFrame) -> FlashDecision:
 
     # Règle 4 — Momentum 15min (informatif)
     if momentum_15m_pct > 0.5:
-        triggers.append({
-            "type": "momentum_15m",
-            "value": f"Momentum 15m {momentum_15m_pct:+.2f}% (bull)",
-            "weight": 0.0,
-        })
+        triggers.append(
+            {
+                "type": "momentum_15m",
+                "value": f"Momentum 15m {momentum_15m_pct:+.2f}% (bull)",
+                "weight": 0.0,
+            }
+        )
     elif momentum_15m_pct < -0.5:
-        triggers.append({
-            "type": "momentum_15m",
-            "value": f"Momentum 15m {momentum_15m_pct:+.2f}% (bear)",
-            "weight": 0.0,
-        })
+        triggers.append(
+            {
+                "type": "momentum_15m",
+                "value": f"Momentum 15m {momentum_15m_pct:+.2f}% (bear)",
+                "weight": 0.0,
+            }
+        )
 
     # Evidence technique informative
     source = df.attrs.get("source", "binance_klines_1m")
@@ -351,6 +374,7 @@ def _derive_osint_decision_flash(
 
 # ----- Veracity (dupliqué du swing pour ce paquet, factoriser au 3e usage) -----
 
+
 def _veracity_from_concordance(direction: str, bias: float) -> float:
     """[LEGACY ADR-018] Veracity dynamique selon concordance direction technique ↔ bias.
 
@@ -402,6 +426,7 @@ def _veracity_from_dispersion(dispersion: float) -> float:
 
 
 # ----- Overlay 1 : Order Book Imbalance -----
+
 
 def _compute_obi_bias(orderbook: dict) -> tuple[float, str, float] | None:
     """Order Book Imbalance : `(bid_vol - ask_vol) / total_vol` sur top N levels.
@@ -468,6 +493,7 @@ def _enrich_with_orderbook(decision: FlashDecision, orderbook: dict) -> float | 
 
 
 # ----- Overlay 2 : Buyer/seller agression via aggTrades -----
+
 
 def _compute_aggression_bias(trades: list[dict]) -> tuple[float, str, float] | None:
     """Agression taker : ratio `buy_vol / total_vol` sur les N dernières aggTrades.
@@ -538,6 +564,7 @@ def _enrich_with_aggression(decision: FlashDecision, trades: list[dict]) -> floa
 
 # ----- Émission conditionnelle (transition + heartbeat) -----
 
+
 async def read_last_emission(redis: Redis, entity_id: str) -> LastEmission | None:
     raw = await redis.get(LAST_DIRECTION_KEY_TPL.format(entity_id=entity_id))
     if not raw:
@@ -585,6 +612,7 @@ def should_emit(
 
 
 # ----- Fonction d'analyse principale -----
+
 
 async def analyze_flash_btc(
     redis: Redis | None = None,
@@ -674,7 +702,9 @@ async def analyze_flash_btc(
         # ~10 min/jour cumulé) face à la simplicité d'avoir une fonction
         # analyze_flash_btc self-contained pour tests / backtests directs.
         await apply_llm_hypothesis(
-            decision, "flash", hypothesis_generator,
+            decision,
+            "flash",
+            hypothesis_generator,
             settings.llm_hypothesis_mode,
         )
 

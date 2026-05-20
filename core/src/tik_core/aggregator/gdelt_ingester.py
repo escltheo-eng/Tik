@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import httpx
 import structlog
@@ -138,7 +138,7 @@ class GdeltIngester(BaseIngester):
             "timespan": self.timespan,
             "tone": round(avg_tone, 4),
             "n_points": len(valid_points),
-            "fetched_at": datetime.now(tz=timezone.utc).isoformat(),
+            "fetched_at": datetime.now(tz=UTC).isoformat(),
         }
 
     @staticmethod

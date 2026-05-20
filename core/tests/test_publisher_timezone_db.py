@@ -35,7 +35,7 @@ broncher et le bug ne se reproduit pas).
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 import pytest_asyncio
@@ -98,9 +98,7 @@ async def clean_signal_row(db_session: AsyncSession):
     inserted: list[str] = []
     yield inserted
     for sid in inserted:
-        await db_session.execute(
-            Signal.__table__.delete().where(Signal.id == sid)
-        )
+        await db_session.execute(Signal.__table__.delete().where(Signal.id == sid))
     await db_session.commit()
 
 
@@ -115,7 +113,7 @@ async def test_publish_swing_signal_accepts_aware_datetime(
     `DataError` au moment du flush et la session est rollback. Le test
     échoue avec une exception explicite, ce qui suffit comme garde-fou.
     """
-    aware_ts = datetime.now(timezone.utc)
+    aware_ts = datetime.now(UTC)
     assert aware_ts.tzinfo is not None, "sanity: le timestamp doit être aware"
 
     decision = _build_decision(aware_ts)
@@ -190,7 +188,7 @@ async def test_publish_swing_signal_preserves_utc_moment_after_strip(
     décalée de l'offset).
     """
     # Datetime aware UTC explicite, comme le produit `now_utc()`
-    aware_utc = datetime(2026, 5, 19, 14, 30, 0, tzinfo=timezone.utc)
+    aware_utc = datetime(2026, 5, 19, 14, 30, 0, tzinfo=UTC)
     decision = _build_decision(aware_utc)
     redis = _FakeRedis()
 
@@ -222,7 +220,7 @@ async def test_publish_swing_signal_expiry_is_naive(
     Sans le `.replace(tzinfo=None)` sur `expiry` dans `publisher.py`, asyncpg
     lève DataError sur ce champ même si `timestamp` passe.
     """
-    aware_ts = datetime.now(timezone.utc)
+    aware_ts = datetime.now(UTC)
     decision = _build_decision(aware_ts)
     redis = _FakeRedis()
 
@@ -260,5 +258,3 @@ def test_publisher_module_strips_tzinfo_in_source() -> None:
         "Sans ce strip, asyncpg lève DataError et tous les signaux sont "
         "perdus runtime sans alerte CI."
     )
-
-

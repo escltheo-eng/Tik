@@ -16,7 +16,7 @@ La lecture contrarian de cette métrique est appliquée côté swing_engine.
 
 import asyncio
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import httpx
 import structlog
@@ -112,7 +112,7 @@ class CftcCotIngester(BaseIngester):
             "mm_net_pct": round(net_pct, 4),
             "change_mm_long": change_long,
             "change_mm_short": change_short,
-            "fetched_at": datetime.now(tz=timezone.utc).isoformat(),
+            "fetched_at": datetime.now(tz=UTC).isoformat(),
         }
 
     async def _run(self) -> None:

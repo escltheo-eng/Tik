@@ -15,9 +15,7 @@ La validation runtime de l'INSERT bout-en-bout se fait après restart Docker.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
-import pytest
+from datetime import UTC, datetime
 
 from tik_core.storage.headlines_repo import (
     _build_record,
@@ -27,7 +25,6 @@ from tik_core.storage.headlines_repo import (
     persist_headlines,
 )
 from tik_core.storage.models import HeadlineRecord
-
 
 # =============================================================================
 # compute_title_hash — normalisation + déterminisme
@@ -103,7 +100,7 @@ def test_parse_iso_naive_handles_already_naive():
 
 def test_parse_iso_naive_handles_datetime_object_aware():
     """Un datetime aware est converti UTC puis stripé."""
-    aware = datetime(2026, 5, 4, 12, 0, tzinfo=timezone.utc)
+    aware = datetime(2026, 5, 4, 12, 0, tzinfo=UTC)
     dt = parse_iso_naive(aware)
     assert dt is not None
     assert dt.tzinfo is None
@@ -137,6 +134,7 @@ def test_cutoff_from_hours_returns_naive_datetime():
 def test_cutoff_from_hours_in_the_past():
     """Le cutoff est forcément dans le passé."""
     from tik_core.utils.time import now_utc_naive
+
     now = now_utc_naive()
     cutoff = cutoff_from_hours(48)
     assert cutoff < now
@@ -246,6 +244,7 @@ class _MockSessionMaker:
 
     def __call__(self):
         if self._raise_on_commit is not None:
+
             class _BrokenSession:
                 async def __aenter__(self_inner):
                     return self_inner
@@ -258,6 +257,7 @@ class _MockSessionMaker:
 
                 async def commit(self_inner):
                     raise self._raise_on_commit
+
             return _BrokenSession()
         return _MockSession(self)
 

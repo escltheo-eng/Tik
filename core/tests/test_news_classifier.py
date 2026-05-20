@@ -21,8 +21,8 @@ from tik_core.aggregator.news_classifier import (
     build_news_classifier,
 )
 
-
 # ----- KeywordClassifier : titres clairement directionnels -----
+
 
 @pytest.mark.parametrize(
     "title, expected_bull, expected_bear",
@@ -52,6 +52,7 @@ async def test_keyword_classifier_directional(title, expected_bull, expected_bea
 
 # ----- Casse insensible -----
 
+
 async def test_keyword_classifier_case_insensitive():
     classifier = KeywordClassifier()
     n_bull, n_bear = await classifier.classify("BTC SURGES TO RECORD HIGH")
@@ -63,6 +64,7 @@ async def test_keyword_classifier_case_insensitive():
 
 # ----- Cas limites -----
 
+
 async def test_keyword_classifier_empty_string():
     assert await KeywordClassifier().classify("") == (0, 0)
 
@@ -73,9 +75,7 @@ async def test_keyword_classifier_none():
 
 
 async def test_keyword_classifier_only_neutral_words():
-    n_bull, n_bear = await KeywordClassifier().classify(
-        "Bitcoin price moves sideways today"
-    )
+    n_bull, n_bear = await KeywordClassifier().classify("Bitcoin price moves sideways today")
     assert n_bull == 0
     assert n_bear == 0
 
@@ -90,15 +90,14 @@ async def test_keyword_classifier_dedup_within_title():
 
 async def test_keyword_classifier_punctuation():
     # Les apostrophes et tirets internes sont gardés, le reste est délimité
-    n_bull, n_bear = await KeywordClassifier().classify(
-        "BTC's surge: a record? Yes!"
-    )
+    n_bull, n_bear = await KeywordClassifier().classify("BTC's surge: a record? Yes!")
     # surge + record = 2 bull, 0 bear
     assert n_bull >= 2
     assert n_bear == 0
 
 
 # ----- Mots ajoutés lors de l'enrichissement 2026-04-29 -----
+
 
 @pytest.mark.parametrize(
     "title, expected_bull, expected_bear",
@@ -123,6 +122,7 @@ async def test_keyword_classifier_enriched_keywords(title, expected_bull, expect
 
 # ----- Méthode et hooks de l'interface NewsClassifier -----
 
+
 async def test_keyword_classifier_method_name():
     assert KeywordClassifier().method_name == "keywords"
 
@@ -143,6 +143,7 @@ async def test_keyword_classifier_aclose_is_noop():
 
 
 # ----- Cohérence des listes -----
+
 
 def test_keyword_lists_no_overlap():
     """Aucun mot ne doit être à la fois dans BULLISH et BEARISH (ambigu)."""
@@ -167,6 +168,7 @@ def test_keyword_lists_non_empty():
 # =============================================================================
 # OllamaClassifier — parsing pure function (pas de mock nécessaire)
 # =============================================================================
+
 
 @pytest.mark.parametrize(
     "verdict, expected",
@@ -194,22 +196,17 @@ def test_ollama_verdict_to_counts(verdict, expected):
 
 def test_ollama_verdict_to_counts_first_match_wins():
     # BEARISH apparaît avant BULLISH → bearish gagne
-    assert OllamaClassifier._verdict_to_counts(
-        "BEARISH then BULLISH", "any"
-    ) == (0, 1)
+    assert OllamaClassifier._verdict_to_counts("BEARISH then BULLISH", "any") == (0, 1)
     # Inverse : BULLISH d'abord
-    assert OllamaClassifier._verdict_to_counts(
-        "BULLISH not BEARISH", "any"
-    ) == (1, 0)
+    assert OllamaClassifier._verdict_to_counts("BULLISH not BEARISH", "any") == (1, 0)
     # NEUTRAL d'abord
-    assert OllamaClassifier._verdict_to_counts(
-        "NEUTRAL but slightly BULLISH", "any"
-    ) == (0, 0)
+    assert OllamaClassifier._verdict_to_counts("NEUTRAL but slightly BULLISH", "any") == (0, 0)
 
 
 # =============================================================================
 # OllamaClassifier.classify — mock de _call_ollama
 # =============================================================================
+
 
 async def test_ollama_classify_empty_title():
     classifier = OllamaClassifier(url="http://x", model="llama3.2:3b")
@@ -219,9 +216,7 @@ async def test_ollama_classify_empty_title():
 
 async def test_ollama_classify_success(monkeypatch):
     classifier = OllamaClassifier(url="http://x", model="llama3.2:3b")
-    monkeypatch.setattr(
-        classifier, "_call_ollama", AsyncMock(return_value="BULLISH")
-    )
+    monkeypatch.setattr(classifier, "_call_ollama", AsyncMock(return_value="BULLISH"))
 
     assert await classifier.classify("BTC surges to new high") == (1, 0)
 
@@ -230,7 +225,8 @@ async def test_ollama_classify_falls_back_on_error(monkeypatch):
     """Quand Ollama échoue, on retombe sur les keywords pour ce titre."""
     classifier = OllamaClassifier(url="http://x", model="llama3.2:3b")
     monkeypatch.setattr(
-        classifier, "_call_ollama",
+        classifier,
+        "_call_ollama",
         AsyncMock(side_effect=httpx.ConnectError("ollama down")),
     )
 
@@ -265,7 +261,8 @@ async def test_ollama_circuit_breaker_opens_after_3_failures(monkeypatch):
 async def test_ollama_reset_batch_rearms_circuit(monkeypatch):
     classifier = OllamaClassifier(url="http://x", model="llama3.2:3b")
     monkeypatch.setattr(
-        classifier, "_call_ollama",
+        classifier,
+        "_call_ollama",
         AsyncMock(side_effect=httpx.ConnectError("down")),
     )
 
@@ -285,7 +282,8 @@ async def test_ollama_success_resets_failure_counter(monkeypatch):
     classifier = OllamaClassifier(url="http://x", model="llama3.2:3b")
 
     monkeypatch.setattr(
-        classifier, "_call_ollama",
+        classifier,
+        "_call_ollama",
         AsyncMock(side_effect=httpx.ConnectError("transient")),
     )
     await classifier.classify("BTC surges")
@@ -293,27 +291,20 @@ async def test_ollama_success_resets_failure_counter(monkeypatch):
     assert classifier._consecutive_failures == 2
 
     # Ollama redevient OK
-    monkeypatch.setattr(
-        classifier, "_call_ollama", AsyncMock(return_value="BULLISH")
-    )
+    monkeypatch.setattr(classifier, "_call_ollama", AsyncMock(return_value="BULLISH"))
     await classifier.classify("BTC surges")
     assert classifier._consecutive_failures == 0
 
 
 async def test_ollama_method_name_includes_model():
-    assert (
-        OllamaClassifier(url="http://x", model="llama3.2:3b").method_name
-        == "ollama:llama3.2:3b"
-    )
-    assert (
-        OllamaClassifier(url="http://x", model="qwen2.5:7b").method_name
-        == "ollama:qwen2.5:7b"
-    )
+    assert OllamaClassifier(url="http://x", model="llama3.2:3b").method_name == "ollama:llama3.2:3b"
+    assert OllamaClassifier(url="http://x", model="qwen2.5:7b").method_name == "ollama:qwen2.5:7b"
 
 
 # =============================================================================
 # Asset-aware (ADR-008) — paramètre asset_name au constructeur
 # =============================================================================
+
 
 async def test_ollama_default_asset_name_is_bitcoin():
     """Rétrocompat ADR-006 : sans paramètre, l'asset par défaut est Bitcoin."""
@@ -322,9 +313,7 @@ async def test_ollama_default_asset_name_is_bitcoin():
 
 
 async def test_ollama_custom_asset_name():
-    classifier = OllamaClassifier(
-        url="http://x", model="llama3.2:3b", asset_name="Gold"
-    )
+    classifier = OllamaClassifier(url="http://x", model="llama3.2:3b", asset_name="Gold")
     assert classifier.asset_name == "Gold"
 
 
@@ -346,12 +335,8 @@ async def test_ollama_prompt_includes_asset_name(monkeypatch):
 
         return _FakeResponse()
 
-    classifier_btc = OllamaClassifier(
-        url="http://x", model="llama3.2:3b", asset_name="Bitcoin"
-    )
-    classifier_gold = OllamaClassifier(
-        url="http://x", model="llama3.2:3b", asset_name="Gold"
-    )
+    classifier_btc = OllamaClassifier(url="http://x", model="llama3.2:3b", asset_name="Bitcoin")
+    classifier_gold = OllamaClassifier(url="http://x", model="llama3.2:3b", asset_name="Gold")
 
     # On force la création du client httpx puis on mock sa méthode .post
     classifier_btc._client = httpx.AsyncClient()
@@ -379,21 +364,16 @@ async def test_ollama_circuit_breakers_are_isolated_per_instance(monkeypatch):
     (asset différent) doit rester intacte. Garantit qu'un incident sur un
     ingester ne contamine pas les autres ingesters textuels.
     """
-    classifier_a = OllamaClassifier(
-        url="http://x", model="llama3.2:3b", asset_name="Bitcoin"
-    )
-    classifier_b = OllamaClassifier(
-        url="http://x", model="llama3.2:3b", asset_name="Gold"
-    )
+    classifier_a = OllamaClassifier(url="http://x", model="llama3.2:3b", asset_name="Bitcoin")
+    classifier_b = OllamaClassifier(url="http://x", model="llama3.2:3b", asset_name="Gold")
 
     # A plante systématiquement, B fonctionne normalement
     monkeypatch.setattr(
-        classifier_a, "_call_ollama",
+        classifier_a,
+        "_call_ollama",
         AsyncMock(side_effect=httpx.ConnectError("down")),
     )
-    monkeypatch.setattr(
-        classifier_b, "_call_ollama", AsyncMock(return_value="BULLISH")
-    )
+    monkeypatch.setattr(classifier_b, "_call_ollama", AsyncMock(return_value="BULLISH"))
 
     # 3 échecs sur A → son breaker s'ouvre
     for _ in range(3):
@@ -412,12 +392,8 @@ async def test_ollama_circuit_breakers_are_isolated_per_instance(monkeypatch):
 
 async def test_build_news_classifier_passes_asset_name_to_ollama(monkeypatch):
     """La factory doit propager asset_name au OllamaClassifier construit."""
-    fake = _make_fake_client(
-        response_data={"models": [{"name": "llama3.2:3b"}]}
-    )
-    monkeypatch.setattr(
-        "tik_core.aggregator.news_classifier.httpx.AsyncClient", fake
-    )
+    fake = _make_fake_client(response_data={"models": [{"name": "llama3.2:3b"}]})
+    monkeypatch.setattr("tik_core.aggregator.news_classifier.httpx.AsyncClient", fake)
 
     classifier = await build_news_classifier(
         classifier_type="ollama",
@@ -431,12 +407,8 @@ async def test_build_news_classifier_passes_asset_name_to_ollama(monkeypatch):
 
 async def test_build_news_classifier_default_asset_is_bitcoin(monkeypatch):
     """Rétrocompat : sans `asset_name`, la factory passe Bitcoin par défaut."""
-    fake = _make_fake_client(
-        response_data={"models": [{"name": "llama3.2:3b"}]}
-    )
-    monkeypatch.setattr(
-        "tik_core.aggregator.news_classifier.httpx.AsyncClient", fake
-    )
+    fake = _make_fake_client(response_data={"models": [{"name": "llama3.2:3b"}]})
+    monkeypatch.setattr("tik_core.aggregator.news_classifier.httpx.AsyncClient", fake)
 
     classifier = await build_news_classifier(
         classifier_type="ollama",
@@ -452,9 +424,7 @@ async def test_ollama_unparsable_response_returns_neutral(monkeypatch):
     on retourne (0, 0) — pas de fallback keywords (le LLM a répondu,
     juste pas exploitable)."""
     classifier = OllamaClassifier(url="http://x", model="llama3.2:3b")
-    monkeypatch.setattr(
-        classifier, "_call_ollama", AsyncMock(return_value="GLORG WAT")
-    )
+    monkeypatch.setattr(classifier, "_call_ollama", AsyncMock(return_value="GLORG WAT"))
     assert await classifier.classify("BTC surges") == (0, 0)
 
 
@@ -529,7 +499,10 @@ async def test_ollama_classify_uses_cache_on_hit(monkeypatch):
     """Cache hit → retourne directement le verdict, sans appeler Ollama."""
     redis = _FakeRedis()
     classifier = OllamaClassifier(
-        url="http://x", model="llama3.2:3b", asset_name="Bitcoin", redis=redis,
+        url="http://x",
+        model="llama3.2:3b",
+        asset_name="Bitcoin",
+        redis=redis,
     )
     title = "BTC surges to new high"
     # Pré-remplir le cache avec BULLISH
@@ -548,10 +521,15 @@ async def test_ollama_classify_stores_in_cache_on_success(monkeypatch):
     """Cache miss → appelle Ollama et stocke le label canonique dans Redis."""
     redis = _FakeRedis()
     classifier = OllamaClassifier(
-        url="http://x", model="llama3.2:3b", asset_name="Bitcoin", redis=redis,
+        url="http://x",
+        model="llama3.2:3b",
+        asset_name="Bitcoin",
+        redis=redis,
     )
     monkeypatch.setattr(
-        classifier, "_call_ollama", AsyncMock(return_value="BEARISH"),
+        classifier,
+        "_call_ollama",
+        AsyncMock(return_value="BEARISH"),
     )
 
     result = await classifier.classify("BTC dumps")
@@ -567,10 +545,14 @@ async def test_ollama_classify_stores_in_cache_on_success(monkeypatch):
 async def test_ollama_no_cache_without_redis(monkeypatch):
     """Sans `redis` injecté, comportement historique inchangé (pas de cache)."""
     classifier = OllamaClassifier(
-        url="http://x", model="llama3.2:3b", redis=None,
+        url="http://x",
+        model="llama3.2:3b",
+        redis=None,
     )
     monkeypatch.setattr(
-        classifier, "_call_ollama", AsyncMock(return_value="BULLISH"),
+        classifier,
+        "_call_ollama",
+        AsyncMock(return_value="BULLISH"),
     )
     assert await classifier.classify("BTC surges") == (1, 0)
     # Pas de Redis → pas d'erreur, pas d'appel cache (impossible à observer ici
@@ -588,10 +570,14 @@ async def test_ollama_cache_read_error_falls_through_to_ollama(monkeypatch):
             raise RuntimeError("redis down")
 
     classifier = OllamaClassifier(
-        url="http://x", model="llama3.2:3b", redis=_BrokenRedis(),
+        url="http://x",
+        model="llama3.2:3b",
+        redis=_BrokenRedis(),
     )
     monkeypatch.setattr(
-        classifier, "_call_ollama", AsyncMock(return_value="BULLISH"),
+        classifier,
+        "_call_ollama",
+        AsyncMock(return_value="BULLISH"),
     )
     # Doit retourner BULLISH via Ollama, pas crasher
     assert await classifier.classify("BTC surges") == (1, 0)
@@ -601,10 +587,14 @@ async def test_ollama_cache_does_not_store_unparsable_verdict(monkeypatch):
     """Si Ollama répond du bruit non parsable, on ne pollue PAS le cache."""
     redis = _FakeRedis()
     classifier = OllamaClassifier(
-        url="http://x", model="llama3.2:3b", redis=redis,
+        url="http://x",
+        model="llama3.2:3b",
+        redis=redis,
     )
     monkeypatch.setattr(
-        classifier, "_call_ollama", AsyncMock(return_value="GLORG WAT"),
+        classifier,
+        "_call_ollama",
+        AsyncMock(return_value="GLORG WAT"),
     )
     result = await classifier.classify("BTC mystery title")
     assert result == (0, 0)
@@ -616,7 +606,9 @@ async def test_ollama_cache_invalid_stored_value_treated_as_miss(monkeypatch):
     """Si le cache contient une valeur corrompue (non parsable), on retombe sur Ollama."""
     redis = _FakeRedis()
     classifier = OllamaClassifier(
-        url="http://x", model="llama3.2:3b", redis=redis,
+        url="http://x",
+        model="llama3.2:3b",
+        redis=redis,
     )
     title = "BTC surges"
     redis._data[classifier._cache_key(title)] = "GARBAGE_FROM_OLD_VERSION"
@@ -641,7 +633,9 @@ async def test_ollama_cache_circuit_breaker_open_skips_cache_lookup(monkeypatch)
     # de la sortie sur tout le batch en mode dégradé).
     redis = _FakeRedis()
     classifier = OllamaClassifier(
-        url="http://x", model="llama3.2:3b", redis=redis,
+        url="http://x",
+        model="llama3.2:3b",
+        redis=redis,
     )
     classifier._batch_circuit_open = True  # simule circuit déjà ouvert
     title = "BTC surges to new high"
@@ -702,9 +696,7 @@ async def test_build_classifier_ollama_alive_with_model(monkeypatch):
     fake = _make_fake_client(
         response_data={"models": [{"name": "llama3.2:3b"}, {"name": "other:7b"}]}
     )
-    monkeypatch.setattr(
-        "tik_core.aggregator.news_classifier.httpx.AsyncClient", fake
-    )
+    monkeypatch.setattr("tik_core.aggregator.news_classifier.httpx.AsyncClient", fake)
 
     classifier = await build_news_classifier(
         classifier_type="ollama",
@@ -716,12 +708,8 @@ async def test_build_classifier_ollama_alive_with_model(monkeypatch):
 
 
 async def test_build_classifier_ollama_unreachable_falls_back(monkeypatch):
-    fake = _make_fake_client(
-        raise_on_request=httpx.ConnectError("connection refused")
-    )
-    monkeypatch.setattr(
-        "tik_core.aggregator.news_classifier.httpx.AsyncClient", fake
-    )
+    fake = _make_fake_client(raise_on_request=httpx.ConnectError("connection refused"))
+    monkeypatch.setattr("tik_core.aggregator.news_classifier.httpx.AsyncClient", fake)
 
     classifier = await build_news_classifier(
         classifier_type="ollama",
@@ -733,12 +721,8 @@ async def test_build_classifier_ollama_unreachable_falls_back(monkeypatch):
 
 async def test_build_classifier_ollama_alive_but_model_missing(monkeypatch):
     """Ollama répond mais le modèle demandé n'est pas téléchargé."""
-    fake = _make_fake_client(
-        response_data={"models": [{"name": "other:7b"}]}
-    )
-    monkeypatch.setattr(
-        "tik_core.aggregator.news_classifier.httpx.AsyncClient", fake
-    )
+    fake = _make_fake_client(response_data={"models": [{"name": "other:7b"}]})
+    monkeypatch.setattr("tik_core.aggregator.news_classifier.httpx.AsyncClient", fake)
 
     classifier = await build_news_classifier(
         classifier_type="ollama",
@@ -751,9 +735,7 @@ async def test_build_classifier_ollama_alive_but_model_missing(monkeypatch):
 async def test_build_classifier_ollama_empty_models_list(monkeypatch):
     """Ollama répond mais la liste des modèles est vide."""
     fake = _make_fake_client(response_data={"models": []})
-    monkeypatch.setattr(
-        "tik_core.aggregator.news_classifier.httpx.AsyncClient", fake
-    )
+    monkeypatch.setattr("tik_core.aggregator.news_classifier.httpx.AsyncClient", fake)
 
     classifier = await build_news_classifier(
         classifier_type="ollama",

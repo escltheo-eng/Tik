@@ -25,7 +25,7 @@ import asyncio
 import calendar
 import json
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from urllib.parse import quote_plus
 
 import feedparser
@@ -41,9 +41,7 @@ from tik_core.storage.headlines_repo import persist_headlines
 
 log = structlog.get_logger()
 
-GOOGLE_NEWS_RSS_TPL = (
-    "https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en"
-)
+GOOGLE_NEWS_RSS_TPL = "https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en"
 USER_AGENT = "Mozilla/5.0 (compatible; TikBot/0.1)"
 REDIS_TTL_S = 2 * 3600  # 2h, comme CryptoCompare
 REDIS_KEY_TPL = "tik.sentiment.google_news.{entity}"
@@ -157,7 +155,7 @@ class GoogleNewsIngester(BaseIngester):
             return None
         try:
             ts = calendar.timegm(parsed)  # struct_time UTC → epoch
-            dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+            dt = datetime.fromtimestamp(ts, tz=UTC)
             return dt.isoformat()
         except (TypeError, ValueError, OverflowError):
             return None
@@ -210,7 +208,7 @@ class GoogleNewsIngester(BaseIngester):
         n_neutral = 0
         publishers: list[str] = []
         headlines: list[dict] = []
-        fetched_at = datetime.now(tz=timezone.utc).isoformat()
+        fetched_at = datetime.now(tz=UTC).isoformat()
         for entry in entries:
             title = entry.get("title", "") if hasattr(entry, "get") else ""
             url_link = entry.get("link", "") if hasattr(entry, "get") else ""
@@ -244,8 +242,7 @@ class GoogleNewsIngester(BaseIngester):
         score = (n_bullish - n_bearish) / n_classified if n_classified > 0 else 0.0
 
         top_publishers = [
-            {"name": name, "count": count}
-            for name, count in Counter(publishers).most_common(5)
+            {"name": name, "count": count} for name, count in Counter(publishers).most_common(5)
         ]
 
         # P6 — Détection dominance publisher (>50%/70% = medium/high).
@@ -288,11 +285,7 @@ class GoogleNewsIngester(BaseIngester):
                         credibility=0.70,
                         headlines=point["headlines"],
                     )
-                    top = (
-                        point["top_publishers"][0]["name"]
-                        if point["top_publishers"]
-                        else None
-                    )
+                    top = point["top_publishers"][0]["name"] if point["top_publishers"] else None
                     anomaly = point["anomaly"]
                     log.info(
                         "google_news.published",

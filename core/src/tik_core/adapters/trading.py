@@ -5,7 +5,6 @@ Consommé par Zeta, Totem, et tout autre bot de trading.
 
 from tik_core.adapters.base import DomainAdapter, EntityMapping
 
-
 _TRADING_MAPPINGS: dict[str, EntityMapping] = {
     "BTC": EntityMapping(
         entity_id="BTC",
@@ -39,7 +38,7 @@ class TradingAdapter(DomainAdapter):
 
     def build_advisory(
         self,
-        entity_id: str,
+        entity_id: str,  # noqa: ARG002 — conservé pour la signature d'interface advisory
         direction: str,
         confidence: float,
     ) -> dict:

@@ -1,7 +1,5 @@
 """Tests de la couche d'authentification par clé API."""
 
-import pytest
-
 from tik_core.auth.api_key import generate_key, hash_key
 from tik_core.auth.provider import AuthContext
 

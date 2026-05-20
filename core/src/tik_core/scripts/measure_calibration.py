@@ -37,9 +37,8 @@ import json
 import random
 import sys
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from statistics import mean
 
 DATA_DIR = Path("/app/data/golden_dataset")
 RAW_ITEMS_FILE = DATA_DIR / "raw_items.jsonl"
@@ -53,6 +52,7 @@ VERDICTS = ("bull", "bear", "neutral")
 
 
 # === Chargement ===
+
 
 def _load_jsonl(path: Path) -> list[dict]:
     if not path.exists():
@@ -76,6 +76,7 @@ def _index_by_id(records: list[dict]) -> dict[str, dict]:
 
 # === Helpers de scoring ===
 
+
 def _verdict_correct_vs_market(verdict: str, delta_pct: float, threshold: float) -> bool:
     """Un verdict est 'correct' si le delta marché va dans le bon sens."""
     if verdict == "bull":
@@ -94,12 +95,10 @@ def _confusion_key(predicted: str | None, reference: str | None) -> tuple[str, s
 
 # === Métriques ===
 
+
 def _accuracy(records: list[dict], pred_key: str, ref_key: str) -> float | None:
     """Proportion de records où predicted == reference (ignore None)."""
-    eligible = [
-        r for r in records
-        if r.get(pred_key) is not None and r.get(ref_key) is not None
-    ]
+    eligible = [r for r in records if r.get(pred_key) is not None and r.get(ref_key) is not None]
     if not eligible:
         return None
     n_match = sum(1 for r in eligible if r[pred_key] == r[ref_key])
@@ -112,7 +111,7 @@ def _confusion_matrix(
     """Matrice {predicted: {reference: count}}."""
     matrix: dict[str, dict[str, int]] = {}
     for v_pred in (*VERDICTS, "n/a"):
-        matrix[v_pred] = {v_ref: 0 for v_ref in (*VERDICTS, "n/a")}
+        matrix[v_pred] = dict.fromkeys((*VERDICTS, "n/a"), 0)
     for r in records:
         p, ref = _confusion_key(r.get(pred_key), r.get(ref_key))
         matrix[p][ref] = matrix[p].get(ref, 0) + 1
@@ -124,17 +123,16 @@ def _hit_rate_vs_market(
 ) -> dict | None:
     """Hit rate d'un predictor vs marché réel à un horizon donné."""
     eligible = [
-        r for r in records
-        if r.get(pred_key) is not None
-        and r.get("deltas", {}).get(horizon, {}).get("available")
+        r
+        for r in records
+        if r.get(pred_key) is not None and r.get("deltas", {}).get(horizon, {}).get("available")
     ]
     if not eligible:
         return None
     n_correct = sum(
-        1 for r in eligible
-        if _verdict_correct_vs_market(
-            r[pred_key], r["deltas"][horizon]["delta_pct"], threshold
-        )
+        1
+        for r in eligible
+        if _verdict_correct_vs_market(r[pred_key], r["deltas"][horizon]["delta_pct"], threshold)
     )
     return {
         "n": len(eligible),
@@ -147,10 +145,7 @@ def _baseline_random_hit_rate(
     records: list[dict], horizon: str, threshold: float, n_runs: int = 100, seed: int = 42
 ) -> dict | None:
     """Baseline random uniforme moyenné sur n_runs."""
-    eligible = [
-        r for r in records
-        if r.get("deltas", {}).get(horizon, {}).get("available")
-    ]
+    eligible = [r for r in records if r.get("deltas", {}).get(horizon, {}).get("available")]
     if not eligible:
         return None
     rng = random.Random(seed)
@@ -158,9 +153,7 @@ def _baseline_random_hit_rate(
     for _ in range(n_runs):
         for r in eligible:
             v = rng.choice(VERDICTS)
-            if _verdict_correct_vs_market(
-                v, r["deltas"][horizon]["delta_pct"], threshold
-            ):
+            if _verdict_correct_vs_market(v, r["deltas"][horizon]["delta_pct"], threshold):
                 total_correct += 1
     total_evals = len(eligible) * n_runs
     return {
@@ -174,17 +167,13 @@ def _baseline_constant_hit_rate(
     records: list[dict], verdict: str, horizon: str, threshold: float
 ) -> dict | None:
     """Baseline 'always X' (always bull/bear/neutral)."""
-    eligible = [
-        r for r in records
-        if r.get("deltas", {}).get(horizon, {}).get("available")
-    ]
+    eligible = [r for r in records if r.get("deltas", {}).get(horizon, {}).get("available")]
     if not eligible:
         return None
     n_correct = sum(
-        1 for r in eligible
-        if _verdict_correct_vs_market(
-            verdict, r["deltas"][horizon]["delta_pct"], threshold
-        )
+        1
+        for r in eligible
+        if _verdict_correct_vs_market(verdict, r["deltas"][horizon]["delta_pct"], threshold)
     )
     return {
         "n": len(eligible),
@@ -194,6 +183,7 @@ def _baseline_constant_hit_rate(
 
 
 # === Construction du dataset combiné ===
+
 
 def _build_combined(
     items: list[dict],
@@ -212,36 +202,36 @@ def _build_combined(
         pred_kw = (pred.get("predictions") or {}).get("keywords") or {}
         pred_ol = (pred.get("predictions") or {}).get("ollama") or {}
 
-        out.append({
-            "id": item_id,
-            "asset": item["asset"],
-            "source": item["source"],
-            "text": item["text"],
-            "human": ann.get("verdict"),
-            "ollama": pred_ol.get("verdict"),
-            "keywords": pred_kw.get("verdict"),
-            "deltas": price.get("deltas") or {},
-        })
+        out.append(
+            {
+                "id": item_id,
+                "asset": item["asset"],
+                "source": item["source"],
+                "text": item["text"],
+                "human": ann.get("verdict"),
+                "ollama": pred_ol.get("verdict"),
+                "keywords": pred_kw.get("verdict"),
+                "deltas": price.get("deltas") or {},
+            }
+        )
     return out
 
 
 # === Sections du rapport ===
 
+
 def _section_distribution(records: list[dict]) -> dict:
     """Distribution des verdicts par classifier."""
     out: dict[str, dict] = {}
     for col in ("human", "ollama", "keywords"):
-        counts: dict[str, int] = {v: 0 for v in (*VERDICTS, "n/a")}
+        counts: dict[str, int] = dict.fromkeys((*VERDICTS, "n/a"), 0)
         for r in records:
             v = r.get(col)
             counts[v if v in VERDICTS else "n/a"] += 1
         total = sum(counts.values())
         out[col] = {
             "counts": counts,
-            "pct": {
-                k: (v / total * 100 if total else 0.0)
-                for k, v in counts.items()
-            },
+            "pct": {k: (v / total * 100 if total else 0.0) for k, v in counts.items()},
             "total": total,
         }
     return out
@@ -265,9 +255,7 @@ def _section_concordance(records: list[dict]) -> dict:
     }
 
 
-def _section_market_calibration(
-    records: list[dict], horizons: list[str], threshold: float
-) -> dict:
+def _section_market_calibration(records: list[dict], horizons: list[str], threshold: float) -> dict:
     """Hit rate vs marché pour chaque predictor à chaque horizon."""
     out: dict[str, dict] = {}
     for h in horizons:
@@ -277,23 +265,15 @@ def _section_market_calibration(
             "keywords": _hit_rate_vs_market(records, "keywords", h, threshold),
             "baselines": {
                 "random": _baseline_random_hit_rate(records, h, threshold),
-                "always_bull": _baseline_constant_hit_rate(
-                    records, "bull", h, threshold
-                ),
-                "always_bear": _baseline_constant_hit_rate(
-                    records, "bear", h, threshold
-                ),
-                "always_neutral": _baseline_constant_hit_rate(
-                    records, "neutral", h, threshold
-                ),
+                "always_bull": _baseline_constant_hit_rate(records, "bull", h, threshold),
+                "always_bear": _baseline_constant_hit_rate(records, "bear", h, threshold),
+                "always_neutral": _baseline_constant_hit_rate(records, "neutral", h, threshold),
             },
         }
     return out
 
 
-def _section_per_source(
-    records: list[dict], horizons: list[str], threshold: float
-) -> dict:
+def _section_per_source(records: list[dict], horizons: list[str], threshold: float) -> dict:
     """Hit rate par source × predictor à chaque horizon."""
     by_source: dict[str, list[dict]] = defaultdict(list)
     for r in records:
@@ -303,9 +283,7 @@ def _section_per_source(
     for source, rs in by_source.items():
         out[source] = {
             "n_total": len(rs),
-            "by_asset": dict(
-                _count_by_asset(rs)
-            ),
+            "by_asset": dict(_count_by_asset(rs)),
             "horizons": {
                 h: {
                     "human": _hit_rate_vs_market(rs, "human", h, threshold),
@@ -327,6 +305,7 @@ def _count_by_asset(records: list[dict]) -> dict[str, int]:
 
 # === Rendu Markdown ===
 
+
 def _fmt_pct(value: float | None) -> str:
     if value is None:
         return "n/a"
@@ -336,7 +315,11 @@ def _fmt_pct(value: float | None) -> str:
 def _fmt_count(stats: dict | None) -> str:
     if stats is None:
         return "  n/a"
-    return f"{stats['n_correct']:>4.1f}/{stats['n']:<3d}" if isinstance(stats["n_correct"], float) else f"{stats['n_correct']:>4d}/{stats['n']:<3d}"
+    return (
+        f"{stats['n_correct']:>4.1f}/{stats['n']:<3d}"
+        if isinstance(stats["n_correct"], float)
+        else f"{stats['n_correct']:>4d}/{stats['n']:<3d}"
+    )
 
 
 def _render_markdown(report: dict) -> str:
@@ -347,8 +330,7 @@ def _render_markdown(report: dict) -> str:
     lines.append(f"*Généré le {meta['generated_at']}*")
     lines.append("")
     lines.append(
-        f"- **Items totaux** : {meta['n_total']} "
-        f"({meta['n_btc']} BTC + {meta['n_gold']} GOLD)"
+        f"- **Items totaux** : {meta['n_total']} ({meta['n_btc']} BTC + {meta['n_gold']} GOLD)"
     )
     lines.append(f"- **Items annotés à la main** : {meta['n_annotated']}")
     lines.append(f"- **Items avec prediction Ollama** : {meta['n_ollama']}")
@@ -369,9 +351,7 @@ def _render_markdown(report: dict) -> str:
         h_pct = dist["human"]["pct"].get(v, 0.0)
         o_pct = dist["ollama"]["pct"].get(v, 0.0)
         k_pct = dist["keywords"]["pct"].get(v, 0.0)
-        lines.append(
-            f"| **{v}** | {h} ({h_pct:.0f}%) | {o} ({o_pct:.0f}%) | {k} ({k_pct:.0f}%) |"
-        )
+        lines.append(f"| **{v}** | {h} ({h_pct:.0f}%) | {o} ({o_pct:.0f}%) | {k} ({k_pct:.0f}%) |")
     lines.append("")
 
     # Concordance
@@ -425,9 +405,7 @@ def _render_markdown(report: dict) -> str:
             else:
                 n_correct = stats["n_correct"]
                 n_correct_str = (
-                    f"{n_correct:.1f}"
-                    if isinstance(n_correct, float)
-                    else str(n_correct)
+                    f"{n_correct:.1f}" if isinstance(n_correct, float) else str(n_correct)
                 )
                 lines.append(
                     f"| **{predictor}** | "
@@ -449,25 +427,20 @@ def _render_markdown(report: dict) -> str:
                 else str(stats["n_correct"])
             )
             lines.append(
-                f"| {bl} | {n_correct_str} / {stats['n']} | "
-                f"{_fmt_pct(stats['hit_rate'])} |"
+                f"| {bl} | {n_correct_str} / {stats['n']} | {_fmt_pct(stats['hit_rate'])} |"
             )
         lines.append("")
 
     # Per-source
     lines.append("## 4. Performance par source")
     lines.append("")
-    lines.append(
-        "*Pour chaque source d'items, hit rate par predictor sur l'horizon principal.*"
-    )
+    lines.append("*Pour chaque source d'items, hit rate par predictor sur l'horizon principal.*")
     lines.append("")
     main_horizon = meta["horizons"][-1] if meta["horizons"] else None
     if main_horizon:
         lines.append(f"### Horizon de référence : {main_horizon}")
         lines.append("")
-        lines.append(
-            "| Source | n total | hit human | hit ollama | hit keywords |"
-        )
+        lines.append("| Source | n total | hit human | hit ollama | hit keywords |")
         lines.append("|---|---:|---:|---:|---:|")
         per_src = report["per_source"]
         for source, src_data in sorted(per_src.items()):
@@ -513,6 +486,7 @@ def _render_markdown(report: dict) -> str:
 
 # === Main ===
 
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Mesure de calibration sur le golden dataset.",
@@ -555,7 +529,7 @@ def main() -> None:
 
     report = {
         "meta": {
-            "generated_at": datetime.now(tz=timezone.utc).isoformat(),
+            "generated_at": datetime.now(tz=UTC).isoformat(),
             "n_total": len(records),
             "n_btc": n_btc,
             "n_gold": n_gold,
@@ -566,16 +540,12 @@ def main() -> None:
         },
         "distribution": _section_distribution(records),
         "concordance": _section_concordance(records),
-        "market_calibration": _section_market_calibration(
-            records, horizons, args.threshold
-        ),
+        "market_calibration": _section_market_calibration(records, horizons, args.threshold),
         "per_source": _section_per_source(records, horizons, args.threshold),
     }
 
     args.out_json.parent.mkdir(parents=True, exist_ok=True)
-    args.out_json.write_text(
-        json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    args.out_json.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     args.out_md.write_text(_render_markdown(report), encoding="utf-8")
 
     print(f"Rapport JSON : {args.out_json}")
@@ -596,9 +566,7 @@ def main() -> None:
         h_data = report["market_calibration"].get(h)
         if not h_data:
             continue
-        any_data = any(
-            h_data.get(p) is not None for p in ("human", "ollama", "keywords")
-        )
+        any_data = any(h_data.get(p) is not None for p in ("human", "ollama", "keywords"))
         if not any_data:
             print(f"  [{h:>4s}] pas encore de data (horizon dans le futur)")
             continue
@@ -609,11 +577,7 @@ def main() -> None:
                 print(f"    {predictor:10s} : n/a")
                 continue
             n_correct = stats["n_correct"]
-            n_correct_str = (
-                f"{n_correct:.1f}"
-                if isinstance(n_correct, float)
-                else str(n_correct)
-            )
+            n_correct_str = f"{n_correct:.1f}" if isinstance(n_correct, float) else str(n_correct)
             print(
                 f"    {predictor:10s} : {_fmt_pct(stats['hit_rate'])} "
                 f"({n_correct_str}/{stats['n']})"

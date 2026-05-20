@@ -17,8 +17,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 from tik_core.utils.time import iso_utc
 
-
 # ----- Entities -----
+
 
 class EntityIn(BaseModel):
     id: str = Field(min_length=1, max_length=64)
@@ -44,6 +44,7 @@ class EntityOut(BaseModel):
 
 
 # ----- Signals -----
+
 
 class Evidence(BaseModel):
     source: str
@@ -102,6 +103,7 @@ class SignalOut(BaseModel):
 
 # ----- Feedback -----
 
+
 class FeedbackIn(BaseModel):
     signal_id: str
     trade_id: str | None = None
@@ -128,6 +130,7 @@ class FeedbackOut(BaseModel):
 
 # ----- Veracity -----
 
+
 class VeracityStatus(BaseModel):
     global_veracity: float
     sources_count_active: int
@@ -151,6 +154,7 @@ class SourceVeracity(BaseModel):
 
 
 # ----- Headlines (Phase 1 trading manuel J+10) -----
+
 
 class HeadlineOut(BaseModel):
     """Titre brut OSINT agrégé depuis les ingesters news.
@@ -230,6 +234,7 @@ class MacroEventOut(BaseModel):
 
 # ----- Metrics -----
 
+
 class HitRateOut(BaseModel):
     """Hit rate live des signaux Tik sur une fenêtre temporelle.
 
@@ -301,19 +306,20 @@ class HitRateByVeracityOut(BaseModel):
 
 # ----- Track record (Phase A.3 trading manuel J+10) -----
 
+
 class TrackRecordRow(BaseModel):
     """Une ligne du track record : résultat d'un signal à un horizon donné."""
 
-    label: str           # "1h" | "6h" | "24h" | "5j"
+    label: str  # "1h" | "6h" | "24h" | "5j"
     measure_hours: float
     threshold_pct: float
-    available: bool      # horizon dans le passé
-    target_iso: str      # ISO UTC absolu de la cible (pour calcul "dans X" côté client)
-    p0: float | None     # prix au moment du signal
-    p1: float | None     # prix à t0 + horizon
+    available: bool  # horizon dans le passé
+    target_iso: str  # ISO UTC absolu de la cible (pour calcul "dans X" côté client)
+    p0: float | None  # prix au moment du signal
+    p1: float | None  # prix à t0 + horizon
     delta_pct: float | None
     success: bool | None
-    badge: str           # "correct" | "raté" | "données_manquantes" | "en_attente"
+    badge: str  # "correct" | "raté" | "données_manquantes" | "en_attente"
 
 
 class SignalTrackRecordOut(BaseModel):
@@ -336,6 +342,7 @@ class SignalTrackRecordOut(BaseModel):
 
 
 # ----- Health -----
+
 
 class HealthOut(BaseModel):
     status: str

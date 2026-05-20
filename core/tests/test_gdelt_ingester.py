@@ -17,13 +17,11 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import httpx
-import pytest
 
 from tik_core.aggregator.gdelt_ingester import (
     REDIS_KEY_TPL,
     GdeltIngester,
 )
-
 
 # =============================================================================
 # Fixtures et helpers

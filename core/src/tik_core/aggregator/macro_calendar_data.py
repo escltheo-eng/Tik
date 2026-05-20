@@ -58,7 +58,7 @@ EUR_USD, EM_RISK, GEOPOLITICAL_RISK).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -150,12 +150,10 @@ def date_to_utc_release(
         release_minute_local,
         tzinfo=local_tz,
     )
-    return local_dt.astimezone(timezone.utc)
+    return local_dt.astimezone(UTC)
 
 
-def build_event_from_fred(
-    spec: FredReleaseSpec, iso_date: str
-) -> dict[str, Any]:
+def build_event_from_fred(spec: FredReleaseSpec, iso_date: str) -> dict[str, Any]:
     """Construit un dict event prêt pour `upsert_many` à partir d'un FRED spec."""
     return {
         "event_code": spec.event_code,

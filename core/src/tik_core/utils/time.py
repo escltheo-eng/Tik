@@ -27,12 +27,12 @@ Si on migre un jour les colonnes vers `DateTime(timezone=True)`
 et `now_utc()` deviendra le seul appel de l'horloge dans le projet.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 
 def now_utc() -> datetime:
     """Datetime UTC timezone-aware (`tzinfo=UTC`)."""
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def now_utc_naive() -> datetime:
@@ -41,7 +41,7 @@ def now_utc_naive() -> datetime:
     Sémantiquement UTC, mais sans tzinfo — destiné aux colonnes
     SQLAlchemy `DateTime` (sans `timezone=True`) et aux comparaisons SQL.
     """
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 def iso_utc(value: datetime | None) -> str | None:
@@ -60,7 +60,7 @@ def iso_utc(value: datetime | None) -> str | None:
     if value is None:
         return None
     if value.tzinfo is None:
-        value = value.replace(tzinfo=timezone.utc)
+        value = value.replace(tzinfo=UTC)
     else:
-        value = value.astimezone(timezone.utc)
+        value = value.astimezone(UTC)
     return value.isoformat().replace("+00:00", "Z")

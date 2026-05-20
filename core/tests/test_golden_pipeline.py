@@ -14,26 +14,22 @@ Aucune dépendance Redis / DB / HTTP : on teste la logique sans infrastructure.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
+from tik_core.scripts.backtest_golden import (
+    _compute_deltas_for_item,
+    _parse_dt,
+    _parse_horizon,
+)
 from tik_core.scripts.collect_golden import (
     CollectedItem,
     _load_existing_ids,
     _make_id,
     pick_new,
     quotas_for,
-)
-from tik_core.scripts.predict_golden import (
-    _load_existing_predictions,
-    _verdict_from_counts,
-)
-from tik_core.scripts.backtest_golden import (
-    _compute_deltas_for_item,
-    _parse_dt,
-    _parse_horizon,
 )
 from tik_core.scripts.measure_calibration import (
     _accuracy,
@@ -48,7 +44,10 @@ from tik_core.scripts.measure_calibration import (
     _section_distribution,
     _verdict_correct_vs_market,
 )
-
+from tik_core.scripts.predict_golden import (
+    _load_existing_predictions,
+    _verdict_from_counts,
+)
 
 # =============================================================================
 # collect_golden — fonctions pures
@@ -90,8 +89,10 @@ class TestLoadExistingIds:
     def test_loads_ids_from_file(self, tmp_path: Path):
         path = tmp_path / "items.jsonl"
         path.write_text(
-            json.dumps({"id": "abc", "text": "x"}) + "\n"
-            + json.dumps({"id": "def", "text": "y"}) + "\n",
+            json.dumps({"id": "abc", "text": "x"})
+            + "\n"
+            + json.dumps({"id": "def", "text": "y"})
+            + "\n",
             encoding="utf-8",
         )
         assert _load_existing_ids(path) == {"abc", "def"}
@@ -99,9 +100,7 @@ class TestLoadExistingIds:
     def test_skips_invalid_json_lines(self, tmp_path: Path):
         path = tmp_path / "items.jsonl"
         path.write_text(
-            json.dumps({"id": "abc"}) + "\n"
-            + "not json\n"
-            + json.dumps({"id": "def"}) + "\n",
+            json.dumps({"id": "abc"}) + "\n" + "not json\n" + json.dumps({"id": "def"}) + "\n",
             encoding="utf-8",
         )
         assert _load_existing_ids(path) == {"abc", "def"}
@@ -117,8 +116,7 @@ class TestLoadExistingIds:
     def test_skips_records_without_id(self, tmp_path: Path):
         path = tmp_path / "items.jsonl"
         path.write_text(
-            json.dumps({"id": "abc"}) + "\n"
-            + json.dumps({"foo": "bar"}) + "\n",
+            json.dumps({"id": "abc"}) + "\n" + json.dumps({"foo": "bar"}) + "\n",
             encoding="utf-8",
         )
         assert _load_existing_ids(path) == {"abc"}
@@ -215,8 +213,7 @@ class TestLoadExistingPredictions:
     def test_loads_ids(self, tmp_path: Path):
         path = tmp_path / "preds.jsonl"
         path.write_text(
-            json.dumps({"id": "abc"}) + "\n"
-            + json.dumps({"id": "def"}) + "\n",
+            json.dumps({"id": "abc"}) + "\n" + json.dumps({"id": "def"}) + "\n",
             encoding="utf-8",
         )
         assert _load_existing_predictions(path) == {"abc", "def"}
@@ -262,7 +259,7 @@ class TestParseDt:
 
     def test_iso_without_tz_assumes_utc(self):
         dt = _parse_dt("2026-05-01T18:00:00")
-        assert dt.tzinfo == timezone.utc
+        assert dt.tzinfo == UTC
 
 
 class TestComputeDeltasForItem:
@@ -278,7 +275,7 @@ class TestComputeDeltasForItem:
         return [(int(dt.timestamp() * 1000), p) for dt, p in points]
 
     def test_horizon_in_future_marked_unavailable(self):
-        now = datetime(2026, 5, 1, 12, 0, tzinfo=timezone.utc)
+        now = datetime(2026, 5, 1, 12, 0, tzinfo=UTC)
         # Item collecté à 11:30, horizon 1h serait 12:30 → après now
         item = self._make_item("2026-05-01T11:30:00+00:00")
         history = self._make_history([])
@@ -287,22 +284,18 @@ class TestComputeDeltasForItem:
         assert out["deltas"]["1h"]["reason"] == "horizon_in_future"
 
     def test_no_fetch_price_marked_unavailable(self):
-        now = datetime(2026, 5, 5, tzinfo=timezone.utc)
+        now = datetime(2026, 5, 5, tzinfo=UTC)
         item = self._make_item("2026-05-01T00:00:00+00:00", fetch_price=None)  # type: ignore
-        history = self._make_history(
-            [(datetime(2026, 5, 1, 1, 0, tzinfo=timezone.utc), 200.0)]
-        )
+        history = self._make_history([(datetime(2026, 5, 1, 1, 0, tzinfo=UTC), 200.0)])
         out = _compute_deltas_for_item(item, history, ["1h"], now)
         assert out["deltas"]["1h"]["available"] is False
         assert out["deltas"]["1h"]["reason"] == "no_fetch_price"
 
     def test_delta_computed_correctly(self):
-        now = datetime(2026, 5, 5, tzinfo=timezone.utc)
+        now = datetime(2026, 5, 5, tzinfo=UTC)
         item = self._make_item("2026-05-01T00:00:00+00:00", fetch_price=100.0)
         # 1h plus tard, prix à 101 → delta +1.0 %
-        history = self._make_history(
-            [(datetime(2026, 5, 1, 1, 0, tzinfo=timezone.utc), 101.0)]
-        )
+        history = self._make_history([(datetime(2026, 5, 1, 1, 0, tzinfo=UTC), 101.0)])
         out = _compute_deltas_for_item(item, history, ["1h"], now)
         assert out["deltas"]["1h"]["available"] is True
         assert out["deltas"]["1h"]["price"] == 101.0
@@ -442,10 +435,12 @@ class TestBuildCombined:
         ]
         annotations = {"a": {"verdict": "bull"}}
         predictions = {
-            "a": {"predictions": {
-                "ollama": {"verdict": "bull"},
-                "keywords": {"verdict": "neutral"},
-            }}
+            "a": {
+                "predictions": {
+                    "ollama": {"verdict": "bull"},
+                    "keywords": {"verdict": "neutral"},
+                }
+            }
         }
         prices = {"b": {"deltas": {"1h": {"available": True, "delta_pct": 0.5}}}}
 
@@ -504,13 +499,19 @@ class TestRenderMarkdown:
             },
             "distribution": _section_distribution([]),
             "concordance": _section_concordance([]),
-            "market_calibration": {"1h": {
-                "human": None, "ollama": None, "keywords": None,
-                "baselines": {
-                    "random": None, "always_bull": None,
-                    "always_bear": None, "always_neutral": None,
-                },
-            }},
+            "market_calibration": {
+                "1h": {
+                    "human": None,
+                    "ollama": None,
+                    "keywords": None,
+                    "baselines": {
+                        "random": None,
+                        "always_bull": None,
+                        "always_bear": None,
+                        "always_neutral": None,
+                    },
+                }
+            },
             "per_source": {},
         }
         md = _render_markdown(report)

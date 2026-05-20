@@ -44,7 +44,7 @@ import argparse
 import asyncio
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import structlog
@@ -193,7 +193,7 @@ async def _predict_item(
                 "method": ollama_method,
             },
         },
-        "predicted_at": datetime.now(tz=timezone.utc).isoformat(),
+        "predicted_at": datetime.now(tz=UTC).isoformat(),
     }
 
 
@@ -230,10 +230,7 @@ async def main() -> None:
     existing = _load_existing_predictions(args.output)
     todo = [i for i in items if i["id"] not in existing]
 
-    print(
-        f"Items à prédire : {len(todo)}/{len(items)} "
-        f"(déjà prédit : {len(existing)})"
-    )
+    print(f"Items à prédire : {len(todo)}/{len(items)} (déjà prédit : {len(existing)})")
     if not todo:
         print("Tout est déjà prédit. Rien à faire.")
         return
@@ -245,10 +242,7 @@ async def main() -> None:
     ollama_clfs = await _build_ollama_classifiers(settings, assets_needed)
 
     if ollama_clfs:
-        print(
-            f"Ollama prêt sur {len(ollama_clfs)} asset(s) : "
-            f"{sorted(ollama_clfs.keys())}"
-        )
+        print(f"Ollama prêt sur {len(ollama_clfs)} asset(s) : {sorted(ollama_clfs.keys())}")
     else:
         print("⚠ Ollama indisponible — predictions keyword-only.")
 

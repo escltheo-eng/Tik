@@ -33,7 +33,6 @@ import contextvars
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import Any
 
 import httpx
 import structlog
@@ -53,35 +52,37 @@ log = structlog.get_logger()
 # ----- Constantes -----
 
 REDIS_KEY_TPL = "tik.source_credibility.{source}"
-SCORE_TTL_SEC = 8 * 86400        # 8 jours (>1 cycle daily, robustesse)
+SCORE_TTL_SEC = 8 * 86400  # 8 jours (>1 cycle daily, robustesse)
 MIN_SCORE = 0.30
 MAX_SCORE = 0.95
 
 # Seuils d'ajustement
-PENALTY_THRESHOLD = 0.40         # hit rate < 40% → pénalité
-REWARD_THRESHOLD = 0.70          # hit rate > 70% → récompense
-PENALTY_FACTOR = 1.2             # score ÷ 1.2
-REWARD_FACTOR = 1.1              # score × 1.1
-MIN_SAMPLES = 30                 # samples minimum pour ajuster
+PENALTY_THRESHOLD = 0.40  # hit rate < 40% → pénalité
+REWARD_THRESHOLD = 0.70  # hit rate > 70% → récompense
+PENALTY_FACTOR = 1.2  # score ÷ 1.2
+REWARD_FACTOR = 1.1  # score × 1.1
+MIN_SAMPLES = 30  # samples minimum pour ajuster
 LOOKBACK_DAYS = 30
-HORIZON_DAYS = 5                 # sweet spot identifié par le backtest existant
+HORIZON_DAYS = 5  # sweet spot identifié par le backtest existant
 THRESHOLD_PCT = 0.5
 
 # Sources qui peuvent être recalibrées (sentiment / overlays / positioning).
 # On exclut volontairement les sources de prix de marché elles-mêmes
 # (binance_klines, yahoo_finance, binance_klines_1m) — leur "crédibilité"
 # n'a pas de sens dans ce contexte, ce sont les inputs techniques.
-RECALIBRATABLE_SOURCES: frozenset[str] = frozenset({
-    "alternative_me_fng",
-    "cryptocompare_news",
-    "google_news_rss",
-    "reddit_btc",
-    "gdelt_news",
-    "fred_dtwexbgs",
-    "cftc_cot",
-    "binance_orderbook",
-    "binance_aggtrades",
-})
+RECALIBRATABLE_SOURCES: frozenset[str] = frozenset(
+    {
+        "alternative_me_fng",
+        "cryptocompare_news",
+        "google_news_rss",
+        "reddit_btc",
+        "gdelt_news",
+        "fred_dtwexbgs",
+        "cftc_cot",
+        "binance_orderbook",
+        "binance_aggtrades",
+    }
+)
 
 
 # ----- Context-var pour propager les scores dynamiques aux _enrich_with_<source> -----
@@ -127,10 +128,11 @@ class RecalibrationResult:
     new_score: float
     hit_rate: float | None
     samples: int
-    adjustment: str   # "unchanged" | "penalty" | "reward"
+    adjustment: str  # "unchanged" | "penalty" | "reward"
 
 
 # ----- Logique pure : ajustement -----
+
 
 def _compute_adjustment(
     current_score: float,
@@ -163,6 +165,7 @@ def _capped(score: float) -> float:
 
 # ----- Lecture / écriture Redis -----
 
+
 def _get_static_fallback(source: str) -> float:
     """Lazy lookup de SOURCE_SCORES pour éviter le cycle d'import.
 
@@ -170,6 +173,7 @@ def _get_static_fallback(source: str) -> float:
     s'exécute, `swing_engine` est déjà importé.
     """
     from tik_core.scoring.swing_engine import SOURCE_SCORES
+
     return SOURCE_SCORES.get(source, 0.5)
 
 
@@ -236,6 +240,7 @@ async def preload_source_scores(
 
 # ----- Calcul des hit rates par source (réutilise la logique backtest) -----
 
+
 async def _fetch_histories() -> tuple[list[tuple[int, float]], list[tuple[int, float]]]:
     """Fetch BTC + GOLD history en parallèle, via la logique du backtest existant."""
     from tik_core.scripts.backtest import fetch_btc_history, fetch_gold_history
@@ -263,7 +268,7 @@ def _compute_hit_rates_by_source(
     approximation de premier ordre — une attribution plus fine demanderait
     des feedbacks granulaires (à venir quand Zeta enverra du POST /feedback).
     """
-    from tik_core.scripts.backtest import find_closest_price, _success_for
+    from tik_core.scripts.backtest import _success_for, find_closest_price
 
     counts: dict[str, list[int]] = defaultdict(lambda: [0, 0])  # [n_success, n_total]
 
@@ -299,6 +304,7 @@ def _compute_hit_rates_by_source(
 
 
 # ----- Job orchestration -----
+
 
 async def recalibrate_source(
     redis: Redis,
@@ -378,9 +384,7 @@ async def recalibrate_sources(
     async with session_maker() as session:
         for source in RECALIBRATABLE_SOURCES:
             n_success, n_total = hit_rates.get(source, (0, 0))
-            res = await recalibrate_source(
-                redis, session, source, n_success, n_total
-            )
+            res = await recalibrate_source(redis, session, source, n_success, n_total)
             results.append(res)
             log.info(
                 "source_credibility.recalibrate.source",

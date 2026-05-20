@@ -20,7 +20,6 @@ from tik_core.aggregator.macro_calendar_data import (
 )
 from tik_core.aggregator.macro_static_ingester import MacroStaticIngester
 
-
 # =============================================================================
 # Mocks DB session
 # =============================================================================
@@ -38,7 +37,7 @@ class _MockSession:
 
     async def execute(self, stmt):
         self.parent.executed_count += 1
-        return None
+        return
 
     async def commit(self):
         self.parent.commit_count += 1

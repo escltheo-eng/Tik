@@ -49,15 +49,16 @@ from typing import Literal
 class CrossValidationResult:
     """Résultat de la cross-validation des biais sources."""
 
-    combined_bias: float                  # Moyenne des biais valides (outliers exclus)
-    circuit_breaker_status: str           # "ok" | "degraded" | "tripped"
+    combined_bias: float  # Moyenne des biais valides (outliers exclus)
+    circuit_breaker_status: str  # "ok" | "degraded" | "tripped"
     outlier_sources: set[str] = field(default_factory=set)
     n_sources: int = 0
-    method: str = "no_op"                 # "no_op" | "disagreement_n2" | "modified_zscore" | "zero_mad_fallback"
-    dispersion: float = 0.0               # std des biais (audit de la dispersion globale)
+    method: str = "no_op"  # "no_op" | "disagreement_n2" | "modified_zscore" | "zero_mad_fallback"
+    dispersion: float = 0.0  # std des biais (audit de la dispersion globale)
 
 
 # ----- Helpers stat -----
+
 
 def compute_mad(values: list[float]) -> float:
     """Median Absolute Deviation : médiane des |x - médiane|.
@@ -168,6 +169,7 @@ def detect_disagreement_n2(biases: dict[str, float], threshold: float = 0.8) -> 
 
 # ----- API principale -----
 
+
 def cross_validate(
     biases: dict[str, float],
     *,
@@ -240,10 +242,7 @@ def cross_validate(
     outliers = detect_outliers_modified_zscore(biases, threshold=zscore_threshold)
 
     valid_biases = [v for src, v in biases.items() if src not in outliers]
-    combined = (
-        sum(valid_biases) / len(valid_biases) if valid_biases
-        else statistics.median(values)
-    )
+    combined = sum(valid_biases) / len(valid_biases) if valid_biases else statistics.median(values)
 
     # Status par ratio d'outliers individuels
     ratio = len(outliers) / n
@@ -282,6 +281,7 @@ def cross_validate(
 
 
 # ----- Intégration côté engine (duck typing decision) -----
+
 
 def apply_cross_validation_to_decision(
     decision,

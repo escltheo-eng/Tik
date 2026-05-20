@@ -50,24 +50,24 @@ HORIZON_SPECS_BY_SIGNAL_HORIZON: dict[str, dict] = {
             {"label": "15min", "hours": 0.25, "threshold_pct": 0.10},
             {"label": "30min", "hours": 0.50, "threshold_pct": 0.15},
             {"label": "45min", "hours": 0.75, "threshold_pct": 0.20},
-            {"label": "1h",    "hours": 1.00, "threshold_pct": 0.30},
+            {"label": "1h", "hours": 1.00, "threshold_pct": 0.30},
         ],
         "price_match_tolerance_ms": 30 * 60 * 1000,
     },
     "swing": {
         "rows": [
-            {"label": "1h",  "hours": 1.0,   "threshold_pct": 0.3},
-            {"label": "6h",  "hours": 6.0,   "threshold_pct": 0.3},
-            {"label": "24h", "hours": 24.0,  "threshold_pct": 0.5},
-            {"label": "5j",  "hours": 120.0, "threshold_pct": 0.5},
+            {"label": "1h", "hours": 1.0, "threshold_pct": 0.3},
+            {"label": "6h", "hours": 6.0, "threshold_pct": 0.3},
+            {"label": "24h", "hours": 24.0, "threshold_pct": 0.5},
+            {"label": "5j", "hours": 120.0, "threshold_pct": 0.5},
         ],
         "price_match_tolerance_ms": 6 * 3600 * 1000,
     },
     "macro": {
         "rows": [
-            {"label": "1j",  "hours": 24.0,   "threshold_pct": 0.5},
-            {"label": "7j",  "hours": 168.0,  "threshold_pct": 1.0},
-            {"label": "30j", "hours": 720.0,  "threshold_pct": 2.0},
+            {"label": "1j", "hours": 24.0, "threshold_pct": 0.5},
+            {"label": "7j", "hours": 168.0, "threshold_pct": 1.0},
+            {"label": "30j", "hours": 720.0, "threshold_pct": 2.0},
             {"label": "90j", "hours": 2160.0, "threshold_pct": 3.0},
         ],
         "price_match_tolerance_ms": 24 * 3600 * 1000,
@@ -150,7 +150,11 @@ def compute_track_record(
 
     # Normalise les timestamps en naïf UTC pour les calculs (cohérent avec
     # find_closest_price qui attend un datetime naïf ou compare en ms).
-    ts0 = signal_timestamp.replace(tzinfo=None) if signal_timestamp.tzinfo is not None else signal_timestamp
+    ts0 = (
+        signal_timestamp.replace(tzinfo=None)
+        if signal_timestamp.tzinfo is not None
+        else signal_timestamp
+    )
     now_naive = now.replace(tzinfo=None) if now.tzinfo is not None else now
 
     p0 = find_closest_price(history, ts0, max_diff_ms=tolerance_ms) if history else None
@@ -173,17 +177,19 @@ def compute_track_record(
             delta_pct = None
             success = None
 
-        rows.append({
-            "label": h["label"],
-            "measure_hours": h["hours"],
-            "threshold_pct": h["threshold_pct"],
-            "available": available,
-            "target_iso": target_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "p0": p0,
-            "p1": p1,
-            "delta_pct": delta_pct,
-            "success": success,
-            "badge": _badge_for(available=available, p0=p0, p1=p1, success=success),
-        })
+        rows.append(
+            {
+                "label": h["label"],
+                "measure_hours": h["hours"],
+                "threshold_pct": h["threshold_pct"],
+                "available": available,
+                "target_iso": target_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "p0": p0,
+                "p1": p1,
+                "delta_pct": delta_pct,
+                "success": success,
+                "badge": _badge_for(available=available, p0=p0, p1=p1, success=success),
+            }
+        )
 
     return rows

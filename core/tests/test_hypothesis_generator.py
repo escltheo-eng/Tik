@@ -15,7 +15,6 @@ from dataclasses import dataclass, field
 from unittest.mock import AsyncMock
 
 import httpx
-import pytest
 
 from tik_core.scoring.hypothesis_generator import (
     HypothesisGenerator,
@@ -25,7 +24,6 @@ from tik_core.scoring.hypothesis_generator import (
     build_hypothesis_generator,
     render_template_hypothesis,
 )
-
 
 # ===== Stub decision (duck-typed) =====
 
@@ -56,28 +54,40 @@ def _rich_decision() -> StubDecision:
         confidence=0.78,
         veracity=0.92,
         evidence=[
-            {"source": "binance_klines", "score": 0.90,
-             "fact": "RSI14=62.0, EMA20/50=104500/103200, MACD=0.045"},
-            {"source": "alternative_me_fng", "score": 0.65,
-             "fact": "FG=65 (Greed)"},
-            {"source": "google_news_rss", "score": 0.70,
-             "fact": "News score=+0.40 (bull=18, bear=8 on 50 BTC titles)"},
-            {"source": "reddit_btc", "score": 0.65,
-             "fact": "Reddit retail score=+0.30 (bull=12, bear=4)"},
+            {
+                "source": "binance_klines",
+                "score": 0.90,
+                "fact": "RSI14=62.0, EMA20/50=104500/103200, MACD=0.045",
+            },
+            {"source": "alternative_me_fng", "score": 0.65, "fact": "FG=65 (Greed)"},
+            {
+                "source": "google_news_rss",
+                "score": 0.70,
+                "fact": "News score=+0.40 (bull=18, bear=8 on 50 BTC titles)",
+            },
+            {
+                "source": "reddit_btc",
+                "score": 0.65,
+                "fact": "Reddit retail score=+0.30 (bull=12, bear=4)",
+            },
         ],
         triggers=[
-            {"type": "ema_cross", "value": "EMA20 > EMA50 (uptrend)",
-             "weight": 0.25},
+            {"type": "ema_cross", "value": "EMA20 > EMA50 (uptrend)", "weight": 0.25},
             {"type": "rsi", "value": "RSI bullish 62.0", "weight": 0.10},
             {"type": "macd", "value": "MACD above signal", "weight": 0.10},
-            {"type": "fear_greed", "value": "FG=65 (greed → contrarian bear)",
-             "weight": 0.10},
+            {"type": "fear_greed", "value": "FG=65 (greed → contrarian bear)", "weight": 0.10},
         ],
         counter_scenarios=[
-            {"name": "macro_shock", "probability": 0.15,
-             "mitigation": "Monitor DXY spike and yield curve inversion"},
-            {"name": "indicator_whipsaw", "probability": 0.20,
-             "mitigation": "Confirm direction on multi-timeframe (1D trend)"},
+            {
+                "name": "macro_shock",
+                "probability": 0.15,
+                "mitigation": "Monitor DXY spike and yield curve inversion",
+            },
+            {
+                "name": "indicator_whipsaw",
+                "probability": 0.20,
+                "mitigation": "Confirm direction on multi-timeframe (1D trend)",
+            },
         ],
         circuit_breaker_status="ok",
     )
@@ -87,8 +97,7 @@ def _rich_decision() -> StubDecision:
 
 
 def test_render_template_long():
-    decision = StubDecision(direction="long", entity_id="BTC",
-                            confidence=0.75, veracity=0.90)
+    decision = StubDecision(direction="long", entity_id="BTC", confidence=0.75, veracity=0.90)
     text = render_template_hypothesis(decision, "swing")
     assert "Swing" in text
     assert "long" in text
@@ -98,8 +107,7 @@ def test_render_template_long():
 
 
 def test_render_template_short_flash():
-    decision = StubDecision(direction="short", entity_id="GOLD",
-                            confidence=0.50, veracity=0.78)
+    decision = StubDecision(direction="short", entity_id="GOLD", confidence=0.50, veracity=0.78)
     text = render_template_hypothesis(decision, "flash")
     assert text.startswith("Flash short on GOLD")
     assert "0.50" in text and "0.78" in text
@@ -153,8 +161,7 @@ def test_format_triggers_populated():
 def test_format_evidence_with_outlier():
     evidence = [
         {"source": "binance_klines", "score": 0.90, "fact": "RSI=62"},
-        {"source": "reddit_btc", "score": 0.65, "fact": "Score=+0.95",
-         "is_outlier": True},
+        {"source": "reddit_btc", "score": 0.65, "fact": "Score=+0.95", "is_outlier": True},
     ]
     text = OllamaHypothesisGenerator._format_evidence(evidence)
     assert "binance_klines (credibility 0.90)" in text
@@ -164,8 +171,7 @@ def test_format_evidence_with_outlier():
 
 def test_format_counter_scenarios():
     scenarios = [
-        {"name": "macro_shock", "probability": 0.15,
-         "mitigation": "Monitor DXY"},
+        {"name": "macro_shock", "probability": 0.15, "mitigation": "Monitor DXY"},
     ]
     text = OllamaHypothesisGenerator._format_counter_scenarios(scenarios)
     assert "macro_shock (probability 0.15)" in text
@@ -247,10 +253,7 @@ def test_is_valid_output_case_insensitive():
 
 async def test_ollama_generate_success(monkeypatch):
     gen = OllamaHypothesisGenerator(url="http://x", model="llama3.2:3b")
-    valid = (
-        "Long swing position recommended on BTC with confidence 0.78 "
-        "and veracity 0.92. " * 8
-    )
+    valid = "Long swing position recommended on BTC with confidence 0.78 and veracity 0.92. " * 8
     monkeypatch.setattr(gen, "_call_ollama", AsyncMock(return_value=valid))
     decision = _rich_decision()
     text = await gen.generate(decision, "swing")
@@ -261,7 +264,8 @@ async def test_ollama_generate_success(monkeypatch):
 async def test_ollama_generate_falls_back_on_http_error(monkeypatch):
     gen = OllamaHypothesisGenerator(url="http://x", model="llama3.2:3b")
     monkeypatch.setattr(
-        gen, "_call_ollama",
+        gen,
+        "_call_ollama",
         AsyncMock(side_effect=httpx.ConnectError("ollama down")),
     )
     decision = _rich_decision()
@@ -322,9 +326,7 @@ async def test_ollama_method_name():
 
 async def test_ollama_strips_markdown_in_response(monkeypatch):
     gen = OllamaHypothesisGenerator(url="http://x", model="llama3.2:3b")
-    raw_with_md = (
-        "**Verdict**: long position on BTC with high confidence. " * 10
-    )
+    raw_with_md = "**Verdict**: long position on BTC with high confidence. " * 10
     monkeypatch.setattr(gen, "_call_ollama", AsyncMock(return_value=raw_with_md))
     decision = _rich_decision()
     text = await gen.generate(decision, "swing")
@@ -421,9 +423,7 @@ async def test_apply_shadow_stores_distinct_llm_output():
         method_name = "ollama:fake"
 
         async def generate(self, decision, horizon):
-            return (
-                "Long position recommended on BTC with high confidence. " * 12
-            )
+            return "Long position recommended on BTC with high confidence. " * 12
 
     await apply_llm_hypothesis(decision, "swing", RealLLMGen(), mode="shadow")
     assert decision.hypothesis == original  # template inchangé
@@ -455,9 +455,7 @@ async def test_apply_active_replaces_with_distinct_llm_output():
         method_name = "ollama:fake"
 
         async def generate(self, decision, horizon):
-            return (
-                "Long position recommended on BTC with high confidence. " * 12
-            )
+            return "Long position recommended on BTC with high confidence. " * 12
 
     await apply_llm_hypothesis(decision, "swing", RealLLMGen(), mode="active")
     assert decision.hypothesis != original
@@ -488,9 +486,7 @@ async def test_apply_handles_timeout():
             await asyncio.sleep(2.0)  # > timeout
             return "should never return"
 
-    await apply_llm_hypothesis(
-        decision, "swing", SlowGenerator(), mode="active", timeout_s=0.05
-    )
+    await apply_llm_hypothesis(decision, "swing", SlowGenerator(), mode="active", timeout_s=0.05)
     assert decision.hypothesis == original
     assert "template_hypothesis" not in decision.advisory
 
@@ -506,9 +502,7 @@ async def test_apply_handles_exception():
         async def generate(self, decision, horizon):
             raise RuntimeError("boom")
 
-    await apply_llm_hypothesis(
-        decision, "swing", FailingGenerator(), mode="active"
-    )
+    await apply_llm_hypothesis(decision, "swing", FailingGenerator(), mode="active")
     assert decision.hypothesis == original
     assert "template_hypothesis" not in decision.advisory
 
@@ -674,7 +668,9 @@ async def test_ollama_lock_serializes_parallel_calls(monkeypatch):
     """Avec Lock, generate() force la sérialisation : 1 seul appel à la fois."""
     lock = asyncio.Lock()
     gen = OllamaHypothesisGenerator(
-        url="http://x", model="llama3.2:3b", lock=lock,
+        url="http://x",
+        model="llama3.2:3b",
+        lock=lock,
     )
 
     active = [0]
@@ -693,9 +689,7 @@ async def test_ollama_lock_serializes_parallel_calls(monkeypatch):
     await asyncio.gather(*[gen.generate(d, "swing") for d in decisions])
 
     # Avec Lock, max_active doit être strictement 1 (sérialisation totale)
-    assert max_active[0] == 1, (
-        f"Expected serial execution with lock, max_active={max_active[0]}"
-    )
+    assert max_active[0] == 1, f"Expected serial execution with lock, max_active={max_active[0]}"
 
 
 async def test_ollama_shared_lock_serializes_across_instances(monkeypatch):
@@ -706,10 +700,14 @@ async def test_ollama_shared_lock_serializes_across_instances(monkeypatch):
     serait utilisé plus tard (ex: 2 modèles Ollama distincts)."""
     shared_lock = asyncio.Lock()
     gen_a = OllamaHypothesisGenerator(
-        url="http://x", model="m1", lock=shared_lock,
+        url="http://x",
+        model="m1",
+        lock=shared_lock,
     )
     gen_b = OllamaHypothesisGenerator(
-        url="http://x", model="m2", lock=shared_lock,
+        url="http://x",
+        model="m2",
+        lock=shared_lock,
     )
 
     active = [0]

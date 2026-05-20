@@ -83,8 +83,8 @@ TRACK_RECORD_CACHE_TTL_SECONDS = 6 * 3600
 # Binance limit=1000.
 TRACK_RECORD_BINANCE_PARAMS: dict[str, dict] = {
     "flash": {"interval": "15m", "limit": 672},
-    "swing": {"interval": "1h",  "limit": 1000},
-    "macro": {"interval": "1d",  "limit": 365},
+    "swing": {"interval": "1h", "limit": 1000},
+    "macro": {"interval": "1d", "limit": 365},
 }
 TRACK_RECORD_YAHOO_PARAMS: dict[str, dict] = {
     # Pas de flash GOLD (cf. ADR-005 — Yahoo a 15 min de délai, incompatible
@@ -96,7 +96,9 @@ TRACK_RECORD_YAHOO_PARAMS: dict[str, dict] = {
 
 @router.get("/hit_rate", response_model=HitRateOut)
 async def get_hit_rate(
-    entity_id: str = Query(..., description="Identifiant entity Tik (ex: BTC, GOLD). Domain-agnostic."),
+    entity_id: str = Query(
+        ..., description="Identifiant entity Tik (ex: BTC, GOLD). Domain-agnostic."
+    ),
     horizon: str = Query(
         ...,
         pattern="^(flash|swing|macro)$",
@@ -141,9 +143,7 @@ async def get_hit_rate(
     - Yahoo Finance peut retourner des données partielles sur GOLD (skipped).
     """
     effective_threshold = (
-        threshold_pct
-        if threshold_pct is not None
-        else HORIZON_DEFAULT_THRESHOLD_PCT[horizon]
+        threshold_pct if threshold_pct is not None else HORIZON_DEFAULT_THRESHOLD_PCT[horizon]
     )
 
     settings = get_settings()
@@ -226,13 +226,10 @@ async def get_hit_rate(
 
         sample_warning: str | None = None
         if stats["n_evaluated"] == 0:
-            sample_warning = (
-                "Aucun signal éligible — fenêtre trop courte ou prix indisponibles."
-            )
+            sample_warning = "Aucun signal éligible — fenêtre trop courte ou prix indisponibles."
         elif stats["n_evaluated"] < 30:
             sample_warning = (
-                f"Échantillon faible ({stats['n_evaluated']} signaux, "
-                f"30 mini recommandé)."
+                f"Échantillon faible ({stats['n_evaluated']} signaux, 30 mini recommandé)."
             )
 
         out = HitRateOut(
@@ -270,7 +267,9 @@ async def get_hit_rate(
 
 @router.get("/hit_rate_by_veracity", response_model=HitRateByVeracityOut)
 async def get_hit_rate_by_veracity(
-    entity_id: str = Query(..., description="Identifiant entity Tik (ex: BTC, GOLD). Domain-agnostic."),
+    entity_id: str = Query(
+        ..., description="Identifiant entity Tik (ex: BTC, GOLD). Domain-agnostic."
+    ),
     horizon: str = Query(
         ...,
         pattern="^(flash|swing|macro)$",
@@ -312,9 +311,7 @@ async def get_hit_rate_by_veracity(
     - Période bullish/bearish biaise toujours globalement (même filtre).
     """
     effective_threshold = (
-        threshold_pct
-        if threshold_pct is not None
-        else HORIZON_DEFAULT_THRESHOLD_PCT[horizon]
+        threshold_pct if threshold_pct is not None else HORIZON_DEFAULT_THRESHOLD_PCT[horizon]
     )
 
     settings = get_settings()
@@ -394,13 +391,10 @@ async def get_hit_rate_by_veracity(
         total_evaluated = sum(b.n_evaluated for b in buckets)
         sample_warning: str | None = None
         if total_evaluated == 0:
-            sample_warning = (
-                "Aucun signal éligible — fenêtre trop courte ou prix indisponibles."
-            )
+            sample_warning = "Aucun signal éligible — fenêtre trop courte ou prix indisponibles."
         elif total_evaluated < 30:
             sample_warning = (
-                f"Échantillon faible (total {total_evaluated} signaux, "
-                f"30 mini recommandé)."
+                f"Échantillon faible (total {total_evaluated} signaux, 30 mini recommandé)."
             )
 
         out = HitRateByVeracityOut(

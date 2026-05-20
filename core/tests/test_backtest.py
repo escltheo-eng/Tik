@@ -8,24 +8,24 @@ import pytest
 
 from tik_core.scripts.backtest import _gain_for, _success_for
 
-
 # ----- _gain_for -----
+
 
 @pytest.mark.parametrize(
     "direction, delta_pct, expected_gain",
     [
         # LONG : on profite directement du delta
-        ("long", 2.0, 2.0),       # marché monte → gain = delta
-        ("long", -1.5, -1.5),     # marché baisse → perte
-        ("long", 0.0, 0.0),       # stable → 0
+        ("long", 2.0, 2.0),  # marché monte → gain = delta
+        ("long", -1.5, -1.5),  # marché baisse → perte
+        ("long", 0.0, 0.0),  # stable → 0
         # SHORT : on profite de l'inverse du delta
-        ("short", 2.0, -2.0),     # marché monte → on perd notre short
-        ("short", -1.5, 1.5),     # marché baisse → on gagne sur le short
+        ("short", 2.0, -2.0),  # marché monte → on perd notre short
+        ("short", -1.5, 1.5),  # marché baisse → on gagne sur le short
         ("short", 0.0, 0.0),
         # NEUTRAL : "réussi" si stable, donc gain = -|delta|
-        ("neutral", 2.0, -2.0),   # gros mouvement → loupé
+        ("neutral", 2.0, -2.0),  # gros mouvement → loupé
         ("neutral", -1.5, -1.5),  # ditto en baisse
-        ("neutral", 0.0, 0.0),    # marché stable → "réussi"
+        ("neutral", 0.0, 0.0),  # marché stable → "réussi"
     ],
 )
 def test_gain_for(direction, delta_pct, expected_gain):
@@ -33,6 +33,7 @@ def test_gain_for(direction, delta_pct, expected_gain):
 
 
 # ----- _success_for -----
+
 
 @pytest.mark.parametrize(
     "direction, delta_pct, threshold, expected_success",

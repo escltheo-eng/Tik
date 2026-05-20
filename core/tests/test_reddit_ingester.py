@@ -27,7 +27,6 @@ from tik_core.aggregator.reddit_ingester import (
     RedditIngester,
 )
 
-
 # =============================================================================
 # Fixtures et helpers
 # =============================================================================
@@ -241,12 +240,12 @@ def test_filter_post_custom_min_score():
 @pytest.mark.parametrize(
     "n_bull, n_bear, expected",
     [
-        (1, 0, 1),    # bull strict
-        (0, 1, -1),   # bear strict
-        (0, 0, 0),    # neutral (rien classifié)
-        (1, 1, 0),    # ambigu (clipping symétrique en cas de tie)
-        (2, 1, 1),    # plus de bull que bear
-        (1, 2, -1),   # plus de bear que bull
+        (1, 0, 1),  # bull strict
+        (0, 1, -1),  # bear strict
+        (0, 0, 0),  # neutral (rien classifié)
+        (1, 1, 0),  # ambigu (clipping symétrique en cas de tie)
+        (2, 1, 1),  # plus de bull que bear
+        (1, 2, -1),  # plus de bear que bull
     ],
 )
 def test_verdict_to_value(n_bull, n_bear, expected):
@@ -261,9 +260,7 @@ def test_verdict_to_value(n_bull, n_bear, expected):
 async def test_fetch_sub_returns_children_on_success():
     classifier = FakeClassifier()
     ing = _make_ingester(classifier=classifier)
-    client = _FakeClient(
-        responses_by_sub={"Bitcoin": REDDIT_FIXTURE_BITCOIN}
-    )
+    client = _FakeClient(responses_by_sub={"Bitcoin": REDDIT_FIXTURE_BITCOIN})
     children = await ing._fetch_sub(client, "Bitcoin")
     assert children is not None
     # Le fixture contient 6 posts bruts (filtres appliqués plus tard dans _fetch)
@@ -353,9 +350,7 @@ async def test_fetch_classifier_only_called_on_filtered_posts():
     """Le classifier ne reçoit que les posts qui passent les filtres."""
     classifier = FakeClassifier(default=(0, 0))
     ing = _make_ingester(classifier=classifier)
-    client = _FakeClient(
-        responses_by_sub={"Bitcoin": REDDIT_FIXTURE_BITCOIN}
-    )
+    client = _FakeClient(responses_by_sub={"Bitcoin": REDDIT_FIXTURE_BITCOIN})
     await ing._fetch(client)
 
     # 6 posts dans le fixture, 3 filtrés → 3 appels
@@ -392,9 +387,7 @@ async def test_fetch_log_weighting_amplifies_high_upvote_posts():
     assert payload is not None
     # weight_bear = log(1001) ≈ 6.91 ; weight_bull = log(6) ≈ 1.79
     # score = (-1 × 6.91 + 1 × 1.79) / (6.91 + 1.79) ≈ -0.589
-    expected = (
-        -1 * math.log(1001) + 1 * math.log(6)
-    ) / (math.log(1001) + math.log(6))
+    expected = (-1 * math.log(1001) + 1 * math.log(6)) / (math.log(1001) + math.log(6))
     assert payload["score"] == pytest.approx(round(expected, 4), abs=0.001)
     # Le bias dérivé sera donc strong_bearish (≤ -0.4) malgré l'égalité 1 bull / 1 bear
     assert payload["score"] <= -0.4
@@ -641,9 +634,7 @@ async def test_fetch_reddit_headlines_published_at_iso():
     """`published_at` est un ISO 8601 dérivé du UNIX timestamp `created_utc`."""
     classifier = FakeClassifier(default=(0, 0))
     ing = _make_ingester(classifier=classifier)
-    fixture = _make_listing(
-        [_make_post("Hello", score=100)]
-    )
+    fixture = _make_listing([_make_post("Hello", score=100)])
     client = _FakeClient(responses_by_sub={"Bitcoin": fixture})
     ing.subreddits = ["Bitcoin"]
 

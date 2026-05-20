@@ -12,8 +12,8 @@ import pytest
 
 from tik_core.scoring.flash_engine import (
     FLASH_SOURCE_SCORES,
-    FlashDecision,
     HEARTBEAT_INTERVAL,
+    FlashDecision,
     LastEmission,
     _compute_aggression_bias,
     _compute_obi_bias,
@@ -23,8 +23,8 @@ from tik_core.scoring.flash_engine import (
     should_emit,
 )
 
-
 # ----- Helpers de test -----
+
 
 def _make_decision(direction: str = "long") -> FlashDecision:
     """Crée une décision flash minimale pour les tests d'enrichissement."""
@@ -55,6 +55,7 @@ def _make_trades(buy_qty: float, sell_qty: float) -> list[dict]:
 
 # ----- _veracity_from_concordance -----
 
+
 @pytest.mark.parametrize(
     "direction, bias, expected_veracity",
     [
@@ -81,6 +82,7 @@ def test_veracity_from_concordance_matrix(direction, bias, expected_veracity):
 
 
 # ----- _compute_obi_bias -----
+
 
 @pytest.mark.parametrize(
     "bid_vol, ask_vol, expected_bias, expected_zone",
@@ -145,6 +147,7 @@ def test_compute_obi_bias_aggregates_multiple_levels():
 
 # ----- _compute_aggression_bias -----
 
+
 @pytest.mark.parametrize(
     "buy_qty, sell_qty, expected_bias, expected_zone",
     [
@@ -185,10 +188,10 @@ def test_compute_aggression_bias_zero_volume():
 def test_compute_aggression_bias_skips_invalid_entries():
     """Un trade malformé est skippé, les autres sont comptés normalement."""
     trades = [
-        {"q": "100", "m": False},        # buy taker valide
+        {"q": "100", "m": False},  # buy taker valide
         {"q": "not-a-number", "m": True},  # malformé → skip
-        {"foo": "bar"},                   # malformé → skip
-        {"q": "50", "m": True},          # sell taker valide
+        {"foo": "bar"},  # malformé → skip
+        {"q": "50", "m": True},  # sell taker valide
     ]
     result = _compute_aggression_bias(trades)
     assert result is not None
@@ -213,6 +216,7 @@ def test_compute_aggression_bias_buyer_maker_convention():
 
 
 # ----- _enrich_with_orderbook -----
+
 
 def test_enrich_with_orderbook_strong_bid():
     decision = _make_decision("long")
@@ -250,6 +254,7 @@ def test_enrich_with_orderbook_invalid_book_returns_none():
 
 # ----- _enrich_with_aggression -----
 
+
 def test_enrich_with_aggression_strong_bid():
     decision = _make_decision("long")
     trades = _make_trades(70.0, 30.0)
@@ -282,6 +287,7 @@ def test_enrich_with_aggression_empty_returns_none():
 
 
 # ----- should_emit (logique d'émission conditionnelle) -----
+
 
 def test_should_emit_first_signal_emits():
     """Pas d'émission précédente → on émet."""
@@ -353,6 +359,7 @@ from tik_core.scoring.flash_engine import (
 def _make_flash_decision(direction: str = "neutral") -> FlashDecision:
     """Crée une FlashDecision minimale pour tests."""
     from datetime import datetime
+
     return FlashDecision(
         entity_id="BTC",
         timestamp=datetime(2026, 5, 7, 12, 0, 0),

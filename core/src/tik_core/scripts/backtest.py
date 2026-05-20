@@ -20,7 +20,7 @@ import argparse
 import asyncio
 import random
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from statistics import mean
 
 import httpx
@@ -40,6 +40,7 @@ UA = "Mozilla/5.0 (compatible; TikBot/0.1)"
 
 
 # ----- Fetch des historiques -----
+
 
 async def fetch_btc_history(
     client: httpx.AsyncClient,
@@ -118,7 +119,11 @@ def find_closest_price(
     """
     if not history:
         return None
-    target_ms = int(target.replace(tzinfo=timezone.utc).timestamp() * 1000) if target.tzinfo is None else int(target.timestamp() * 1000)
+    target_ms = (
+        int(target.replace(tzinfo=UTC).timestamp() * 1000)
+        if target.tzinfo is None
+        else int(target.timestamp() * 1000)
+    )
     best: tuple[int, float] | None = None
     best_diff = float("inf")
     for ts_ms, price in history:
@@ -134,6 +139,7 @@ def find_closest_price(
 
 
 # ----- Évaluation -----
+
 
 def evaluate_signal(
     signal: Signal,
@@ -182,6 +188,7 @@ def evaluate_signal(
 
 # ----- Helpers de scoring partagés -----
 
+
 def _gain_for(direction: str, delta_pct: float) -> float:
     """Gain réel d'une décision selon la direction prise et le delta observé.
 
@@ -205,6 +212,7 @@ def _success_for(direction: str, delta_pct: float, threshold_pct: float) -> bool
 
 
 # ----- Rapport -----
+
 
 def print_report(results: list[dict], horizon_days: int, threshold_pct: float) -> None:
     if not results:
@@ -233,7 +241,9 @@ def print_report(results: list[dict], horizon_days: int, threshold_pct: float) -
         rs = by_entity[entity]
         s = sum(1 for r in rs if r["success"])
         avg = mean(_gain_for(r["direction"], r["delta_pct"]) for r in rs)
-        print(f"\n{entity} : {len(rs)} signaux, hit {s}/{len(rs)} = {s / len(rs) * 100:.1f}%, gain moy {avg:+.2f}%")
+        print(
+            f"\n{entity} : {len(rs)} signaux, hit {s}/{len(rs)} = {s / len(rs) * 100:.1f}%, gain moy {avg:+.2f}%"
+        )
         by_dir: dict[str, list[dict]] = defaultdict(list)
         for r in rs:
             by_dir[r["direction"]].append(r)
@@ -241,7 +251,9 @@ def print_report(results: list[dict], horizon_days: int, threshold_pct: float) -
             drs = by_dir[direction]
             ds = sum(1 for r in drs if r["success"])
             davg = mean(_gain_for(r["direction"], r["delta_pct"]) for r in drs)
-            print(f"   {direction:8s} : {len(drs):3d} signaux, hit {ds}/{len(drs)} = {ds / len(drs) * 100:5.1f}%, gain moy {davg:+.2f}%")
+            print(
+                f"   {direction:8s} : {len(drs):3d} signaux, hit {ds}/{len(drs)} = {ds / len(drs) * 100:5.1f}%, gain moy {davg:+.2f}%"
+            )
 
     # Par tranche de veracity
     print("\n--- Hit rate par tranche de veracity ---")
@@ -253,7 +265,9 @@ def print_report(results: list[dict], horizon_days: int, threshold_pct: float) -
         rs = veracity_buckets[bucket]
         s = sum(1 for r in rs if r["success"])
         avg = mean(_gain_for(r["direction"], r["delta_pct"]) for r in rs)
-        print(f"   veracity {bucket:.2f} : {len(rs):3d} signaux, hit {s:2d}/{len(rs):2d} = {s / len(rs) * 100:5.1f}%, gain moy {avg:+.2f}%")
+        print(
+            f"   veracity {bucket:.2f} : {len(rs):3d} signaux, hit {s:2d}/{len(rs):2d} = {s / len(rs) * 100:5.1f}%, gain moy {avg:+.2f}%"
+        )
 
     # Top best / worst
     def _row(r: dict) -> str:
@@ -265,7 +279,9 @@ def print_report(results: list[dict], horizon_days: int, threshold_pct: float) -
             f"gain {gain:+6.2f}% [{status}]"
         )
 
-    sorted_by_gain = sorted(results, key=lambda r: _gain_for(r["direction"], r["delta_pct"]), reverse=True)
+    sorted_by_gain = sorted(
+        results, key=lambda r: _gain_for(r["direction"], r["delta_pct"]), reverse=True
+    )
     print("\n--- Top 3 BEST (gain le plus élevé selon direction) ---")
     for r in sorted_by_gain[:3]:
         print(_row(r))
@@ -284,6 +300,7 @@ def print_report(results: list[dict], horizon_days: int, threshold_pct: float) -
 
 
 # ----- Baselines -----
+
 
 def evaluate_constant_baseline(
     results: list[dict],
@@ -337,7 +354,7 @@ def evaluate_random_baseline(
     }
 
 
-def evaluate_tik_baseline(results: list[dict], threshold_pct: float) -> dict:
+def evaluate_tik_baseline(results: list[dict], threshold_pct: float) -> dict:  # noqa: ARG001 — symétrie d'interface avec les autres baselines
     """Stats Tik (rappel pour la comparaison, recalculé sur les mêmes signaux)."""
     n = len(results)
     if n == 0:
@@ -390,7 +407,9 @@ def print_baselines_comparison(results: list[dict], threshold_pct: float) -> Non
                 hit_str = f"{n_succ}/{s['n']}"
             return f"{hit_str:<10} {s['hit_rate'] * 100:5.1f}% {s['avg_gain']:+5.2f}%"
 
-        print(f"{name:<18} | {fmt(global_stats):<22} | {fmt(btc_stats):<22} | {fmt(gold_stats):<22}")
+        print(
+            f"{name:<18} | {fmt(global_stats):<22} | {fmt(btc_stats):<22} | {fmt(gold_stats):<22}"
+        )
 
     print()
     print("Lecture du tableau :")
@@ -401,6 +420,7 @@ def print_baselines_comparison(results: list[dict], threshold_pct: float) -> Non
 
 
 # ----- Persistance des runs -----
+
 
 def _build_run_stats(results: list[dict], threshold_pct: float) -> dict:
     """Construit le dict des stats détaillées à stocker dans BacktestRun (JSON columns)."""
@@ -420,7 +440,12 @@ def _build_run_stats(results: list[dict], threshold_pct: float) -> dict:
                 continue
             ds = sum(1 for r in drs if r["success"])
             davg = mean(_gain_for(direction, r["delta_pct"]) for r in drs)
-            per_dir[direction] = {"n": len(drs), "n_success": ds, "hit_rate": ds / len(drs), "avg_gain_pct": davg}
+            per_dir[direction] = {
+                "n": len(drs),
+                "n_success": ds,
+                "hit_rate": ds / len(drs),
+                "avg_gain_pct": davg,
+            }
         stats_by_entity[entity] = {
             "n": n,
             "n_success": s,
@@ -474,10 +499,7 @@ async def _persist_run(
     n_eval = len(results)
     n_success = sum(1 for r in results if r["success"])
     hit_rate = n_success / n_eval if n_eval else 0.0
-    avg_gain = (
-        mean(_gain_for(r["direction"], r["delta_pct"]) for r in results)
-        if n_eval else 0.0
-    )
+    avg_gain = mean(_gain_for(r["direction"], r["delta_pct"]) for r in results) if n_eval else 0.0
     stats = _build_run_stats(results, threshold_pct)
 
     run = BacktestRun(
@@ -501,6 +523,7 @@ async def _persist_run(
 
 
 # ----- Main -----
+
 
 async def main() -> None:
     parser = argparse.ArgumentParser(description="Backtest des signaux Tik")
@@ -533,7 +556,7 @@ async def main() -> None:
     engine = create_async_engine(settings.database_url, echo=False)
     session_maker = async_sessionmaker(engine, expire_on_commit=False)
 
-    print(f"\nLecture des signaux depuis la DB...")
+    print("\nLecture des signaux depuis la DB...")
     async with session_maker() as session:
         result = await session.execute(select(Signal).order_by(Signal.timestamp.asc()))
         signals = list(result.scalars().all())
@@ -545,7 +568,9 @@ async def main() -> None:
     print(f"  → {len(eligible)} signaux éligibles (plus de {args.horizon_days}j d'âge)")
 
     if not eligible:
-        print("\nAucun signal n'est encore assez ancien pour cet horizon. Réduis --horizon-days ou attends.")
+        print(
+            "\nAucun signal n'est encore assez ancien pour cet horizon. Réduis --horizon-days ou attends."
+        )
         await engine.dispose()
         return
 

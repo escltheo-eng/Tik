@@ -19,8 +19,8 @@ from tik_core.aggregator.cftc_cot_ingester import (
     CftcCotIngester,
 )
 
-
 # ----- Helpers -----
+
 
 def _make_ingester() -> CftcCotIngester:
     """Crée un ingester sans Redis (on ne teste que _fetch ici)."""
@@ -47,6 +47,7 @@ _SAMPLE_ROW = {
 
 
 # ----- _fetch : cas nominal -----
+
 
 async def test_fetch_parses_valid_response():
     captured: dict = {}
@@ -78,8 +79,11 @@ async def test_fetch_parses_valid_response():
 
 
 async def test_fetch_computes_balanced_net_pct():
-    row = {**_SAMPLE_ROW, "m_money_positions_long_all": "50000",
-           "m_money_positions_short_all": "50000"}
+    row = {
+        **_SAMPLE_ROW,
+        "m_money_positions_long_all": "50000",
+        "m_money_positions_short_all": "50000",
+    }
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json=[row])
@@ -93,8 +97,11 @@ async def test_fetch_computes_balanced_net_pct():
 
 
 async def test_fetch_computes_extreme_short_net_pct():
-    row = {**_SAMPLE_ROW, "m_money_positions_long_all": "10000",
-           "m_money_positions_short_all": "90000"}
+    row = {
+        **_SAMPLE_ROW,
+        "m_money_positions_long_all": "10000",
+        "m_money_positions_short_all": "90000",
+    }
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json=[row])
@@ -109,6 +116,7 @@ async def test_fetch_computes_extreme_short_net_pct():
 
 # ----- _fetch : cas d'erreur -----
 
+
 async def test_fetch_returns_none_on_empty_response():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json=[])
@@ -121,8 +129,7 @@ async def test_fetch_returns_none_on_empty_response():
 
 async def test_fetch_returns_none_on_zero_total_positions():
     """Garde-fou : long=0 et short=0 ne doit pas crasher (division par zéro)."""
-    row = {**_SAMPLE_ROW, "m_money_positions_long_all": "0",
-           "m_money_positions_short_all": "0"}
+    row = {**_SAMPLE_ROW, "m_money_positions_long_all": "0", "m_money_positions_short_all": "0"}
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json=[row])
@@ -134,8 +141,7 @@ async def test_fetch_returns_none_on_zero_total_positions():
 
 
 async def test_fetch_returns_none_on_missing_field():
-    row = {k: v for k, v in _SAMPLE_ROW.items()
-           if k != "m_money_positions_long_all"}
+    row = {k: v for k, v in _SAMPLE_ROW.items() if k != "m_money_positions_long_all"}
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json=[row])
@@ -170,8 +176,7 @@ async def test_fetch_returns_none_on_http_error():
 
 async def test_fetch_handles_missing_change_fields_gracefully():
     """Les champs `change_in_*` sont optionnels — défaut 0."""
-    row = {k: v for k, v in _SAMPLE_ROW.items()
-           if not k.startswith("change_in_")}
+    row = {k: v for k, v in _SAMPLE_ROW.items() if not k.startswith("change_in_")}
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json=[row])

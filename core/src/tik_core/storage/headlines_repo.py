@@ -12,7 +12,7 @@ Reddit, etc.).
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import structlog
@@ -53,8 +53,7 @@ def parse_iso_naive(value: Any) -> datetime | None:
         return None
     if isinstance(value, datetime):
         if value.tzinfo is not None:
-            from datetime import timezone
-            value = value.astimezone(timezone.utc).replace(tzinfo=None)
+            value = value.astimezone(UTC).replace(tzinfo=None)
         return value
     try:
         s = str(value)
@@ -62,8 +61,7 @@ def parse_iso_naive(value: Any) -> datetime | None:
             s = s[:-1] + "+00:00"
         dt = datetime.fromisoformat(s)
         if dt.tzinfo is not None:
-            from datetime import timezone
-            dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+            dt = dt.astimezone(UTC).replace(tzinfo=None)
         return dt
     except (TypeError, ValueError):
         return None

@@ -10,7 +10,7 @@ ou payant) — non prévu dans le MVP gratuit.
 
 import asyncio
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import httpx
 import structlog
@@ -85,7 +85,7 @@ class YahooPoller(BaseIngester):
             meta = chart["meta"]
             price = float(meta["regularMarketPrice"])
             ts_unix = int(meta.get("regularMarketTime", 0))
-            ts = datetime.fromtimestamp(ts_unix, tz=timezone.utc) if ts_unix else now_utc()
+            ts = datetime.fromtimestamp(ts_unix, tz=UTC) if ts_unix else now_utc()
         except (KeyError, IndexError, TypeError, ValueError) as exc:
             log.warning("yahoo.parse.error", error=str(exc))
             return None

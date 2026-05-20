@@ -29,8 +29,8 @@ from tik_core.scoring.swing_engine import (
     _veracity_from_concordance,
 )
 
-
 # ----- Helpers de test -----
+
 
 def _make_decision(direction: str = "long") -> SwingDecision:
     """Crée une décision swing minimale pour les tests d'enrichissement."""
@@ -57,6 +57,7 @@ def _make_dxy_history(past_value: float, recent_value: float) -> list[dict]:
 
 
 # ----- _compute_fg_bias -----
+
 
 @pytest.mark.parametrize(
     "value, expected_bias, expected_zone",
@@ -89,6 +90,7 @@ def test_compute_fg_bias(value, expected_bias, expected_zone):
 
 # ----- _compute_cryptocompare_bias -----
 
+
 @pytest.mark.parametrize(
     "score, expected_bias, expected_zone",
     [
@@ -118,6 +120,7 @@ def test_compute_cryptocompare_bias(score, expected_bias, expected_zone):
 
 
 # ----- _compute_dxy_bias -----
+
 
 @pytest.mark.parametrize(
     "past, recent, expected_bias, expected_zone",
@@ -185,6 +188,7 @@ def test_compute_dxy_bias_zero_past_returns_none():
 
 # ----- _veracity_from_concordance -----
 
+
 @pytest.mark.parametrize(
     "direction, bias, expected_veracity",
     [
@@ -213,6 +217,7 @@ def test_veracity_from_concordance_matrix(direction, bias, expected_veracity):
 
 
 # ----- _enrich_with_fear_greed -----
+
 
 def test_enrich_with_fear_greed_valid():
     decision = _make_decision("long")
@@ -257,6 +262,7 @@ def test_enrich_with_fear_greed_invalid_value_type():
 
 # ----- _enrich_with_cryptocompare -----
 
+
 def test_enrich_with_cryptocompare_valid():
     decision = _make_decision("long")
     cc = {
@@ -296,6 +302,7 @@ def test_enrich_with_cryptocompare_missing_score():
 
 
 # ----- _enrich_with_dxy -----
+
 
 def test_enrich_with_dxy_valid_strong_up():
     decision = _make_decision("short")
@@ -337,6 +344,7 @@ def test_enrich_with_dxy_insufficient_history():
 
 # ----- _compute_cot_bias -----
 
+
 @pytest.mark.parametrize(
     "net_pct, expected_bias, expected_zone",
     [
@@ -367,6 +375,7 @@ def test_compute_cot_bias(net_pct, expected_bias, expected_zone):
 
 
 # ----- _enrich_with_cot -----
+
 
 def test_enrich_with_cot_valid_extreme_long():
     decision = _make_decision("long")
@@ -451,6 +460,7 @@ def test_enrich_with_cot_missing_report_date_uses_unknown():
 
 # ----- _compute_google_news_bias -----
 
+
 @pytest.mark.parametrize(
     "score, expected_bias, expected_zone",
     [
@@ -480,6 +490,7 @@ def test_compute_google_news_bias(score, expected_bias, expected_zone):
 
 
 # ----- _enrich_with_google_news -----
+
 
 def test_enrich_with_google_news_valid_btc():
     decision = _make_decision("long")
@@ -636,6 +647,7 @@ def test_enrich_with_google_news_malformed_publisher_entry():
 
 # ----- _compute_reddit_bias (ADR-009) -----
 
+
 @pytest.mark.parametrize(
     "score, expected_bias, expected_zone",
     [
@@ -665,6 +677,7 @@ def test_compute_reddit_bias(score, expected_bias, expected_zone):
 
 
 # ----- _enrich_with_reddit -----
+
 
 def test_enrich_with_reddit_valid_btc():
     decision = _make_decision("long")
@@ -795,6 +808,7 @@ def test_enrich_with_reddit_malformed_sub_entry():
 
 # ----- _compute_gdelt_bias (ADR-010) — mapping CONTRARIAN sur GOLD -----
 
+
 @pytest.mark.parametrize(
     "tone, expected_bias, expected_zone",
     [
@@ -838,6 +852,7 @@ def test_compute_gdelt_bias_is_contrarian_on_gold():
 
 
 # ----- _enrich_with_gdelt -----
+
 
 def test_enrich_with_gdelt_valid_tensions_extreme():
     decision = _make_decision("long")
@@ -939,8 +954,8 @@ from tik_core.scoring.swing_engine import (
     _veracity_from_dispersion,
 )
 
-
 # ----- _derive_osint_decision -----
+
 
 class TestDeriveOsintDecision:
     """Tests de la dérivation direction + confidence depuis combined_bias OSINT."""
@@ -997,6 +1012,7 @@ class TestDeriveOsintDecision:
 
 # ----- _veracity_from_dispersion -----
 
+
 class TestVeracityFromDispersion:
     """Tests de la veracity dérivée de la dispersion (std) des sources OSINT."""
 
@@ -1036,6 +1052,7 @@ class TestVeracityFromDispersion:
 
 # ----- Test rétrocompat _veracity_from_concordance (legacy) -----
 
+
 class TestVeracityFromConcordanceLegacy:
     """L'ancienne fonction est conservée pour rétrocompat tests existants."""
 
@@ -1050,6 +1067,7 @@ class TestVeracityFromConcordanceLegacy:
 
 
 # ----- Sanity check : confidence n'a plus de sémantique double -----
+
 
 class TestSemanticUniformityADR018:
     """ADR-018 : confidence = magnitude du combined_bias, pas de double sens."""

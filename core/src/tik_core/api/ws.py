@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from tik_core.auth.api_key import hash_key
 from tik_core.config import get_settings
+
 # IMPORTANT: import the module, NOT the variable. The module attribute
 # `_session_maker` is set asynchronously by `init_engine()` during the
 # FastAPI lifespan startup. Importing the variable directly (i.e.

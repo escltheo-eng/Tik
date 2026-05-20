@@ -11,11 +11,9 @@ Pas de tests d'intégration FRED API (clé requise, validation runtime au déplo
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
-from unittest.mock import patch
+from datetime import UTC, datetime, timedelta
 
 import httpx
-import pytest
 
 from tik_core.aggregator.fred_calendar_ingester import (
     FredCalendarIngester,
@@ -31,7 +29,6 @@ from tik_core.aggregator.macro_calendar_data import (
     StaticEventSpec,
 )
 
-
 # =============================================================================
 # date_to_utc_release — DST, conversion ET → UTC
 # =============================================================================
@@ -40,7 +37,7 @@ from tik_core.aggregator.macro_calendar_data import (
 def test_date_to_utc_release_summer_dst():
     """En juin (EDT = UTC-4), 8h30 ET = 12h30 UTC."""
     dt = date_to_utc_release("2026-06-15", 8, 30)
-    assert dt.tzinfo is timezone.utc
+    assert dt.tzinfo is UTC
     assert dt.hour == 12
     assert dt.minute == 30
     assert dt.day == 15
@@ -81,8 +78,8 @@ def test_date_to_utc_release_industrial_production():
 
 def test_filter_future_dates_keeps_today_and_future():
     """Aujourd'hui et futur sont gardés."""
-    today = datetime.now(timezone.utc).date()
-    future = (datetime.now(timezone.utc) + timedelta(days=10)).date()
+    today = datetime.now(UTC).date()
+    future = (datetime.now(UTC) + timedelta(days=10)).date()
     dates = [today.isoformat(), future.isoformat()]
     out = filter_future_dates(dates)
     assert today.isoformat() in out
@@ -91,7 +88,7 @@ def test_filter_future_dates_keeps_today_and_future():
 
 def test_filter_future_dates_keeps_recent_past_for_audit():
     """30 jours dans le passé : gardés (audit historique)."""
-    recent = (datetime.now(timezone.utc) - timedelta(days=15)).date()
+    recent = (datetime.now(UTC) - timedelta(days=15)).date()
     dates = [recent.isoformat()]
     out = filter_future_dates(dates)
     assert recent.isoformat() in out
@@ -99,7 +96,7 @@ def test_filter_future_dates_keeps_recent_past_for_audit():
 
 def test_filter_future_dates_drops_very_old():
     """Trop vieux (> 30 jours) : drop."""
-    old = (datetime.now(timezone.utc) - timedelta(days=60)).date()
+    old = (datetime.now(UTC) - timedelta(days=60)).date()
     dates = [old.isoformat()]
     out = filter_future_dates(dates)
     assert old.isoformat() not in out
@@ -107,7 +104,7 @@ def test_filter_future_dates_drops_very_old():
 
 def test_filter_future_dates_with_explicit_min_date():
     """Si min_date est fourni explicitement, c'est lui qui s'applique."""
-    cutoff = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    cutoff = datetime(2026, 1, 1, tzinfo=UTC)
     dates = ["2025-12-31", "2026-01-01", "2026-06-15"]
     out = filter_future_dates(dates, min_date=cutoff)
     assert "2025-12-31" not in out
@@ -198,7 +195,7 @@ class _MockSession:
 
     async def execute(self, stmt):
         self.parent.executed_count += 1
-        return None
+        return
 
     async def commit(self):
         self.parent.commit_count += 1
@@ -230,9 +227,7 @@ async def test_ingester_no_session_maker_does_not_start():
 
 async def test_ingester_fetch_release_dates_handles_http_error():
     """Erreur HTTP → log warning, retourne []."""
-    ing = FredCalendarIngester(
-        api_key="abc", session_maker=_MockSessionMaker()
-    )
+    ing = FredCalendarIngester(api_key="abc", session_maker=_MockSessionMaker())
 
     def _broken_handler(request):
         return httpx.Response(500, json={"error": "boom"})
@@ -246,9 +241,7 @@ async def test_ingester_fetch_release_dates_handles_http_error():
 
 async def test_ingester_fetch_release_dates_parses_response():
     """Réponse FRED valide → liste de dates ISO."""
-    ing = FredCalendarIngester(
-        api_key="abc", session_maker=_MockSessionMaker()
-    )
+    ing = FredCalendarIngester(api_key="abc", session_maker=_MockSessionMaker())
 
     def _ok_handler(request):
         return httpx.Response(
@@ -270,9 +263,7 @@ async def test_ingester_fetch_release_dates_parses_response():
 
 async def test_ingester_fetch_release_dates_skips_empty_dates():
     """Entries sans date sont skippées (rare mais possible avec include_with_no_data)."""
-    ing = FredCalendarIngester(
-        api_key="abc", session_maker=_MockSessionMaker()
-    )
+    ing = FredCalendarIngester(api_key="abc", session_maker=_MockSessionMaker())
 
     def _ok_handler(request):
         return httpx.Response(
@@ -307,9 +298,7 @@ async def test_ingester_cycle_does_not_include_static_fomc(monkeypatch):
     async def _stub_fetch(self_ing, client, spec):
         return []
 
-    monkeypatch.setattr(
-        FredCalendarIngester, "_fetch_release_dates", _stub_fetch
-    )
+    monkeypatch.setattr(FredCalendarIngester, "_fetch_release_dates", _stub_fetch)
 
     captured_events: list = []
 
@@ -343,9 +332,7 @@ async def test_ingester_cycle_includes_fred_dates_only(monkeypatch):
         # 1 date par release pour vérifier le branchement
         return ["2026-06-05"]
 
-    monkeypatch.setattr(
-        FredCalendarIngester, "_fetch_release_dates", _stub_fetch
-    )
+    monkeypatch.setattr(FredCalendarIngester, "_fetch_release_dates", _stub_fetch)
 
     captured_events: list = []
 

@@ -2303,9 +2303,15 @@ contre tik_test = **1052 verts** (vs 4 failed + 5 errors). Contre la prod
 Bug 9 (Paquet 7/14) : les gardes anti-régression Bug 9 protègent enfin
 réellement.
 
-**Constat séparé tracé (NON corrigé ici)** : `ruff check src/ tests/` (commande
-CI) = **360 erreurs** + `ruff format --check` = 58 fichiers à reformater
-(dette pré-existante massive, lint CI rouge depuis un moment). Backlog #12.
+**Constat séparé puis RÉSOLU même session** : `ruff check src/ tests/` (commande
+CI) trouvait **360 erreurs** + 58 fichiers à reformater (dette pré-existante,
+lint CI rouge). Traité par auto-fixes sûrs (260) + `ruff format` (56 fichiers)
++ config ciblée pour faux positifs FastAPI/Pydantic (`extend-immutable-calls`
+pour `Depends`/`require_scope`, `per-file-ignores` tests, `ignore` global des
+règles de style) + 4 vrais petits fixes (F821 import manquant, B007 boucle
+morte, PIE810, RET504) + 4 `# noqa` ARG (conformité d'interface). Résultat :
+`ruff check` + `ruff format --check` verts, **1052 pytest verts** (79 fichiers
+touchés, quasi 100 % mécanique). Détail backlog #12.
 
 **Garde-fous** : Garde-fou 1 / 2-bis / ADR-003 / ADR-004 / ADR-011 / ADR-018
 inchangés. Aucune modif des engines / pipeline scoring / cross-validation —

@@ -7,21 +7,18 @@ unitaire.
 
 from __future__ import annotations
 
-from datetime import timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock
 
 import pytest
-import pytest_asyncio
 
 from tik_core.scoring.source_credibility import (
+    MAX_SCORE,
     MIN_SAMPLES,
     MIN_SCORE,
-    MAX_SCORE,
     PENALTY_FACTOR,
-    PENALTY_THRESHOLD,
     REDIS_KEY_TPL,
     REWARD_FACTOR,
-    REWARD_THRESHOLD,
     SCORE_TTL_SEC,
     _capped,
     _compute_adjustment,
@@ -36,8 +33,8 @@ from tik_core.scoring.source_credibility import (
 )
 from tik_core.utils.time import now_utc_naive
 
-
 # ----- Fakes minimaux -----
+
 
 class FakeRedis:
     """Implémentation minimale du contrat redis.asyncio utilisé ici."""
@@ -85,6 +82,7 @@ def _make_signal(
 # _capped
 # =====================================================================
 
+
 def test_capped_above_max_returns_max():
     assert _capped(1.5) == MAX_SCORE
 
@@ -100,6 +98,7 @@ def test_capped_in_range_unchanged():
 # =====================================================================
 # _compute_adjustment (logique pure)
 # =====================================================================
+
 
 def test_adjustment_too_few_samples_unchanged():
     new, kind = _compute_adjustment(0.7, 0.30, MIN_SAMPLES - 1)
@@ -155,6 +154,7 @@ def test_adjustment_asymmetry_penalty_stronger_than_reward():
 # context-var dynamic_scores
 # =====================================================================
 
+
 def test_get_effective_score_no_context_returns_fallback():
     fallback = {"source_a": 0.7}
     score = get_effective_score("source_a", fallback)
@@ -179,8 +179,8 @@ def test_get_effective_score_dynamic_partial_falls_back_for_missing():
     fallback = {"source_a": 0.7, "source_b": 0.6}
     token = set_dynamic_scores({"source_a": 0.85})
     try:
-        assert get_effective_score("source_a", fallback) == 0.85   # dynamique
-        assert get_effective_score("source_b", fallback) == 0.6    # fallback
+        assert get_effective_score("source_a", fallback) == 0.85  # dynamique
+        assert get_effective_score("source_b", fallback) == 0.6  # fallback
     finally:
         reset_dynamic_scores(token)
 
@@ -195,6 +195,7 @@ def test_reset_dynamic_scores_restores_fallback():
 # =====================================================================
 # Redis read/write
 # =====================================================================
+
 
 @pytest.mark.asyncio
 async def test_get_source_score_redis_none_returns_none():
@@ -250,12 +251,15 @@ async def test_set_source_score_uses_default_ttl():
 # preload_source_scores
 # =====================================================================
 
+
 @pytest.mark.asyncio
 async def test_preload_returns_only_redis_hits():
-    redis = FakeRedis({
-        REDIS_KEY_TPL.format(source="source_a"): "0.85",
-        # source_b absent
-    })
+    redis = FakeRedis(
+        {
+            REDIS_KEY_TPL.format(source="source_a"): "0.85",
+            # source_b absent
+        }
+    )
     scores = await preload_source_scores(redis, ["source_a", "source_b"])
     assert scores == {"source_a": 0.85}
 
@@ -270,6 +274,7 @@ async def test_preload_redis_none_returns_empty_dict():
 # _compute_hit_rates_by_source
 # =====================================================================
 
+
 def test_compute_hit_rates_btc_long_success():
     now = now_utc_naive()
     ts0 = now - timedelta(days=10)
@@ -277,8 +282,8 @@ def test_compute_hit_rates_btc_long_success():
     sig = _make_signal("BTC", "long", ts0, ["alternative_me_fng", "google_news_rss"])
 
     btc_history = [
-        (int(ts0.replace(tzinfo=timezone.utc).timestamp() * 1000), 100.0),
-        (int((ts0 + timedelta(days=5)).replace(tzinfo=timezone.utc).timestamp() * 1000), 102.0),
+        (int(ts0.replace(tzinfo=UTC).timestamp() * 1000), 100.0),
+        (int((ts0 + timedelta(days=5)).replace(tzinfo=UTC).timestamp() * 1000), 102.0),
     ]
     rates = _compute_hit_rates_by_source([sig], btc_history, [])
     assert rates["alternative_me_fng"] == (1, 1)
@@ -291,8 +296,8 @@ def test_compute_hit_rates_btc_short_failure():
     sig = _make_signal("BTC", "short", ts0, ["reddit_btc"])
 
     btc_history = [
-        (int(ts0.replace(tzinfo=timezone.utc).timestamp() * 1000), 100.0),
-        (int((ts0 + timedelta(days=5)).replace(tzinfo=timezone.utc).timestamp() * 1000), 105.0),
+        (int(ts0.replace(tzinfo=UTC).timestamp() * 1000), 100.0),
+        (int((ts0 + timedelta(days=5)).replace(tzinfo=UTC).timestamp() * 1000), 105.0),
     ]
     rates = _compute_hit_rates_by_source([sig], btc_history, [])
     # short prediction quand le marché monte → échec
@@ -306,8 +311,8 @@ def test_compute_hit_rates_filters_non_recalibratable():
     sig = _make_signal("BTC", "long", ts0, ["binance_klines", "alternative_me_fng"])
 
     btc_history = [
-        (int(ts0.replace(tzinfo=timezone.utc).timestamp() * 1000), 100.0),
-        (int((ts0 + timedelta(days=5)).replace(tzinfo=timezone.utc).timestamp() * 1000), 102.0),
+        (int(ts0.replace(tzinfo=UTC).timestamp() * 1000), 100.0),
+        (int((ts0 + timedelta(days=5)).replace(tzinfo=UTC).timestamp() * 1000), 102.0),
     ]
     rates = _compute_hit_rates_by_source([sig], btc_history, [])
     assert "binance_klines" not in rates
@@ -322,8 +327,8 @@ def test_compute_hit_rates_aggregates_multi_signal():
         _make_signal("BTC", "short", ts0, ["alternative_me_fng"], sig_id="s2"),
     ]
     btc_history = [
-        (int(ts0.replace(tzinfo=timezone.utc).timestamp() * 1000), 100.0),
-        (int((ts0 + timedelta(days=5)).replace(tzinfo=timezone.utc).timestamp() * 1000), 102.0),
+        (int(ts0.replace(tzinfo=UTC).timestamp() * 1000), 100.0),
+        (int((ts0 + timedelta(days=5)).replace(tzinfo=UTC).timestamp() * 1000), 102.0),
     ]
     rates = _compute_hit_rates_by_source(sigs, btc_history, [])
     # 1 succès (long) + 1 échec (short) → (1, 2)
@@ -333,6 +338,7 @@ def test_compute_hit_rates_aggregates_multi_signal():
 # =====================================================================
 # recalibrate_source (intégration partielle)
 # =====================================================================
+
 
 @pytest.mark.asyncio
 async def test_recalibrate_source_unchanged_below_min_samples():

@@ -34,11 +34,11 @@ async def _create(client_id: str, name: str | None, scopes: list[str]) -> None:
     raw_key, key_hash, key_suffix = generate_key()
 
     async with session_maker() as session:
-        existing = await session.execute(
-            select(ApiKey).where(ApiKey.client_id == client_id)
-        )
+        existing = await session.execute(select(ApiKey).where(ApiKey.client_id == client_id))
         if existing.scalar_one_or_none() is not None:
-            print(f"❌ Client '{client_id}' existe déjà. Utilisez un autre nom ou désactivez l'ancienne clé.")
+            print(
+                f"❌ Client '{client_id}' existe déjà. Utilisez un autre nom ou désactivez l'ancienne clé."
+            )
             await engine.dispose()
             return
 
@@ -75,7 +75,9 @@ async def _create(client_id: str, name: str | None, scopes: list[str]) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Create a Tik API key")
-    parser.add_argument("--client", "--bot", dest="client", required=True, help="Client ID (ex: zeta, totem)")
+    parser.add_argument(
+        "--client", "--bot", dest="client", required=True, help="Client ID (ex: zeta, totem)"
+    )
     parser.add_argument("--name", help="Nom affiché")
     parser.add_argument(
         "--scopes",

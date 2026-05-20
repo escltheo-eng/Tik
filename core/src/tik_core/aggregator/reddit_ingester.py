@@ -24,7 +24,7 @@ import asyncio
 import json
 import math
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import httpx
 import structlog
@@ -96,9 +96,7 @@ class RedditIngester(BaseIngester):
         await self.classifier.aclose()
         log.info("reddit.ingester.stopped", entity_id=self.entity_id)
 
-    async def _fetch_sub(
-        self, client: httpx.AsyncClient, sub: str
-    ) -> list[dict] | None:
+    async def _fetch_sub(self, client: httpx.AsyncClient, sub: str) -> list[dict] | None:
         """Fetch un sub. Retourne la liste de `children` ou None si erreur.
 
         Si un sub fail (réseau, 503, payload invalide), on log un warning
@@ -176,7 +174,7 @@ class RedditIngester(BaseIngester):
         if ts is None or ts == "":
             return None
         try:
-            return datetime.fromtimestamp(int(float(ts)), tz=timezone.utc).isoformat()
+            return datetime.fromtimestamp(int(float(ts)), tz=UTC).isoformat()
         except (TypeError, ValueError, OverflowError, OSError):
             return None
 
@@ -230,7 +228,7 @@ class RedditIngester(BaseIngester):
         weighted_denominator = 0.0
         sub_distribution: list[str] = []
         headlines: list[dict] = []
-        fetched_at = datetime.now(tz=timezone.utc).isoformat()
+        fetched_at = datetime.now(tz=UTC).isoformat()
 
         for sub, pdata in all_posts:
             title = pdata.get("title", "") or ""
@@ -264,11 +262,7 @@ class RedditIngester(BaseIngester):
                 )
 
         # 3. Score net pondéré ∈ [-1, +1]
-        score_net = (
-            weighted_numerator / weighted_denominator
-            if weighted_denominator > 0
-            else 0.0
-        )
+        score_net = weighted_numerator / weighted_denominator if weighted_denominator > 0 else 0.0
 
         top_subs = [
             {"name": name, "count": count}
@@ -314,11 +308,7 @@ class RedditIngester(BaseIngester):
                         credibility=0.65,
                         headlines=point["headlines"],
                     )
-                    top = (
-                        point["top_subreddits"][0]["name"]
-                        if point["top_subreddits"]
-                        else None
-                    )
+                    top = point["top_subreddits"][0]["name"] if point["top_subreddits"] else None
                     anomaly = point["anomaly"]
                     log.info(
                         "reddit.published",

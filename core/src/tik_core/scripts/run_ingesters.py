@@ -15,9 +15,9 @@ from tik_core.aggregator.cryptocompare_ingester import CryptoCompareIngester
 from tik_core.aggregator.fear_greed_ingester import FearGreedIngester
 from tik_core.aggregator.fred_calendar_ingester import FredCalendarIngester
 from tik_core.aggregator.fred_ingester import FredIngester
-from tik_core.aggregator.macro_static_ingester import MacroStaticIngester
 from tik_core.aggregator.gdelt_ingester import GdeltIngester
 from tik_core.aggregator.google_news_ingester import GoogleNewsIngester
+from tik_core.aggregator.macro_static_ingester import MacroStaticIngester
 from tik_core.aggregator.news_classifier import build_news_classifier
 from tik_core.aggregator.reddit_ingester import RedditIngester
 from tik_core.aggregator.yahoo_ingester import YahooPoller

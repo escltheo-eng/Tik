@@ -23,7 +23,6 @@ from tik_core.aggregator.cryptocompare_ingester import (
 )
 from tik_core.aggregator.news_classifier import NewsClassifier
 
-
 # =============================================================================
 # Helpers
 # =============================================================================

@@ -7,7 +7,7 @@ de sources.
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from tik_core.auth import AuthContext, get_auth_context, require_scope
+from tik_core.auth import AuthContext, require_scope
 from tik_core.storage.database import get_session
 from tik_core.storage.models import Feedback, Signal
 from tik_core.storage.schemas import FeedbackIn, FeedbackOut

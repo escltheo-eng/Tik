@@ -10,7 +10,7 @@ sont testées en intégration runtime au déploiement.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 from tik_core.storage.macro_events_repo import (
     cutoff_history_naive,
@@ -19,14 +19,13 @@ from tik_core.storage.macro_events_repo import (
     upsert_many,
 )
 
-
 # =============================================================================
 # to_naive_utc — strip tzinfo cohérent ADR-013 / Bug 9
 # =============================================================================
 
 
 def test_to_naive_utc_strips_aware_utc():
-    aware = datetime(2026, 5, 6, 12, 0, tzinfo=timezone.utc)
+    aware = datetime(2026, 5, 6, 12, 0, tzinfo=UTC)
     naive = to_naive_utc(aware)
     assert naive.tzinfo is None
     assert naive.hour == 12
@@ -94,7 +93,7 @@ class _MockSession:
 
     async def execute(self, stmt):
         self.parent.execute_count += 1
-        return None
+        return
 
     async def commit(self):
         self.parent.commit_count += 1
@@ -108,6 +107,7 @@ class _MockSessionMaker:
 
     def __call__(self):
         if self._raise is not None:
+
             class _BrokenSession:
                 def __init__(self_inner, parent):
                     self_inner.parent = parent
@@ -150,7 +150,7 @@ async def test_upsert_many_executes_per_event():
         {
             "event_code": "NFP",
             "event_name": "Employment",
-            "scheduled_for": datetime(2026, 6, 5, 12, 30, tzinfo=timezone.utc),
+            "scheduled_for": datetime(2026, 6, 5, 12, 30, tzinfo=UTC),
             "importance": "HIGH",
             "assets_impacted": ["BTC", "GOLD"],
             "source": "fred",
@@ -159,7 +159,7 @@ async def test_upsert_many_executes_per_event():
         {
             "event_code": "CPI",
             "event_name": "Consumer Price Index",
-            "scheduled_for": datetime(2026, 6, 12, 12, 30, tzinfo=timezone.utc),
+            "scheduled_for": datetime(2026, 6, 12, 12, 30, tzinfo=UTC),
             "importance": "HIGH",
             "assets_impacted": ["BTC", "GOLD"],
             "source": "fred",
@@ -179,7 +179,7 @@ async def test_upsert_many_swallows_db_error():
         {
             "event_code": "NFP",
             "event_name": "Employment",
-            "scheduled_for": datetime(2026, 6, 5, 12, 30, tzinfo=timezone.utc),
+            "scheduled_for": datetime(2026, 6, 5, 12, 30, tzinfo=UTC),
             "importance": "HIGH",
             "assets_impacted": ["BTC", "GOLD"],
             "source": "fred",

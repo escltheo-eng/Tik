@@ -25,7 +25,6 @@ from tik_core.scripts.backtest import (
 )
 from tik_core.storage.models import Signal
 
-
 HorizonName = Literal["flash", "swing", "macro"]
 
 # Mapping horizon → durée canonique de mesure du delta prix (heures).
@@ -211,8 +210,7 @@ def compute_hit_rate_by_veracity(
     results: list[dict] = []
     for vmin, vmax, label in VERACITY_BUCKETS:
         bucket_signals = [
-            s for s in signals
-            if s.veracity is not None and vmin <= float(s.veracity) < vmax
+            s for s in signals if s.veracity is not None and vmin <= float(s.veracity) < vmax
         ]
         stats = compute_hit_rate(
             bucket_signals,
@@ -221,16 +219,18 @@ def compute_hit_rate_by_veracity(
             btc_history=btc_history,
             gold_history=gold_history,
         )
-        results.append({
-            "bucket_label": label,
-            "veracity_min": vmin,
-            "veracity_max": vmax,
-            "n_evaluated": stats["n_evaluated"],
-            "n_skipped": stats["n_skipped"],
-            "n_success": stats["n_success"],
-            "hit_rate": stats["hit_rate"],
-            "avg_gain_pct": stats["avg_gain_pct"],
-        })
+        results.append(
+            {
+                "bucket_label": label,
+                "veracity_min": vmin,
+                "veracity_max": vmax,
+                "n_evaluated": stats["n_evaluated"],
+                "n_skipped": stats["n_skipped"],
+                "n_success": stats["n_success"],
+                "hit_rate": stats["hit_rate"],
+                "avg_gain_pct": stats["avg_gain_pct"],
+            }
+        )
     return results
 
 

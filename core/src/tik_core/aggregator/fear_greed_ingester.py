@@ -6,7 +6,7 @@ Polling 1h pour résilience (cache local Redis avec TTL 25h).
 
 import asyncio
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import httpx
 import structlog
@@ -70,8 +70,8 @@ class FearGreedIngester(BaseIngester):
             "source": "alternative_me_fng",
             "value": value,
             "classification": classification,
-            "timestamp": datetime.fromtimestamp(ts_unix, tz=timezone.utc).isoformat(),
-            "fetched_at": datetime.now(tz=timezone.utc).isoformat(),
+            "timestamp": datetime.fromtimestamp(ts_unix, tz=UTC).isoformat(),
+            "fetched_at": datetime.now(tz=UTC).isoformat(),
         }
 
     async def _run(self) -> None:

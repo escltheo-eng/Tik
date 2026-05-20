@@ -15,7 +15,7 @@ inchangé — additif uniquement.
 
 import asyncio
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import httpx
 import structlog
@@ -105,7 +105,7 @@ class CryptoCompareIngester(BaseIngester):
         if ts is None or ts == "":
             return None
         try:
-            return datetime.fromtimestamp(int(float(ts)), tz=timezone.utc).isoformat()
+            return datetime.fromtimestamp(int(float(ts)), tz=UTC).isoformat()
         except (TypeError, ValueError, OverflowError, OSError):
             return None
 
@@ -128,9 +128,7 @@ class CryptoCompareIngester(BaseIngester):
             pass
         return []
 
-    async def _push_volume_baseline(
-        self, baseline: list[int], current_volume: int
-    ) -> None:
+    async def _push_volume_baseline(self, baseline: list[int], current_volume: int) -> None:
         """Append `current_volume` à la baseline, cap à VOLUME_BASELINE_MAX_POINTS,
         écrit en Redis avec TTL. Best-effort — si Redis échoue, on log et continue."""
         new_baseline = (baseline + [current_volume])[-VOLUME_BASELINE_MAX_POINTS:]
@@ -193,7 +191,7 @@ class CryptoCompareIngester(BaseIngester):
         n_bearish = 0
         n_neutral = 0
         headlines: list[dict] = []
-        fetched_at = datetime.now(tz=timezone.utc).isoformat()
+        fetched_at = datetime.now(tz=UTC).isoformat()
         for a in articles:
             title = a.get("title", "")
             n_bull, n_bear = await self.classifier.classify(title)

@@ -55,7 +55,41 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "PIE", "RET", "SIM", "ARG"]
-ignore = ["E501"]
+# Règles relaxées (cf. Paquet 31 backlog #12) :
+# - E501 : longueur de ligne (historique).
+# - SIM103/108/105 : préférences stylistiques (le code privilégie les formes
+#   explicites — try/except commentés, if/else lisibles — pour un projet
+#   maintenu par une débutante).
+# - B027 : méthode vide sans @abstractmethod = pattern Strategy voulu
+#   (NewsClassifier / HypothesisGenerator ont des défauts no-op légitimes).
+# - UP042 : str-enum → StrEnum, modernisation différée (évite de toucher aux
+#   définitions d'enum pré-trading).
+ignore = ["E501", "SIM103", "SIM108", "SIM105", "B027", "UP042"]
+
+[tool.ruff.lint.flake8-bugbear]
+# B008 : `Depends(...)`/`Query(...)` en argument par défaut est le pattern
+# d'injection de dépendances idiomatique de FastAPI, pas un bug.
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.Query",
+    "fastapi.Path",
+    "fastapi.Header",
+    "fastapi.Body",
+    "fastapi.Form",
+    "fastapi.Cookie",
+    "fastapi.File",
+    # Factory de dépendance d'auth maison : `Depends(require_scope("..."))`
+    # est le pattern de contrôle de scope idiomatique (retourne une dépendance
+    # fraîche), pas un bug d'argument par défaut mutable.
+    "tik_core.auth.require_scope",
+    "tik_core.auth.dependencies.require_scope",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Les tests utilisent des helpers/fixtures avec args non utilisés (ARG),
+# des classes/méthodes helper dont le 1er arg n'est pas `self` (N805), et
+# des imports après setup d'env (E402, ex. conftest). Bruit hors-sujet en test.
+"tests/**" = ["ARG001", "ARG002", "N805", "E402"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

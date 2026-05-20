@@ -15,7 +15,7 @@ après restart Docker via `curl /api/v1/headlines/BTC`.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from math import exp
 
 import pytest
@@ -30,14 +30,13 @@ from tik_core.api.headlines import (
     _sort_score,
 )
 
-
 # =============================================================================
 # Helpers de fixture
 # =============================================================================
 
 
 def _now_iso() -> str:
-    return datetime.now(tz=timezone.utc).isoformat()
+    return datetime.now(tz=UTC).isoformat()
 
 
 def _make_headline(
@@ -62,7 +61,7 @@ def _make_headline(
         "credibility": credibility,
         "sentiment": sentiment,
         "published_at": published_at,
-        "fetched_at": fetched_at or datetime.now(tz=timezone.utc),
+        "fetched_at": fetched_at or datetime.now(tz=UTC),
     }
 
 
@@ -146,7 +145,7 @@ def test_normalize_title_already_normalized():
 
 def test_sort_score_credibility_recency_recent_high_cred_wins():
     """Un titre très récent et très crédible domine."""
-    now = datetime(2026, 5, 4, 12, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 5, 4, 12, 0, tzinfo=UTC)
     h_recent_high = _make_headline(
         credibility=0.85,
         fetched_at=now - timedelta(minutes=5),
@@ -162,7 +161,7 @@ def test_sort_score_credibility_recency_recent_high_cred_wins():
 
 def test_sort_score_recency_pure_ignores_credibility():
     """En mode recency, seul l'âge compte — credibility n'intervient pas."""
-    now = datetime(2026, 5, 4, 12, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 5, 4, 12, 0, tzinfo=UTC)
     h_recent_low = _make_headline(
         credibility=0.30,
         fetched_at=now - timedelta(minutes=5),
@@ -178,7 +177,7 @@ def test_sort_score_recency_pure_ignores_credibility():
 
 def test_sort_score_decay_half_life_at_12h():
     """À l'âge d'une demi-vie (12h), le score est cred × exp(-1) ≈ cred × 0.368."""
-    now = datetime(2026, 5, 4, 12, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 5, 4, 12, 0, tzinfo=UTC)
     h = _make_headline(
         credibility=0.80,
         fetched_at=now - timedelta(hours=DECAY_HOURS),
@@ -190,7 +189,7 @@ def test_sort_score_decay_half_life_at_12h():
 
 def test_sort_score_uses_published_at_when_available():
     """Si published_at est dispo, l'âge est calculé depuis publication."""
-    now = datetime(2026, 5, 4, 12, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 5, 4, 12, 0, tzinfo=UTC)
     # fetched_at récent mais published_at il y a 12h
     h = _make_headline(
         credibility=0.80,
@@ -204,7 +203,7 @@ def test_sort_score_uses_published_at_when_available():
 
 def test_sort_score_clamps_negative_age_to_zero():
     """Si fetched_at est dans le futur (clock skew), on clamp à 0 (pas explosion)."""
-    now = datetime(2026, 5, 4, 12, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 5, 4, 12, 0, tzinfo=UTC)
     h = _make_headline(
         credibility=0.80,
         fetched_at=now + timedelta(hours=1),  # futur
@@ -220,7 +219,7 @@ def test_sort_score_clamps_negative_age_to_zero():
 
 
 def test_iter_headlines_extracts_normal_payload():
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     cutoff = now - timedelta(hours=24)
     payload = {
         "headlines": [
@@ -240,9 +239,7 @@ def test_iter_headlines_extracts_normal_payload():
             },
         ]
     }
-    result = _iter_headlines_from_payload(
-        payload, "google_news_rss", 0.70, cutoff
-    )
+    result = _iter_headlines_from_payload(payload, "google_news_rss", 0.70, cutoff)
     assert len(result) == 2
     assert result[0]["title"] == "BTC ATH"
     assert result[0]["source"] == "google_news_rss"
@@ -252,7 +249,7 @@ def test_iter_headlines_extracts_normal_payload():
 
 def test_iter_headlines_returns_empty_for_non_dict_payload():
     """Tolère les payloads non-dict (ex. payload Redis corrompu)."""
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     cutoff = now - timedelta(hours=24)
     assert _iter_headlines_from_payload([], "x", 0.5, cutoff) == []
     assert _iter_headlines_from_payload(None, "x", 0.5, cutoff) == []
@@ -261,7 +258,7 @@ def test_iter_headlines_returns_empty_for_non_dict_payload():
 
 def test_iter_headlines_returns_empty_when_field_absent():
     """Rétrocompat : payload publié AVANT la feature (pas de champ headlines)."""
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     cutoff = now - timedelta(hours=24)
     payload = {"score": 0.5, "n_articles": 10}  # ancien format
     assert _iter_headlines_from_payload(payload, "x", 0.5, cutoff) == []
@@ -269,7 +266,7 @@ def test_iter_headlines_returns_empty_when_field_absent():
 
 def test_iter_headlines_returns_empty_when_field_not_list():
     """Le champ existe mais n'est pas une liste — corruption potentielle."""
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     cutoff = now - timedelta(hours=24)
     payload = {"headlines": "not-a-list"}
     assert _iter_headlines_from_payload(payload, "x", 0.5, cutoff) == []
@@ -277,7 +274,7 @@ def test_iter_headlines_returns_empty_when_field_not_list():
 
 def test_iter_headlines_skips_non_dict_entries():
     """Une entry qui n'est pas un dict est skippée silencieusement."""
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     cutoff = now - timedelta(hours=24)
     payload = {
         "headlines": [
@@ -299,7 +296,7 @@ def test_iter_headlines_skips_non_dict_entries():
 
 def test_iter_headlines_skips_empty_title():
     """Une entry sans title (ou title vide après strip) est skippée."""
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     cutoff = now - timedelta(hours=24)
     payload = {
         "headlines": [
@@ -320,7 +317,7 @@ def test_iter_headlines_skips_empty_title():
 
 def test_iter_headlines_filters_by_cutoff():
     """Une entry plus ancienne que cutoff est filtrée."""
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     cutoff = now - timedelta(hours=24)
     payload = {
         "headlines": [
@@ -345,7 +342,7 @@ def test_iter_headlines_filters_by_cutoff():
 
 def test_iter_headlines_skips_invalid_fetched_at():
     """fetched_at manquant ou invalide → entry skippée."""
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     cutoff = now - timedelta(hours=24)
     payload = {
         "headlines": [
@@ -371,7 +368,7 @@ def test_iter_headlines_skips_invalid_fetched_at():
 
 def test_iter_headlines_propagates_credibility_and_source():
     """credibility et source sont écrasés par les arguments du caller."""
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     cutoff = now - timedelta(hours=24)
     # Entry essaie de spoof credibility/source mais ils doivent être ignorés
     payload = {
@@ -398,13 +395,13 @@ def test_iter_headlines_propagates_credibility_and_source():
 
 
 def test_finalize_empty_input_returns_empty():
-    now = datetime(2026, 5, 4, 12, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 5, 4, 12, 0, tzinfo=UTC)
     assert _finalize_headlines([], "credibility_recency", 10, now) == []
 
 
 def test_finalize_sorts_by_credibility_recency_desc():
     """Les titres sont triés par score desc."""
-    now = datetime(2026, 5, 4, 12, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 5, 4, 12, 0, tzinfo=UTC)
     h1 = _make_headline(title="A", credibility=0.50, fetched_at=now - timedelta(hours=1))
     h2 = _make_headline(title="B", credibility=0.90, fetched_at=now - timedelta(hours=1))
     h3 = _make_headline(title="C", credibility=0.70, fetched_at=now - timedelta(hours=1))
@@ -414,7 +411,7 @@ def test_finalize_sorts_by_credibility_recency_desc():
 
 def test_finalize_sorts_by_recency_desc():
     """Mode recency : le plus récent en tête, peu importe credibility."""
-    now = datetime(2026, 5, 4, 12, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 5, 4, 12, 0, tzinfo=UTC)
     h_recent = _make_headline(
         title="Recent low cred",
         credibility=0.30,
@@ -431,7 +428,7 @@ def test_finalize_sorts_by_recency_desc():
 
 def test_finalize_dedupes_by_normalized_title():
     """Le même titre relayé sur 2 sources est dédupé (premier dans le tri gagne)."""
-    now = datetime(2026, 5, 4, 12, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 5, 4, 12, 0, tzinfo=UTC)
     h_high = _make_headline(
         title="BTC surges to ATH",
         source="google_news_rss",
@@ -451,7 +448,7 @@ def test_finalize_dedupes_by_normalized_title():
 
 def test_finalize_caps_to_limit():
     """Le nombre de titres retournés ne dépasse pas `limit`."""
-    now = datetime(2026, 5, 4, 12, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 5, 4, 12, 0, tzinfo=UTC)
     headlines = [
         _make_headline(
             title=f"Title {i}",

@@ -10,8 +10,8 @@ from typing import Any
 class MarketTick:
     """Tick de marché normalisé."""
 
-    entity_id: str           # "BTC", "GOLD"
-    source: str              # "binance", "yahoo"
+    entity_id: str  # "BTC", "GOLD"
+    source: str  # "binance", "yahoo"
     price: float
     volume: float | None = None
     timestamp: datetime = None  # type: ignore[assignment]
@@ -22,8 +22,8 @@ class MarketTick:
 class MacroDataPoint:
     """Point macro normalisé."""
 
-    series_id: str           # "DGS10", "CPIAUCSL"
-    source: str              # "fred"
+    series_id: str  # "DGS10", "CPIAUCSL"
+    source: str  # "fred"
     value: float
     timestamp: datetime
     extra: dict[str, Any] | None = None

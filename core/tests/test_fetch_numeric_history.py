@@ -6,8 +6,8 @@ mockés via `httpx.MockTransport`. Pas d'effets réseau, pas de Redis.
 
 from __future__ import annotations
 
-import pytest
 import httpx
+import pytest
 
 from tik_core.scripts.fetch_numeric_history import (
     _dedupe_by_date_avg,
@@ -19,8 +19,8 @@ from tik_core.scripts.fetch_numeric_history import (
     fetch_gdelt_tone_history,
 )
 
-
 # -------- Helpers purs --------
+
 
 class TestGdeltTimespanFromDays:
     def test_1y_for_365_days(self):
@@ -103,17 +103,21 @@ class TestDedupeByDateAvg:
 
 # -------- Fetchers mockés --------
 
+
 @pytest.mark.asyncio
 class TestFetchFearGreedHistory:
     async def test_success_response(self):
         async def handler(request: httpx.Request) -> httpx.Response:
             assert "fng" in str(request.url)
-            return httpx.Response(200, json={
-                "data": [
-                    {"value": "30", "value_classification": "Fear", "timestamp": "1715126400"},
-                    {"value": "40", "value_classification": "Fear", "timestamp": "1715212800"},
-                ]
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {"value": "30", "value_classification": "Fear", "timestamp": "1715126400"},
+                        {"value": "40", "value_classification": "Fear", "timestamp": "1715212800"},
+                    ]
+                },
+            )
 
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             result = await fetch_fear_greed_history(days_back=2, client=client)
@@ -126,12 +130,15 @@ class TestFetchFearGreedHistory:
 
     async def test_malformed_payload_skipped(self):
         async def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, json={
-                "data": [
-                    {"value": "abc", "value_classification": "X", "timestamp": "1715126400"},
-                    {"value": "30", "value_classification": "Fear", "timestamp": "1715212800"},
-                ]
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {"value": "abc", "value_classification": "X", "timestamp": "1715126400"},
+                        {"value": "30", "value_classification": "Fear", "timestamp": "1715212800"},
+                    ]
+                },
+            )
 
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             result = await fetch_fear_greed_history(days_back=2, client=client)
@@ -163,16 +170,19 @@ class TestFetchGdeltToneHistory:
     async def test_success_response(self):
         async def handler(request: httpx.Request) -> httpx.Response:
             assert "timelinetone" in str(request.url)
-            return httpx.Response(200, json={
-                "timeline": [
-                    {
-                        "data": [
-                            {"date": "20250501000000", "value": -1.5},
-                            {"date": "20250502000000", "value": 0.5},
-                        ]
-                    }
-                ]
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "timeline": [
+                        {
+                            "data": [
+                                {"date": "20250501000000", "value": -1.5},
+                                {"date": "20250502000000", "value": 0.5},
+                            ]
+                        }
+                    ]
+                },
+            )
 
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             result = await fetch_gdelt_tone_history(days_back=30, client=client)
@@ -195,9 +205,9 @@ class TestFetchGdeltToneHistory:
             call_count["n"] += 1
             if call_count["n"] == 1:
                 return httpx.Response(429, text="Too Many Requests")
-            return httpx.Response(200, json={
-                "timeline": [{"data": [{"date": "20250501000000", "value": 1.0}]}]
-            })
+            return httpx.Response(
+                200, json={"timeline": [{"data": [{"date": "20250501000000", "value": 1.0}]}]}
+            )
 
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             result = await fetch_gdelt_tone_history(days_back=30, client=client)
@@ -271,13 +281,16 @@ class TestFetchDxyHistory:
     async def test_success_response(self):
         async def handler(request: httpx.Request) -> httpx.Response:
             assert "fred" in str(request.url) or "stlouisfed" in str(request.url)
-            return httpx.Response(200, json={
-                "observations": [
-                    {"date": "2025-05-01", "value": "120.5"},
-                    {"date": "2025-05-02", "value": "121.0"},
-                    {"date": "2025-05-03", "value": "."},  # FRED missing data
-                ]
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "observations": [
+                        {"date": "2025-05-01", "value": "120.5"},
+                        {"date": "2025-05-02", "value": "121.0"},
+                        {"date": "2025-05-03", "value": "."},  # FRED missing data
+                    ]
+                },
+            )
 
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             result = await fetch_dxy_history(api_key="fake_key", days_back=30, client=client)
@@ -305,18 +318,21 @@ class TestFetchDxyHistory:
 class TestFetchCotHistory:
     async def test_success_response(self):
         async def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, json=[
-                {
-                    "report_date_as_yyyy_mm_dd": "2026-05-01T00:00:00.000",
-                    "m_money_positions_long_all": "100000",
-                    "m_money_positions_short_all": "50000",
-                },
-                {
-                    "report_date_as_yyyy_mm_dd": "2026-04-24T00:00:00.000",
-                    "m_money_positions_long_all": "90000",
-                    "m_money_positions_short_all": "60000",
-                },
-            ])
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "report_date_as_yyyy_mm_dd": "2026-05-01T00:00:00.000",
+                        "m_money_positions_long_all": "100000",
+                        "m_money_positions_short_all": "50000",
+                    },
+                    {
+                        "report_date_as_yyyy_mm_dd": "2026-04-24T00:00:00.000",
+                        "m_money_positions_long_all": "90000",
+                        "m_money_positions_short_all": "60000",
+                    },
+                ],
+            )
 
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             result = await fetch_cot_history(days_back=60, client=client)
@@ -329,13 +345,16 @@ class TestFetchCotHistory:
 
     async def test_zero_positions_skipped(self):
         async def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, json=[
-                {
-                    "report_date_as_yyyy_mm_dd": "2026-05-01T00:00:00.000",
-                    "m_money_positions_long_all": "0",
-                    "m_money_positions_short_all": "0",
-                },
-            ])
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "report_date_as_yyyy_mm_dd": "2026-05-01T00:00:00.000",
+                        "m_money_positions_long_all": "0",
+                        "m_money_positions_short_all": "0",
+                    },
+                ],
+            )
 
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             result = await fetch_cot_history(days_back=60, client=client)
@@ -345,13 +364,16 @@ class TestFetchCotHistory:
     async def test_old_data_filtered_by_cutoff(self):
         # Une row très vieille doit être filtrée par days_back=30
         async def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, json=[
-                {
-                    "report_date_as_yyyy_mm_dd": "2020-01-01T00:00:00.000",
-                    "m_money_positions_long_all": "100000",
-                    "m_money_positions_short_all": "50000",
-                },
-            ])
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "report_date_as_yyyy_mm_dd": "2020-01-01T00:00:00.000",
+                        "m_money_positions_long_all": "100000",
+                        "m_money_positions_short_all": "50000",
+                    },
+                ],
+            )
 
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             result = await fetch_cot_history(days_back=30, client=client)

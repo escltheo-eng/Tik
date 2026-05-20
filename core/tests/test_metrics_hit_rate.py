@@ -25,8 +25,8 @@ from tik_core.metrics.hit_rate import (
     make_cache_key_by_veracity,
 )
 
-
 # ----- Helpers -----
+
 
 def _make_signal(
     *,
@@ -49,7 +49,9 @@ def _make_signal(
     return sig
 
 
-def _build_history(start_ms: int, n_points: int, base_price: float, step_pct: float = 0.1) -> list[tuple[int, float]]:
+def _build_history(
+    start_ms: int, n_points: int, base_price: float, step_pct: float = 0.1
+) -> list[tuple[int, float]]:
     """Construit une histoire de prix avec un step constant en %.
 
     `step_pct=0.1` → +0.1% par point. `step_pct=-0.5` → -0.5% par point.
@@ -68,6 +70,7 @@ NOW = datetime(2026, 5, 5, 12, 0, 0)
 
 
 # ----- filter_signals_for_horizon -----
+
 
 def test_filter_keeps_matching_horizon():
     sig_swing = _make_signal(horizon="swing", timestamp=NOW - timedelta(days=10))
@@ -156,9 +159,24 @@ def test_filter_excludes_too_old():
 
 
 def test_filter_flagged_excluded_by_default():
-    sig_ok = _make_signal(horizon="swing", timestamp=NOW - timedelta(days=10), circuit_breaker_status="ok", sig_id="ok")
-    sig_deg = _make_signal(horizon="swing", timestamp=NOW - timedelta(days=10), circuit_breaker_status="degraded", sig_id="deg")
-    sig_trip = _make_signal(horizon="swing", timestamp=NOW - timedelta(days=10), circuit_breaker_status="tripped", sig_id="trip")
+    sig_ok = _make_signal(
+        horizon="swing",
+        timestamp=NOW - timedelta(days=10),
+        circuit_breaker_status="ok",
+        sig_id="ok",
+    )
+    sig_deg = _make_signal(
+        horizon="swing",
+        timestamp=NOW - timedelta(days=10),
+        circuit_breaker_status="degraded",
+        sig_id="deg",
+    )
+    sig_trip = _make_signal(
+        horizon="swing",
+        timestamp=NOW - timedelta(days=10),
+        circuit_breaker_status="tripped",
+        sig_id="trip",
+    )
     eligible, n_excluded = filter_signals_for_horizon(
         [sig_ok, sig_deg, sig_trip],
         horizon="swing",
@@ -173,8 +191,18 @@ def test_filter_flagged_excluded_by_default():
 
 
 def test_filter_flagged_included_when_requested():
-    sig_ok = _make_signal(horizon="swing", timestamp=NOW - timedelta(days=10), circuit_breaker_status="ok", sig_id="ok")
-    sig_deg = _make_signal(horizon="swing", timestamp=NOW - timedelta(days=10), circuit_breaker_status="degraded", sig_id="deg")
+    sig_ok = _make_signal(
+        horizon="swing",
+        timestamp=NOW - timedelta(days=10),
+        circuit_breaker_status="ok",
+        sig_id="ok",
+    )
+    sig_deg = _make_signal(
+        horizon="swing",
+        timestamp=NOW - timedelta(days=10),
+        circuit_breaker_status="degraded",
+        sig_id="deg",
+    )
     eligible, n_excluded = filter_signals_for_horizon(
         [sig_ok, sig_deg],
         horizon="swing",
@@ -214,6 +242,7 @@ def test_filter_empty_list_returns_empty():
 
 
 # ----- compute_hit_rate -----
+
 
 def test_compute_long_success():
     # Signal long il y a 6j → mesure à 1j d'âge → marché doit avoir monté
@@ -343,8 +372,12 @@ def test_compute_unknown_horizon_raises():
 
 def test_compute_aggregates_multiple_signals():
     sig_ts = NOW - timedelta(days=6)
-    sig_a = _make_signal(entity_id="BTC", horizon="swing", direction="long", timestamp=sig_ts, sig_id="a")
-    sig_b = _make_signal(entity_id="BTC", horizon="swing", direction="short", timestamp=sig_ts, sig_id="b")
+    sig_a = _make_signal(
+        entity_id="BTC", horizon="swing", direction="long", timestamp=sig_ts, sig_id="a"
+    )
+    sig_b = _make_signal(
+        entity_id="BTC", horizon="swing", direction="short", timestamp=sig_ts, sig_id="b"
+    )
     start_ms = int((sig_ts - timedelta(hours=2)).timestamp() * 1000)
     # Marché monte → long success, short failure
     btc_history = _build_history(start_ms, n_points=200, base_price=100.0, step_pct=0.5)
@@ -362,44 +395,68 @@ def test_compute_aggregates_multiple_signals():
 
 # ----- make_cache_key -----
 
+
 def test_make_cache_key_deterministic():
-    k1 = make_cache_key(entity_id="BTC", horizon="swing", since_days=30, threshold_pct=0.5, include_flagged=False)
-    k2 = make_cache_key(entity_id="BTC", horizon="swing", since_days=30, threshold_pct=0.5, include_flagged=False)
+    k1 = make_cache_key(
+        entity_id="BTC", horizon="swing", since_days=30, threshold_pct=0.5, include_flagged=False
+    )
+    k2 = make_cache_key(
+        entity_id="BTC", horizon="swing", since_days=30, threshold_pct=0.5, include_flagged=False
+    )
     assert k1 == k2
 
 
 def test_make_cache_key_distinguishes_entity():
-    k_btc = make_cache_key(entity_id="BTC", horizon="swing", since_days=30, threshold_pct=0.5, include_flagged=False)
-    k_gold = make_cache_key(entity_id="GOLD", horizon="swing", since_days=30, threshold_pct=0.5, include_flagged=False)
+    k_btc = make_cache_key(
+        entity_id="BTC", horizon="swing", since_days=30, threshold_pct=0.5, include_flagged=False
+    )
+    k_gold = make_cache_key(
+        entity_id="GOLD", horizon="swing", since_days=30, threshold_pct=0.5, include_flagged=False
+    )
     assert k_btc != k_gold
 
 
 def test_make_cache_key_distinguishes_horizon():
-    k_swing = make_cache_key(entity_id="BTC", horizon="swing", since_days=30, threshold_pct=0.5, include_flagged=False)
-    k_flash = make_cache_key(entity_id="BTC", horizon="flash", since_days=30, threshold_pct=0.5, include_flagged=False)
+    k_swing = make_cache_key(
+        entity_id="BTC", horizon="swing", since_days=30, threshold_pct=0.5, include_flagged=False
+    )
+    k_flash = make_cache_key(
+        entity_id="BTC", horizon="flash", since_days=30, threshold_pct=0.5, include_flagged=False
+    )
     assert k_swing != k_flash
 
 
 def test_make_cache_key_distinguishes_flagged():
-    k_clean = make_cache_key(entity_id="BTC", horizon="swing", since_days=30, threshold_pct=0.5, include_flagged=False)
-    k_all = make_cache_key(entity_id="BTC", horizon="swing", since_days=30, threshold_pct=0.5, include_flagged=True)
+    k_clean = make_cache_key(
+        entity_id="BTC", horizon="swing", since_days=30, threshold_pct=0.5, include_flagged=False
+    )
+    k_all = make_cache_key(
+        entity_id="BTC", horizon="swing", since_days=30, threshold_pct=0.5, include_flagged=True
+    )
     assert k_clean != k_all
     assert k_clean.endswith(".clean")
     assert k_all.endswith(".all")
 
 
 def test_make_cache_key_distinguishes_threshold():
-    k1 = make_cache_key(entity_id="BTC", horizon="swing", since_days=30, threshold_pct=0.5, include_flagged=False)
-    k2 = make_cache_key(entity_id="BTC", horizon="swing", since_days=30, threshold_pct=0.3, include_flagged=False)
+    k1 = make_cache_key(
+        entity_id="BTC", horizon="swing", since_days=30, threshold_pct=0.5, include_flagged=False
+    )
+    k2 = make_cache_key(
+        entity_id="BTC", horizon="swing", since_days=30, threshold_pct=0.3, include_flagged=False
+    )
     assert k1 != k2
 
 
 def test_make_cache_key_format():
-    k = make_cache_key(entity_id="BTC", horizon="swing", since_days=30, threshold_pct=0.5, include_flagged=False)
+    k = make_cache_key(
+        entity_id="BTC", horizon="swing", since_days=30, threshold_pct=0.5, include_flagged=False
+    )
     assert k == "tik.metrics.hit_rate.BTC.swing.30.0.50.clean"
 
 
 # ----- Constantes -----
+
 
 def test_horizon_measure_hours_completeness():
     assert "flash" in HORIZON_MEASURE_HOURS
@@ -420,6 +477,7 @@ def test_horizon_default_threshold_completeness():
 
 
 # ----- compute_hit_rate_by_veracity (Phase A.2-bis) -----
+
 
 def test_veracity_buckets_completeness():
     # Doit couvrir [0.70, 1.00] sans trou ni recouvrement (entre vmin et vmax exclusif).
@@ -453,13 +511,43 @@ def test_compute_by_veracity_segments_correctly():
     # Crée 4 signaux, 1 dans chaque bucket
     sig_ts = NOW - timedelta(days=6)
     sigs = [
-        _make_signal(entity_id="BTC", horizon="swing", direction="long", timestamp=sig_ts, sig_id="a", veracity=0.78),
-        _make_signal(entity_id="BTC", horizon="swing", direction="long", timestamp=sig_ts, sig_id="b", veracity=0.85),
-        _make_signal(entity_id="BTC", horizon="swing", direction="long", timestamp=sig_ts, sig_id="c", veracity=0.92),
-        _make_signal(entity_id="BTC", horizon="swing", direction="long", timestamp=sig_ts, sig_id="d", veracity=0.97),
+        _make_signal(
+            entity_id="BTC",
+            horizon="swing",
+            direction="long",
+            timestamp=sig_ts,
+            sig_id="a",
+            veracity=0.78,
+        ),
+        _make_signal(
+            entity_id="BTC",
+            horizon="swing",
+            direction="long",
+            timestamp=sig_ts,
+            sig_id="b",
+            veracity=0.85,
+        ),
+        _make_signal(
+            entity_id="BTC",
+            horizon="swing",
+            direction="long",
+            timestamp=sig_ts,
+            sig_id="c",
+            veracity=0.92,
+        ),
+        _make_signal(
+            entity_id="BTC",
+            horizon="swing",
+            direction="long",
+            timestamp=sig_ts,
+            sig_id="d",
+            veracity=0.97,
+        ),
     ]
     start_ms = int((sig_ts - timedelta(hours=2)).timestamp() * 1000)
-    btc_history = _build_history(start_ms, n_points=200, base_price=100.0, step_pct=0.5)  # marché monte → tous LONG = success
+    btc_history = _build_history(
+        start_ms, n_points=200, base_price=100.0, step_pct=0.5
+    )  # marché monte → tous LONG = success
     results = compute_hit_rate_by_veracity(
         sigs,
         horizon="swing",
@@ -481,16 +569,24 @@ def test_compute_by_veracity_high_veracity_higher_hit():
     # Bucket 0.85 : 4 signaux LONG dans un marché qui baisse → tous KO
     low_sigs = [
         _make_signal(
-            entity_id="BTC", horizon="swing", direction="long", timestamp=sig_ts,
-            sig_id=f"low-{i}", veracity=0.85,
+            entity_id="BTC",
+            horizon="swing",
+            direction="long",
+            timestamp=sig_ts,
+            sig_id=f"low-{i}",
+            veracity=0.85,
         )
         for i in range(4)
     ]
     # Bucket 0.95 : 2 signaux LONG, on testera dans un autre call avec marché qui monte
     high_sigs = [
         _make_signal(
-            entity_id="BTC", horizon="swing", direction="long", timestamp=sig_ts,
-            sig_id=f"high-{i}", veracity=0.97,
+            entity_id="BTC",
+            horizon="swing",
+            direction="long",
+            timestamp=sig_ts,
+            sig_id=f"high-{i}",
+            veracity=0.97,
         )
         for i in range(2)
     ]
@@ -525,9 +621,18 @@ def test_compute_by_veracity_unknown_horizon_raises():
 
 def test_compute_by_veracity_skips_signals_with_none_veracity():
     sig_ts = NOW - timedelta(days=6)
-    sig_none = _make_signal(entity_id="BTC", horizon="swing", direction="long", timestamp=sig_ts, sig_id="none")
+    sig_none = _make_signal(
+        entity_id="BTC", horizon="swing", direction="long", timestamp=sig_ts, sig_id="none"
+    )
     sig_none.veracity = None
-    sig_ok = _make_signal(entity_id="BTC", horizon="swing", direction="long", timestamp=sig_ts, sig_id="ok", veracity=0.85)
+    sig_ok = _make_signal(
+        entity_id="BTC",
+        horizon="swing",
+        direction="long",
+        timestamp=sig_ts,
+        sig_id="ok",
+        veracity=0.85,
+    )
     start_ms = int((sig_ts - timedelta(hours=2)).timestamp() * 1000)
     btc_history = _build_history(start_ms, n_points=200, base_price=100.0, step_pct=0.5)
     results = compute_hit_rate_by_veracity(
@@ -544,7 +649,9 @@ def test_compute_by_veracity_skips_signals_with_none_veracity():
 def test_compute_by_veracity_boundary_inclusive_min():
     # Veracity exactement 0.90 doit aller dans bucket 0.90-0.94 (vmin inclusif)
     sig_ts = NOW - timedelta(days=6)
-    sig = _make_signal(entity_id="BTC", horizon="swing", direction="long", timestamp=sig_ts, veracity=0.90)
+    sig = _make_signal(
+        entity_id="BTC", horizon="swing", direction="long", timestamp=sig_ts, veracity=0.90
+    )
     start_ms = int((sig_ts - timedelta(hours=2)).timestamp() * 1000)
     btc_history = _build_history(start_ms, n_points=200, base_price=100.0, step_pct=0.5)
     results = compute_hit_rate_by_veracity(
@@ -563,7 +670,9 @@ def test_compute_by_veracity_boundary_inclusive_min():
 def test_compute_by_veracity_boundary_max_strict():
     # Veracity exactement 1.00 doit aller dans bucket 0.95-1.00 (vmax 1.01 strict)
     sig_ts = NOW - timedelta(days=6)
-    sig = _make_signal(entity_id="BTC", horizon="swing", direction="long", timestamp=sig_ts, veracity=1.00)
+    sig = _make_signal(
+        entity_id="BTC", horizon="swing", direction="long", timestamp=sig_ts, veracity=1.00
+    )
     start_ms = int((sig_ts - timedelta(hours=2)).timestamp() * 1000)
     btc_history = _build_history(start_ms, n_points=200, base_price=100.0, step_pct=0.5)
     results = compute_hit_rate_by_veracity(
@@ -579,22 +688,32 @@ def test_compute_by_veracity_boundary_max_strict():
 
 # ----- make_cache_key_by_veracity -----
 
+
 def test_make_cache_key_by_veracity_format():
     k = make_cache_key_by_veracity(
-        entity_id="BTC", horizon="swing", since_days=30,
-        threshold_pct=0.5, include_flagged=False,
+        entity_id="BTC",
+        horizon="swing",
+        since_days=30,
+        threshold_pct=0.5,
+        include_flagged=False,
     )
     assert k == "tik.metrics.hit_rate_by_veracity.BTC.swing.30.0.50.clean"
 
 
 def test_make_cache_key_by_veracity_distinct_from_hit_rate():
     k_hr = make_cache_key(
-        entity_id="BTC", horizon="swing", since_days=30,
-        threshold_pct=0.5, include_flagged=False,
+        entity_id="BTC",
+        horizon="swing",
+        since_days=30,
+        threshold_pct=0.5,
+        include_flagged=False,
     )
     k_vy = make_cache_key_by_veracity(
-        entity_id="BTC", horizon="swing", since_days=30,
-        threshold_pct=0.5, include_flagged=False,
+        entity_id="BTC",
+        horizon="swing",
+        since_days=30,
+        threshold_pct=0.5,
+        include_flagged=False,
     )
     assert k_hr != k_vy
     assert "hit_rate_by_veracity" in k_vy

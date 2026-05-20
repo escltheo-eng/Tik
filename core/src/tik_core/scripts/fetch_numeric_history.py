@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -72,12 +72,14 @@ async def fetch_fear_greed_history(
                 classification = str(raw["value_classification"])
             except (KeyError, TypeError, ValueError):
                 continue
-            date = datetime.fromtimestamp(ts_unix, tz=timezone.utc).date().isoformat()
-            points.append({
-                "date": date,
-                "value": float(value),
-                "classification": classification,
-            })
+            date = datetime.fromtimestamp(ts_unix, tz=UTC).date().isoformat()
+            points.append(
+                {
+                    "date": date,
+                    "value": float(value),
+                    "classification": classification,
+                }
+            )
 
         # API renvoie en ordre desc → ascendant pour cohérence
         points.sort(key=lambda p: p["date"])
@@ -206,7 +208,7 @@ async def fetch_dxy_history(
     if own_client:
         client = httpx.AsyncClient(timeout=20.0)
 
-    end_date = datetime.now(tz=timezone.utc).date()
+    end_date = datetime.now(tz=UTC).date()
     start_date = end_date - timedelta(days=days_back)
 
     try:
@@ -260,7 +262,7 @@ async def fetch_cot_history(
     # Limit généreux : ~60 semaines pour avoir plus que 12m si quelques rows
     # manquent. On filtrera ensuite côté Python par date_cutoff.
     weeks_to_fetch = max(60, (days_back // 7) + 8)
-    cutoff = (datetime.now(tz=timezone.utc).date() - timedelta(days=days_back)).isoformat()
+    cutoff = (datetime.now(tz=UTC).date() - timedelta(days=days_back)).isoformat()
 
     try:
         try:
@@ -300,12 +302,14 @@ async def fetch_cot_history(
             date_only = report_date.split("T")[0] if "T" in report_date else report_date
             if date_only < cutoff:
                 continue
-            points.append({
-                "date": date_only,
-                "value": round(net_pct, 4),
-                "mm_long": mm_long,
-                "mm_short": mm_short,
-            })
+            points.append(
+                {
+                    "date": date_only,
+                    "value": round(net_pct, 4),
+                    "mm_long": mm_long,
+                    "mm_short": mm_short,
+                }
+            )
 
         # API renvoie desc → ascendant
         points.sort(key=lambda p: p["date"])
@@ -352,10 +356,7 @@ def _dedupe_by_date_avg(points: list[dict[str, Any]]) -> list[dict[str, Any]]:
     by_date: dict[str, list[float]] = {}
     for p in points:
         by_date.setdefault(p["date"], []).append(p["value"])
-    result = [
-        {"date": date, "value": sum(vals) / len(vals)}
-        for date, vals in by_date.items()
-    ]
+    result = [{"date": date, "value": sum(vals) / len(vals)} for date, vals in by_date.items()]
     result.sort(key=lambda p: p["date"])
     return result
 
@@ -388,7 +389,7 @@ if __name__ == "__main__":
             print(f"First: {json.dumps(data[0])}")
             print(f"Last: {json.dumps(data[-1])}")
             print(f"Sample (max {args.max_show}):")
-            for p in data[:args.max_show]:
+            for p in data[: args.max_show]:
                 print(f"  {json.dumps(p)}")
 
     asyncio.run(run())

@@ -39,9 +39,7 @@ async def _run_swing_btc(
     try:
         if hypothesis_generator is not None:
             hypothesis_generator.reset_batch()
-        decision = await analyze_swing_btc(
-            redis=redis, hypothesis_generator=hypothesis_generator
-        )
+        decision = await analyze_swing_btc(redis=redis, hypothesis_generator=hypothesis_generator)
         async with session_maker() as session:
             await publish_swing_signal(session, redis, decision)
             await session.commit()
@@ -50,14 +48,17 @@ async def _run_swing_btc(
 
 
 async def _run_swing_gold(
-    session_maker, redis, fred_api_key,
+    session_maker,
+    redis,
+    fred_api_key,
     hypothesis_generator: HypothesisGenerator | None,
 ) -> None:
     try:
         if hypothesis_generator is not None:
             hypothesis_generator.reset_batch()
         decision = await analyze_swing_gold(
-            fred_api_key=fred_api_key, redis=redis,
+            fred_api_key=fred_api_key,
+            redis=redis,
             hypothesis_generator=hypothesis_generator,
         )
         async with session_maker() as session:
@@ -82,9 +83,7 @@ async def _run_flash_btc(
     try:
         if hypothesis_generator is not None:
             hypothesis_generator.reset_batch()
-        decision = await analyze_flash_btc(
-            redis=redis, hypothesis_generator=hypothesis_generator
-        )
+        decision = await analyze_flash_btc(redis=redis, hypothesis_generator=hypothesis_generator)
 
         # Skip si données stale (l'engine a renvoyé confidence=0 + hypothesis explicite)
         if decision.confidence == 0.0 and "stale" in decision.hypothesis.lower():

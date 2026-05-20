@@ -9,6 +9,7 @@ engines puissent les consommer.
 
 import asyncio
 import json
+from datetime import UTC, datetime
 
 import structlog
 import websockets
@@ -16,7 +17,6 @@ from redis.asyncio import Redis
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from tik_core.aggregator.base import BaseIngester, MarketTick
-from datetime import datetime, timezone
 
 log = structlog.get_logger()
 
@@ -64,7 +64,7 @@ class BinanceTradesIngester(BaseIngester):
             while self._running:
                 try:
                     raw = await asyncio.wait_for(ws.recv(), timeout=60)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     log.warning("binance.ws.timeout")
                     break
                 await self._handle_message(raw)
@@ -84,7 +84,7 @@ class BinanceTradesIngester(BaseIngester):
             source="binance",
             price=float(msg["p"]),
             volume=float(msg["q"]),
-            timestamp=datetime.fromtimestamp(msg["T"] / 1000, tz=timezone.utc),
+            timestamp=datetime.fromtimestamp(msg["T"] / 1000, tz=UTC),
             extra={"trade_id": msg.get("t"), "is_buyer_maker": msg.get("m")},
         )
 

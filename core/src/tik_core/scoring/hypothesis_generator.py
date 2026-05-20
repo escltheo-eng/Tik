@@ -290,9 +290,7 @@ class OllamaHypothesisGenerator(HypothesisGenerator):
             outliers_str=self._format_outliers(decision),
             triggers=self._format_triggers(decision.triggers),
             evidence=self._format_evidence(decision.evidence),
-            counter_scenarios=self._format_counter_scenarios(
-                decision.counter_scenarios
-            ),
+            counter_scenarios=self._format_counter_scenarios(decision.counter_scenarios),
         )
         if self._client is None:
             self._client = httpx.AsyncClient(timeout=self.timeout_s)
@@ -346,18 +344,12 @@ class OllamaHypothesisGenerator(HypothesisGenerator):
             name = cs.get("name", "?")
             prob = cs.get("probability", 0.0)
             mitigation = cs.get("mitigation", "?")
-            lines.append(
-                f"- {name} (probability {prob:.2f}): {mitigation}"
-            )
+            lines.append(f"- {name} (probability {prob:.2f}): {mitigation}")
         return "\n".join(lines)
 
     @staticmethod
     def _format_outliers(decision: Any) -> str:
-        outliers = [
-            e.get("source", "?")
-            for e in decision.evidence
-            if e.get("is_outlier")
-        ]
+        outliers = [e.get("source", "?") for e in decision.evidence if e.get("is_outlier")]
         if not outliers:
             return ""
         return f" (outliers detected: {', '.join(outliers)})"
@@ -368,8 +360,7 @@ class OllamaHypothesisGenerator(HypothesisGenerator):
         text = MARKDOWN_RE.sub("", raw).strip()
         # Compact les triple newlines à double, mais préserve les retours
         # de section. Évite les blank lines abusives.
-        text = re.sub(r"\n{3,}", "\n\n", text)
-        return text
+        return re.sub(r"\n{3,}", "\n\n", text)
 
     @staticmethod
     def _is_valid_output(text: str, decision: Any) -> bool:
@@ -452,7 +443,7 @@ async def apply_llm_hypothesis(
             generator.generate(decision, horizon),
             timeout=timeout_s,
         )
-    except asyncio.TimeoutError:
+    except TimeoutError:
         log.warning(
             "hypothesis_generator.timeout",
             entity_id=decision.entity_id,
@@ -477,7 +468,7 @@ async def apply_llm_hypothesis(
     # remplacer (mode active) pour éviter d'afficher dans le dashboard
     # une carte "LLM · validation" qui ne contient pas de texte LLM.
     template_text = render_template_hypothesis(decision, horizon)
-    is_fallback = (llm_text.strip() == template_text.strip())
+    is_fallback = llm_text.strip() == template_text.strip()
 
     if mode == "shadow":
         if is_fallback:
