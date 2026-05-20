@@ -177,13 +177,13 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
   gardeFou2bis: {
     term: 'Garde-fou 2-bis',
     short:
-      "Règles strictes trading manuel J+24 : sizing 1 %, veracity ≥ 0.85 (transitoire), pas de GOLD, observer SHORT BTC.",
+      "Règles strictes trading manuel J+24 : sizing 1 %, veracity ≥ 0.85 (transitoire), pas de GOLD, aucun edge directionnel prouvé.",
     long:
       "Règle opérationnelle pour le trading manuel J+24 (2026-05-24) : " +
       "(1) sizing 1 % du capital par trade pendant 2 semaines minimum, montée progressive seulement après période profitable mesurable ; " +
       "(2) filtre veracity ≥ 0.85 sur swing BTC transitoire tant que Reddit IP-bannie (au lieu de 0.90 normal) ; " +
-      "(3) NE PAS trader GOLD avec Tik (hit rate mesuré 4.8 % vs Random 34 %) ; " +
-      "(4) observer prioritairement signaux SHORT BTC haute veracity (63 % hit, +0.72 % gain mesuré 263 signaux 1j) ; " +
+      "(3) NE PAS trader GOLD avec Tik (aucun edge directionnel mesuré sur GOLD) ; " +
+      "(4) AUCUN edge directionnel robuste démontré à ce jour — les chiffres antérieurs (SHORT BTC 63 %, GOLD 4,8 %) reposaient sur des données pré-fix contaminées (cf. CLAUDE.md Paquet 33). Ne pas s'en servir comme edge ; mesure fiable seulement au 2026-05-27 (swing 5j post-fix) ; " +
       "(5) discipline calendrier macro : ne pas entrer en swing dans les ±4h autour d'un event HIGH (FOMC, NFP, CPI).",
     ref: 'CLAUDE.md §5',
   },

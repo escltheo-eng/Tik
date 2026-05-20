@@ -2487,9 +2487,27 @@ touchée (commits sur main, l'implémentation officielle).
 
 **Note sur Garde-fou 2-bis** : l'insight « observer SHORT BTC 63 % » (section 5,
 issu du Paquet 27) repose sur des **données pré-fix contaminées** (Découverte
-n°1) — ne pas le présenter comme un edge fiable. Le filtre **mieux étayé** à ce
-jour est l'AFN `ok` sur les short BTC (Découverte n°4). À re-confirmer le
-2026-05-27.
+n°1) — ne pas le présenter comme un edge fiable. Sous scrutin paranoïaque,
+**aucun filtre (veracity ni AFN) n'a de valeur prédictive robuste démontrée**
+(cf. Découvertes n°4 et n°5). À re-mesurer proprement le 2026-05-27.
+
+**Découverte n°6 — audit dual-lens du FRONT-END + correction de chiffres
+contaminés (dashboard 0.5.17)** : même méthode dual-lens appliquée à l'UX
+dashboard. *Sans paranoïa* : UI soignée, transparente (evidence, contre-
+scénarios, tooltips, badge AFN warning-only honnête). *Avec paranoïa* : l'UI
+**parle le langage d'un système validé et confiant** (gros % « Veracity »/
+« Conviction » verts, track record ✓, prose LLM assurée) alors qu'aucun edge
+n'est démontré → risque de sur-confiance pour une débutante. Deux endroits
+affichaient des **chiffres contaminés comme des faits**, dont un qui
+**instruisait** un pari : le glossaire `gardeFou2bis` (« observer SHORT BTC
+63 % ») et la carte discipline mini-F1 (« GOLD 4,8 % »). **Corrigés**
+(`glossary.ts` + `index.tsx`, dashboard 0.5.16 → 0.5.17, tsc + eslint exit 0) :
+les chiffres faux retirés, remplacés par « aucun edge directionnel démontré,
+mesure fiable au 27/05 ». Le reste de l'alignement UX↔réalité (libellés trop
+affirmatifs, HitRateCard sur données contaminées, scores crédibilité pénalisés
+à 35 % par la recalibration) est **documenté pour la refonte UX de fin de dev,
+NON codé** (cohérent consigne utilisatrice). Audit consolidé front+back :
+`docs/audit-dual-lens-2026-05-20.md`.
 
 ---
 

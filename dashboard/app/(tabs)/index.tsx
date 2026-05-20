@@ -170,7 +170,7 @@ export default function HomeScreen() {
           • Pas de macro event HIGH dans ±4h (voir Calendrier macro)
         </ThemedText>
         <ThemedText style={styles.disciplineLine}>
-          • BTC uniquement — pas de GOLD (Tik à 4,8 % de hit rate GOLD)
+          • BTC uniquement — pas de GOLD (aucun edge directionnel mesuré)
         </ThemedText>
         <ThemedText style={styles.disciplineLine}>
           • Direction long ou short — pas neutral
