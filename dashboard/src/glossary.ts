@@ -61,7 +61,7 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
     long:
       "Tik produit des signaux sur 3 horizons en parallèle : " +
       "flash (TTL 1h, klines 1m Binance, BTC uniquement car Yahoo a 15 min de délai sur GOLD), " +
-      "swing (TTL 4h, klines 1h, BTC + GOLD), " +
+      "swing (TTL 7j, klines 1h, BTC + GOLD), " +
       "macro (semaines-mois, klines 1j). " +
       "Chaque horizon a ses propres overlays et seuils. " +
       "Pour le trading manuel J+24, swing BTC est l'horizon le plus exploitable.",

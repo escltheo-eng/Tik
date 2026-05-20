@@ -126,3 +126,59 @@ confiance. La seule posture justifiée par la donnée reste le **sizing 1 %**, e
 la mesure décisive est le **swing 5j post-fix du 2026-05-27**. Les chiffres
 contaminés qui instruisaient un comportement ont été corrigés ; le reste de
 l'alignement UX↔réalité est documenté pour la refonte de fin de dev.
+
+---
+
+## Annexe — Audit cohérence / intégrité / fiabilité des données (2026-05-20, sans paranoïa)
+
+Recherche systématique des **conflits, anomalies et problèmes réels** (front +
+back), lecture/mesure démontrable, arguments pour/contre → consensus.
+
+### Backend — intégrité des données : ✅ SAINE (13 invariants, 0 violation)
+
+Mesuré sur l'ensemble des signaux en DB :
+
+| Invariant | Résultat |
+|---|---|
+| Directionnels (long/short) avec conviction < seuil 0,30 | **0** |
+| `tripped` avec direction ≠ neutral (AFN doit forcer neutral) | **0** |
+| veracity hors [0,70 ; 0,95] | **0** (paliers exacts : 0.70/0.78/0.85/0.90/0.95) |
+| confidence hors [0 ; 1] | **0** |
+| expiry ≤ timestamp | **0** |
+| champs critiques NULL (direction/conf/verac/hypothèse) | **0** |
+| ids dupliqués | **0** |
+| neutral avec conviction ≥ 0,30 hors tripped | **0** |
+| `circuit_breaker_status` hors {ok, degraded, tripped} | **0** |
+| `sources_count` ≠ longueur du tableau evidence | **0** (coïncidence parfaite) |
+| evidence/triggers vides | **0** |
+| trous de cadence > 90 min (downtime scheduler) sur 5 j | **0** |
+| TTL réel par horizon (DB) | flash 1,01h · swing 168,01h = cohérent code (`EXPIRY_BY_HORIZON`) |
+
+**Consensus backend** : la donnée signal est **internement cohérente et fiable**.
+Aucune anomalie structurelle. Runtime : uniquement des warnings
+`ollama_error ReadTimeout` occasionnels (LLM timeout → fallback template géré par
+le circuit breaker ADR-012, `consecutive_failures=1`). Pas un bug.
+
+États de fiabilité connus (documentés, pas des bugs) : Reddit IP-banni (swing BTC
+à 3 overlays sentiment), GDELT 429 intermittent (GOLD parfois 2 overlays),
+recalibration qui pénalise les scores affichés (cosmétique post-ADR-018).
+
+### Frontend — 1 conflit factuel trouvé et corrigé
+
+| Conflit | Pour (problème) | Contre (mineur) | Verdict |
+|---|---|---|---|
+| `glossary.ts` horizon : « swing (TTL **4h**) » alors que code = 7j (DB 168h) | tooltip faux, la trader croit le signal expiré en 4h | détail tooltip, sens « heures-jours » conservé | **Corrigé → « TTL 7j »** (dashboard 0.5.18) |
+
+Vérifs cohérence front↔back **OK** : HitRateCard « swing 5j » = backend
+`HORIZON_MEASURE_HOURS` (5j) ✓ ; track record « swing 1h/6h/24h/5j » ✓ ;
+sélecteurs horizon = horizons backend ✓.
+
+### Consensus global
+
+**Tik est techniquement sain et cohérent** : intégrité des données parfaite (13
+invariants), pipeline stable (zéro downtime), front↔back cohérent à un tooltip
+près (corrigé). Les seuls « problèmes » résiduels ne sont pas des bugs mais des
+**caractéristiques connues** (pas d'edge démontré, Reddit/GDELT dégradés,
+recalibration cosmétique) déjà documentées et tracées. Pour de bonnes
+performances : la fiabilité **technique** est acquise ; la fiabilité
+**prédictive** (l'edge) reste à établir le 2026-05-27.
