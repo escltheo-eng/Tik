@@ -2433,6 +2433,24 @@ prive d'aucun directionnel — vérifié V4). **Actionable trader** : NE PAS
 sur-pondérer le flag AFN — il coïncide avec le filtre veracity ≥ 0,85 que tu
 appliques déjà. À re-tester proprement au 5j le 2026-05-27 (`--cb-status`).
 
+**Découverte n°5 — balayage dual-lens systématique : AUCUN edge robuste nulle
+part** : nouveau script `backtest_dual_lens.py` (commité) qui, pour chaque slice,
+sort la lecture SANS paranoïa (hit rate, bat random ?) ET AVEC paranoïa (n, gain
+moyen, p-value vs random, survie Bonferroni, flag petit échantillon). Balayage de
+**31 slices** (flash/swing × BTC/GOLD × direction × bucket veracity × statut AFN).
+**Résultat : pas un seul slice n'est simultanément `bat random` + significatif
+après Bonferroni + `gain+`.** Pattern systématique : les slices qui « battent
+random » sont les NEUTRAL (flash 76 %, swing 60-82 %) mais toujours `gain-`
+(artefact — être neutre ne rapporte pas) ; les DIRECTIONNELS (long/short) sont au
+niveau ou sous random, leurs petits gains positifs (short +0,02 à +0,23 %) sont
+non significatifs = juste suivre la tendance baissière (beta, pas alpha) ;
+`cb_status=ok` swing @6h non-sig vs random (p=0,273), @24h sous random ; GOLD tout
+sous random. **Conclusion démontrée : Tik n'a aucun edge directionnel robuste
+mesurable sur les données post-fix disponibles** — le sizing 1 % est la seule
+posture justifiée, la mesure 5j du 2026-05-27 reste le test décisif. Outil :
+`python -m tik_core.scripts.backtest_dual_lens --signal-horizon swing --entity BTC
+--horizon-hours 6` (ou `--horizon-days 5` le 27/05).
+
 **6 vérifications (pour/contre/verdict)** : V1 prod intacte ✅ (toutes tables
 peuplées, drop_all jamais exécuté) · V2 CI passera ✅ (1074 verts sur tik_test
 VIERGE, réplique CI) · V3 « no edge » ⚠️ robuste mais « pas démontré » (5j
