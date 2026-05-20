@@ -170,7 +170,7 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
     long:
       "Score de crédibilité affecté à chaque source OSINT, modulant son poids dans le combined_bias. " +
       "Sources gouvernementales chiffrées (FRED) 0.85 ; news scientifiques (GDELT) 0.75 ; mainstream éditorial (Google News, CryptoCompare) 0.70 ; " +
-      "communautaire pondéré (Reddit) 0.65 ; sentiment numérique (Fear & Greed) 0.70 ; markets data (Binance klines) 0.90. " +
+      "communautaire pondéré (Reddit) 0.65 ; sentiment numérique (Fear & Greed) 0.65 ; markets data (Binance klines) 0.90. " +
       "Recalibration automatique daily 03:00 UTC selon hit rate observé (ADR-011, fenêtre 30 jours).",
     ref: 'ADR-011',
   },
