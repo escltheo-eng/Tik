@@ -13,16 +13,20 @@ from unittest.mock import MagicMock
 import pytest
 
 from tik_core.scoring.source_credibility import (
+    HORIZON_DAYS,
+    LOOKBACK_DAYS,
     MAX_SCORE,
     MIN_SAMPLES,
     MIN_SCORE,
     PENALTY_FACTOR,
+    RECALIBRATION_DATA_FLOOR,
     REDIS_KEY_TPL,
     REWARD_FACTOR,
     SCORE_TTL_SEC,
     _capped,
     _compute_adjustment,
     _compute_hit_rates_by_source,
+    _lookback_window,
     get_effective_score,
     get_source_score,
     preload_source_scores,
@@ -381,3 +385,42 @@ async def test_recalibrate_source_reward_path():
     res = await recalibrate_source(redis, session, "alternative_me_fng", 35, 40)
     assert res.adjustment == "reward"
     assert res.new_score > res.previous_score
+
+
+# ----- Plancher de données R2/R6 (Paquet 34) -----
+
+
+def test_lookback_window_applies_floor_when_30d_before_fix():
+    """now peu après le fix : now-30j est avant le plancher → start = plancher."""
+    now = RECALIBRATION_DATA_FLOOR + timedelta(days=10)
+    start, end = _lookback_window(now)
+    # now-30j = ~2026-04-27 < floor (2026-05-17) → le plancher prime
+    assert start == RECALIBRATION_DATA_FLOOR
+    assert end == now - timedelta(days=HORIZON_DAYS)
+    # fenêtre non vide à J+10 → la recalibration peut reprendre sur du propre
+    assert start < end
+
+
+def test_lookback_window_ignores_floor_when_30d_after_fix():
+    """now loin dans le futur : now-30j dépasse le plancher → borne glissante normale."""
+    now = RECALIBRATION_DATA_FLOOR + timedelta(days=100)
+    start, end = _lookback_window(now)
+    assert start == now - timedelta(days=LOOKBACK_DAYS)
+    assert start > RECALIBRATION_DATA_FLOOR
+    assert end == now - timedelta(days=HORIZON_DAYS)
+
+
+def test_lookback_window_empty_when_no_clean_matured_data():
+    """now = fix + 3j : la borne de maturité (now-5j) est avant le plancher → fenêtre vide."""
+    now = RECALIBRATION_DATA_FLOOR + timedelta(days=3)
+    start, end = _lookback_window(now)
+    # end = fix - 2j < start = floor → start >= end → le caller doit skip
+    assert start >= end
+
+
+def test_lookback_window_custom_floor():
+    """Le plancher est paramétrable (testabilité, future réutilisation)."""
+    custom = datetime(2026, 1, 1, 0, 0, 0)
+    now = custom + timedelta(days=10)
+    start, end = _lookback_window(now, floor=custom)
+    assert start == custom

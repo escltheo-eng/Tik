@@ -194,7 +194,7 @@ mais « qu'est-ce qui POURRAIT casser, sous quelle condition ». Chaque mode a u
 
 | # | Mode de défaillance | Déclencheur (mesuré) | Risque | Impact | Mitigation / quand |
 |---|---|---|---|---|---|
-| **R2/R6** 🔴 | Recalibration pousse TOUS les scores au plancher 0,30 | ÷1,2/jour (orderbook 0,50→0,35 en 2j) ; lookback 30j inclut le contaminé pré-fix jusqu'à ~2026-06-16 | **Moyen-élevé, near-term** | Dans 1-2 j, l'evidence affichera toutes les sources ~30-35 % → la trader croit Tik « tout pourri » (artefact, cosmétique post-ADR-018) | Geler/reset la recalibration post-J+10 quand données propres ; OU afficher le score statique. **Surtout : prévenir la trader** |
+| **R2/R6** ✅ RÉSOLU 2026-05-21 (Paquet 34) | Recalibration pousse TOUS les scores au plancher 0,30 | ÷1,2/jour (orderbook 0,50→0,35 en 2j) ; lookback 30j inclut le contaminé pré-fix jusqu'à ~2026-06-16 | **Moyen-élevé, near-term** | Dans 1-2 j, l'evidence affichait toutes les sources ~30-35 % → la trader croit Tik « tout pourri » (artefact, cosmétique post-ADR-018) | **FAIT** : `RECALIBRATION_DATA_FLOOR` + `_lookback_window` → skip fenêtre vide tant que pas de données propres+mûres (auto-cicatrisant) + script `reset_source_credibility.py` (clés Redis nettoyées). Déployé runtime. Cf. CLAUDE.md Paquet 34 |
 | **R3** 🟡 | Veracity gonflée par peu de sources | 35 signaux N=2 → veracity 0,95 ; 1 signal N=1 → 0,85 | Moyen | Si GDELT/CC tombent → signaux N≤2 « 95 % » trivialement concordants passent le filtre ≥0,85 | Pénaliser la veracity quand N petit (post-trading, vrai amélioration) |
 | **R5** 🟡 | Désynchro du seuil 0,85 quand Reddit revient | Seuil dans **5 fichiers** (glossary, veracity-gauge, index, script, CLAUDE.md) ; Reddit toujours 403 | Moyen | Retour Reddit → doit redevenir 0,90 → oubli d'un fichier = UI incohérente | Constante unique source de vérité (refacto) ; sinon checklist des 5 fichiers |
 | **R1** 🟢 | Cap dashboard « Activité 24h » à 500 | max 24h actuel = 356 (marge 29 %) | Faible | Si volume > 500/24h (marché volatil, +entity/horizon) → compteur figé | Monter `limit` ou paginer si volume croît |
@@ -202,13 +202,16 @@ mais « qu'est-ce qui POURRAIT casser, sous quelle condition ». Chaque mode a u
 | **R8** 🟢 | Régression Bug 9 (asyncpg tz) | workaround strip tzinfo dans publisher seul | Faible | Nouvelle colonne datetime aware insérée sans strip → DataError, perte signaux | Gardé par test pytest (Paquet 31) ; vigilance sur tout nouvel INSERT |
 | **R9** 🟢 | Ollama down complet (vs timeout occasionnel) | warnings ReadTimeout `consecutive_failures=1` | Faible | Si Ollama tombe → 3 échecs → circuit breaker → 100 % hypothèses template | Géré (fallback ADR-012) ; dégrade seulement le contexte narratif |
 
-**Le plus urgent à anticiper (R2/R6)** : la recalibration tourne sur des données
-contaminées et pousse les scores de crédibilité affichés vers 0,30. **Dans
-quelques jours, le détail de chaque signal montrera toutes ses sources à ~30 %.**
+**Le plus urgent à anticiper (R2/R6) — ✅ RÉSOLU 2026-05-21 (Paquet 34)** : la
+recalibration tournait sur des données contaminées et poussait les scores de
+crédibilité affichés vers 0,30 (mesuré live : FG 0,38, orderbook/aggtrades 0,30).
 C'est un **artefact cosmétique** (post-ADR-018 le score n'alimente que
 l'affichage, pas la direction/veracity) — mais visuellement alarmant pour une
-débutante. À expliquer à la trader AVANT qu'elle le voie, et à geler/reset
-post-J+10 quand la fenêtre de 30j ne contiendra plus que des données propres.
+débutante. **Fix livré avant qu'elle ne le voie** : plancher de données
+`RECALIBRATION_DATA_FLOOR` (le job skip tant qu'il n'a pas de données propres ET
+mûres, auto-cicatrisant après ~2026-06-16) + script de reset des clés Redis
+pénalisées. Vérifié en code que c'est strictement cosmétique avant d'agir. Cf.
+CLAUDE.md Paquet 34.
 
 **Consensus anticipation** : aucun mode ne casse le pipeline ni ne corrompt les
 signaux. Le seul à impact visible near-term (R2/R6) est **cosmétique**. Les

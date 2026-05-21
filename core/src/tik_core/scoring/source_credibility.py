@@ -32,7 +32,7 @@ import asyncio
 import contextvars
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import httpx
 import structlog
@@ -65,6 +65,18 @@ MIN_SAMPLES = 30  # samples minimum pour ajuster
 LOOKBACK_DAYS = 30
 HORIZON_DAYS = 5  # sweet spot identifié par le backtest existant
 THRESHOLD_PCT = 0.5
+
+# Plancher de données pour la recalibration (R2/R6, Paquet 34).
+# Le fix Bug N=2 (cross-validation N=2 cassée par CryptoCompare manquant)
+# date du 2026-05-17 20:47 UTC. AVANT cette date, les directions des signaux
+# étaient contaminées (cf. CLAUDE.md Paquet 33 Découverte n°1). La
+# recalibration NE DOIT PAS apprendre de ces hit rates faux : sinon elle
+# pénalise les sources à tort et pousse leur score vers le plancher 0.30
+# (artefact cosmétique alarmant pour la trader — cf. audit-dual-lens R2/R6).
+# Ce plancher devient automatiquement inopérant après ~2026-06-16, quand
+# `now - LOOKBACK_DAYS` dépasse cette date (le `max()` ci-dessous reprend
+# la borne glissante normale).
+RECALIBRATION_DATA_FLOOR = datetime(2026, 5, 17, 20, 47, 0)  # naive UTC
 
 # Sources qui peuvent être recalibrées (sentiment / overlays / positioning).
 # On exclut volontairement les sources de prix de marché elles-mêmes
@@ -161,6 +173,26 @@ def _compute_adjustment(
 def _capped(score: float) -> float:
     """Borne le score dans [MIN_SCORE, MAX_SCORE]."""
     return max(MIN_SCORE, min(MAX_SCORE, score))
+
+
+def _lookback_window(
+    now: datetime,
+    floor: datetime = RECALIBRATION_DATA_FLOOR,
+) -> tuple[datetime, datetime]:
+    """Fenêtre ``[start, end)`` des signaux à évaluer pour la recalibration.
+
+    Pure logic — testable sans Redis/DB.
+
+    - ``start`` = ``max(now - LOOKBACK_DAYS, floor)`` — ne jamais apprendre
+      AVANT le fix Bug N=2 (données contaminées, cf. RECALIBRATION_DATA_FLOOR).
+    - ``end`` = ``now - HORIZON_DAYS`` — exclut les signaux pas encore mûrs.
+
+    Si ``start >= end`` (pas encore de données propres ET mûres), la fenêtre est
+    vide : le caller doit skip la recalibration proprement.
+    """
+    start = max(now - timedelta(days=LOOKBACK_DAYS), floor)
+    end = now - timedelta(days=HORIZON_DAYS)
+    return start, end
 
 
 # ----- Lecture / écriture Redis -----
@@ -357,10 +389,27 @@ async def recalibrate_sources(
     4. Calcule l'ajustement asymétrique (penalty/reward/unchanged).
     5. Persiste en Redis (lecture runtime) + DB (audit).
     """
-    cutoff_lookback = now_utc_naive() - timedelta(days=LOOKBACK_DAYS)
-    cutoff_horizon = now_utc_naive() - timedelta(days=HORIZON_DAYS)
+    cutoff_lookback, cutoff_horizon = _lookback_window(now_utc_naive())
 
-    log.info("source_credibility.recalibrate.start", lookback_days=LOOKBACK_DAYS)
+    log.info(
+        "source_credibility.recalibrate.start",
+        lookback_days=LOOKBACK_DAYS,
+        window_start=cutoff_lookback.isoformat(),
+        window_end=cutoff_horizon.isoformat(),
+    )
+
+    # R2/R6 (Paquet 34) : tant que le plancher de données (fix Bug N=2) est plus
+    # récent que la borne de maturité (now - HORIZON_DAYS), il n'existe aucune
+    # donnée PROPRE et mûre à évaluer → skip plutôt que d'apprendre sur du
+    # contaminé. Auto-résolu dès que les signaux post-fix atteignent 5j de
+    # maturité (~2026-05-22) puis pleinement après ~2026-06-16.
+    if cutoff_lookback >= cutoff_horizon:
+        log.info(
+            "source_credibility.recalibrate.window_empty_skip",
+            window_start=cutoff_lookback.isoformat(),
+            window_end=cutoff_horizon.isoformat(),
+        )
+        return []
 
     async with session_maker() as session:
         result = await session.execute(
