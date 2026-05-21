@@ -33,7 +33,7 @@ export default function AlertsScreen() {
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme() ?? 'light';
   const palette = Colors[colorScheme];
-  const { alerts, unreadCount, connected, markAllAsRead, clear } = useAlerts();
+  const { alerts, unreadCount, connected, markAsRead, markAllAsRead, clear } = useAlerts();
   useTick();
 
   const renderAlert = (alert: AlertEntry) => {
@@ -41,7 +41,10 @@ export default function AlertsScreen() {
     return (
       <Pressable
         key={alert.id}
-        onPress={() => router.push(`/signal/${encodeURIComponent(alert.signalId)}`)}
+        onPress={() => {
+          markAsRead(alert.id);
+          router.push(`/signal/${encodeURIComponent(alert.signalId)}`);
+        }}
         style={({ pressed }) => [
           styles.row,
           {

@@ -56,6 +56,7 @@ interface AlertsContextValue {
   alerts: AlertEntry[];
   unreadCount: number;
   connected: boolean;
+  markAsRead: (id: string) => void;
   markAllAsRead: () => void;
   clear: () => void;
 }
@@ -167,6 +168,10 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
     };
   }, [baseUrl, apiKey, isAuthenticated, pushAlert]);
 
+  const markAsRead = useCallback((id: string) => {
+    setAlerts((prev) => prev.map((a) => (a.id === id && !a.read ? { ...a, read: true } : a)));
+  }, []);
+
   const markAllAsRead = useCallback(() => {
     setAlerts((prev) => prev.map((a) => (a.read ? a : { ...a, read: true })));
   }, []);
@@ -178,8 +183,8 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
   const unreadCount = useMemo(() => alerts.reduce((c, a) => c + (a.read ? 0 : 1), 0), [alerts]);
 
   const value = useMemo<AlertsContextValue>(
-    () => ({ alerts, unreadCount, connected, markAllAsRead, clear }),
-    [alerts, unreadCount, connected, markAllAsRead, clear],
+    () => ({ alerts, unreadCount, connected, markAsRead, markAllAsRead, clear }),
+    [alerts, unreadCount, connected, markAsRead, markAllAsRead, clear],
   );
 
   return <AlertsContext.Provider value={value}>{children}</AlertsContext.Provider>;
