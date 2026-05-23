@@ -22,6 +22,8 @@ from tik_core.scripts.backtest import (
     evaluate_signal,
     evaluate_tik_baseline,
     find_closest_price,
+    normal_cdf,
+    paired_gain_significance,
 )
 
 # Base temporelle commune (aware UTC) pour construire les historiques de prix.
@@ -253,3 +255,72 @@ class TestTikBaseline:
         assert out["n_success"] == 1
         # avg_gain = (gain_long(+2.0) + gain_short(1.0)=-1.0) / 2 = 0.5
         assert out["avg_gain"] == pytest.approx(0.5)
+
+
+# ----- normal_cdf -----
+
+
+class TestNormalCdf:
+    def test_zero_is_half(self):
+        assert normal_cdf(0.0) == pytest.approx(0.5)
+
+    def test_large_positive_approaches_one(self):
+        assert normal_cdf(8.0) == pytest.approx(1.0, abs=1e-6)
+
+    def test_large_negative_approaches_zero(self):
+        assert normal_cdf(-8.0) == pytest.approx(0.0, abs=1e-6)
+
+    @pytest.mark.parametrize("x", [0.3, 1.0, 1.96, 3.5])
+    def test_symmetry(self, x):
+        # Phi(x) + Phi(-x) == 1
+        assert normal_cdf(x) + normal_cdf(-x) == pytest.approx(1.0)
+
+
+# ----- paired_gain_significance -----
+
+
+class TestPairedGainSignificance:
+    def test_empty_returns_none(self):
+        assert paired_gain_significance([], "short") is None
+
+    def test_gains_computed_correctly(self):
+        # Tik = long sur ces signaux ; deltas +2 et -1
+        results = [_result("long", 2.0), _result("long", -1.0)]
+        out = paired_gain_significance(results, "short")
+        # tik_gain = mean(long: +2, -1) = +0.5
+        assert out["tik_gain"] == pytest.approx(0.5)
+        # baseline short gain = mean(-(+2), -(-1)) = mean(-2, +1) = -0.5
+        assert out["baseline_gain"] == pytest.approx(-0.5)
+        # mean_diff = tik - base = +1.0
+        assert out["mean_diff"] == pytest.approx(1.0)
+        assert out["n"] == 2
+
+    def test_identical_direction_has_no_variance(self):
+        # Tik == baseline (tous short) → diffs tous nuls → z/p indéfinis
+        results = [_result("short", 2.0), _result("short", -1.0), _result("short", 0.5)]
+        out = paired_gain_significance(results, "short")
+        assert out["mean_diff"] == pytest.approx(0.0)
+        assert out["z"] is None
+        assert out["p"] is None
+
+    def test_single_signal_no_pvalue(self):
+        out = paired_gain_significance([_result("long", 1.0)], "short")
+        assert out["n"] == 1
+        assert out["z"] is None
+        assert out["p"] is None
+
+    def test_tik_loses_to_short_in_downtrend(self):
+        # Marché baisse, Tik reste neutral → perd vs Always SHORT
+        results = [_result("neutral", d) for d in (-2.0, -3.0, -1.0, -2.5, -1.8, -2.2)]
+        out = paired_gain_significance(results, "short")
+        assert out["mean_diff"] < 0  # Tik fait moins bien que short
+        assert out["z"] is not None and out["z"] < 0
+        assert out["p"] is not None and 0.0 <= out["p"] <= 1.0
+
+    def test_tik_beats_neutral_baseline_directionally(self):
+        # Marché baisse, Tik est short (correct) → bat Always NEUTRAL
+        results = [_result("short", d) for d in (-2.0, -3.0, -1.0, -2.5, -1.8, -2.2)]
+        out = paired_gain_significance(results, "neutral")
+        assert out["mean_diff"] > 0
+        assert out["z"] is not None and out["z"] > 0
+        assert out["p"] is not None and out["p"] < 0.05

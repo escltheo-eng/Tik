@@ -67,6 +67,7 @@ from tik_core.scripts.backtest import (
     fetch_btc_history,
     fetch_gold_history,
     find_closest_price,
+    paired_gain_significance,
 )
 from tik_core.storage.models import Signal
 from tik_core.utils.time import now_utc_naive
@@ -261,6 +262,72 @@ def _print_level_section(
         n_succ = s.get("n_success", 0)
         hit_str = f"{n_succ:.1f}/{s['n']}" if isinstance(n_succ, float) else f"{n_succ}/{s['n']}"
         print(f"{name:<16} | {hit_str:<14} | {s['hit_rate'] * 100:6.1f}% | {s['avg_gain']:+8.2f}%")
+    print()
+
+    _print_trend_baseline_comparison(filtered, min_samples=min_samples)
+
+
+def _print_trend_baseline_comparison(filtered: list[dict], *, min_samples: int) -> None:
+    """Tik vs baselines constantes : test apparié sur le GAIN + significativité.
+
+    Répond à « Tik bat-il la TENDANCE, ou seulement Random ? ». En marché
+    tendanciel, Random est trivial à battre ; le vrai juge est la meilleure
+    baseline constante (souvent Always SHORT/LONG). Si Tik ne bat pas
+    *significativement* la meilleure baseline constante sur le gain → aucun
+    edge directionnel démontré au-dessus de la tendance.
+    """
+    print("--- Tik vs baselines constantes : test apparié sur le GAIN ---")
+    print("    (Tik ajoute-t-il de l'alpha AU-DESSUS de la tendance, ou est-il colinéaire ?)\n")
+
+    tests = [
+        t
+        for t in (paired_gain_significance(filtered, d) for d in ("short", "long", "neutral"))
+        if t is not None
+    ]
+    if not tests:
+        print("    (aucun signal)\n")
+        return
+
+    print(
+        f"    {'comparaison':<18} | {'Tik gain':>9} | {'base gain':>9} | "
+        f"{'Δ gain':>8} | {'z':>6} | {'p':>6} | verdict"
+    )
+    print("    " + "-" * 92)
+    for t in tests:
+        if t["p"] is None:
+            verdict = "n/a (Tik ≡ baseline)"
+        elif t["p"] < 0.05 and t["mean_diff"] > 0:
+            verdict = "Tik GAGNE (sig.)"
+        elif t["p"] < 0.05 and t["mean_diff"] < 0:
+            verdict = "Tik PERD (sig.)"
+        else:
+            verdict = "égalité (non-sig.)"
+        zstr = f"{t['z']:+.1f}" if t["z"] is not None else "n/a"
+        pstr = f"{t['p']:.3f}" if t["p"] is not None else "n/a"
+        print(
+            f"    vs Always {t['baseline_direction'].upper():<8} | "
+            f"{t['tik_gain']:>+8.2f}% | {t['baseline_gain']:>+8.2f}% | "
+            f"{t['mean_diff']:>+7.2f}% | {zstr:>6} | {pstr:>6} | {verdict}"
+        )
+
+    # Conclusion : Tik bat-il la MEILLEURE baseline constante (par gain) ?
+    best = max(tests, key=lambda t: t["baseline_gain"])
+    print()
+    if best["mean_diff"] > 0 and best["p"] is not None and best["p"] < 0.05:
+        print(
+            f"    ✅ Tik AJOUTE de l'alpha au-dessus de la meilleure baseline "
+            f"(Always {best['baseline_direction'].upper()} {best['baseline_gain']:+.2f}%) : "
+            f"Δ {best['mean_diff']:+.2f}% p={best['p']:.3f}"
+        )
+    else:
+        pstr = f"p={best['p']:.3f}" if best["p"] is not None else "p=n/a"
+        print(
+            f"    ⚠ Tik N'AJOUTE PAS d'alpha au-dessus de la meilleure baseline "
+            f"(Always {best['baseline_direction'].upper()} {best['baseline_gain']:+.2f}%) : "
+            f"Tik {best['tik_gain']:+.2f}%, Δ {best['mean_diff']:+.2f}% {pstr}"
+        )
+    if best["n"] < min_samples:
+        print(f"    ⚠ N={best['n']} < {min_samples} — conclusion fragile (échantillon faible).")
     print()
 
 

@@ -18,10 +18,11 @@ Limitations connues (à garder en tête) :
 
 import argparse
 import asyncio
+import math
 import random
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
-from statistics import mean
+from statistics import mean, stdev
 
 import httpx
 import structlog
@@ -209,6 +210,62 @@ def _success_for(direction: str, delta_pct: float, threshold_pct: float) -> bool
     if direction == "short":
         return delta_pct < -threshold_pct
     return abs(delta_pct) < threshold_pct
+
+
+# ----- Test de significativité Tik vs baseline (apparié sur le gain) -----
+
+
+def normal_cdf(x: float) -> float:
+    """CDF de la loi normale centrée réduite (approx via math.erf, stdlib)."""
+    return 0.5 * (1 + math.erf(x / math.sqrt(2)))
+
+
+def paired_gain_significance(results: list[dict], baseline_direction: str) -> dict | None:
+    """Test apparié Tik vs une baseline constante, sur le GAIN par signal.
+
+    Pour chaque signal évalué, compare le gain de la direction prédite par Tik
+    au gain qu'aurait eu une stratégie prenant TOUJOURS ``baseline_direction``
+    (long / short / neutral), sur le MÊME mouvement de marché :
+
+        d_i = gain_Tik(signal_i) - gain_baseline(signal_i)
+
+    Teste si la moyenne des d_i est significativement != 0 (test z apparié,
+    approximation normale valable pour n grand). Répond à la vraie question :
+    « Tik ajoute-t-il du gain AU-DESSUS de cette baseline, ou est-il colinéaire
+    à elle ? » Random est une baseline faible en marché tendanciel ; le bon
+    comparateur est la baseline de tendance (souvent Always SHORT/LONG).
+
+    Retourne None si ``results`` est vide. ``z`` et ``p`` valent None si n < 2
+    ou si l'écart-type des écarts est nul (Tik ≡ baseline sur tous les signaux,
+    aucune variance à tester).
+    """
+    n = len(results)
+    if n == 0:
+        return None
+    diffs = [
+        _gain_for(r["direction"], r["delta_pct"]) - _gain_for(baseline_direction, r["delta_pct"])
+        for r in results
+    ]
+    tik_gain = mean(_gain_for(r["direction"], r["delta_pct"]) for r in results)
+    base_gain = mean(_gain_for(baseline_direction, r["delta_pct"]) for r in results)
+    mean_diff = mean(diffs)
+    z: float | None = None
+    p: float | None = None
+    if n >= 2:
+        sd = stdev(diffs)
+        if sd > 0:
+            se = sd / math.sqrt(n)
+            z = mean_diff / se
+            p = 2 * (1 - normal_cdf(abs(z)))
+    return {
+        "n": n,
+        "baseline_direction": baseline_direction,
+        "tik_gain": tik_gain,
+        "baseline_gain": base_gain,
+        "mean_diff": mean_diff,
+        "z": z,
+        "p": p,
+    }
 
 
 # ----- Rapport -----
