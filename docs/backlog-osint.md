@@ -200,32 +200,89 @@ téléchargeable).
 
 ---
 
-### V1.3 — Farside ETF flows BTC
+### V1.3 — Flux ETF spot BTC (arbitrage de source)
 
-**Statut** : couche structurée OSINT, overlay swing BTC.
+**Statut** : couche structurée OSINT, overlay swing BTC. **À coder APRÈS
+V1.2** (mesure 2 semaines V1.2 d'abord), et **après le go/no-go du 27/05**
+(cf. règle SHADOW vs ENRÔLEMENT en tête de Vague 1). Aucun code écrit à
+ce jour.
 
 **Justification structurelle** : (a) ETF BTC US ont >50 G USD AUM
-post-janvier 2024, dominant institutionnel mesurable ; (b) Farside
-publie quotidiennement le détail par fonds gratuitement ; (c) signal
-fortement actionable (inflow persistant net = thèse institutionnelle
-haussière).
+post-janvier 2024, dominant institutionnel mesurable ; (b) le détail
+quotidien par fonds est publié gratuitement par plusieurs agrégateurs ;
+(c) signal fortement actionable (inflow persistant net = thèse
+institutionnelle haussière).
 
-**Risque structurel identifié (audit 2026-05-17)** : Farside n'a pas
-d'API officielle, scrape HTML est fragile. **Plan B obligatoire dans
-le code** :
-- Fallback 1 : CoinShares Digital Asset Fund Flows Weekly Report (PDF
-  hebdo, lien stable, free)
-- Fallback 2 : SoSoValue API (en bêta mais agrégée propre)
-- Alerte si 3 cycles consécutifs sans data → log error + email/push
+#### Arbitrage de source — analyse pour/contre (MAJ 2026-05-24, vérifiée)
+
+> **Contexte de cette MAJ.** Question utilisatrice : documenter
+> « DefiLlama en source principale (API propre) + Farside en vérification
+> croisée ». **Vérification empirique faite avant de figer (engagements
+> 13bis #5 et #10)** → la prémisse « DefiLlama = API propre *gratuite* »
+> est **fausse**. **Mea culpa** : l'API *générale* DefiLlama est gratuite,
+> mais l'endpoint flux ETF (`/etfs/flows`, `/etfs/snapshot`) est **Pro à
+> 300 $/mois** (source : api-docs.defillama.com, section Pro-Only).
+
+| Source | Accès | Coût | Cadence | Fiabilité | Rôle proposé |
+|---|---|---|---|---|---|
+| **DefiLlama** `/etfs/flows` | API REST propre **documentée** | 🔴 Pro **300 $/mois** | quotidien | Haute (API officielle) | Principale **SEULEMENT si** budget payant validé |
+| **SoSoValue** | Dashboard web (JSON interne **non documenté**, à confirmer) | Gratuit | quotidien temps réel | Moyenne (endpoint non officiel, peut casser) | Candidat principal **gratuit** (à vérifier au codage) |
+| **CoinGlass** ETF | API free tier (scope exact **à revérifier**, cf. V1.4) | Gratuit (free) / 29 $+ pro | quotidien | Moyenne-haute | Candidat principal **gratuit** alternatif |
+| **Farside** | Scrape HTML, **bloque les bots (403 vérifié 2026-05-24)** | Gratuit | quotidien (soir US) | 🔴 Faible (fragile + anti-bot) | **Vérification croisée uniquement** |
+| **CoinShares** | Blog/PDF hebdo, **pas d'API/JSON** | Gratuit | hebdomadaire | Haute (institutionnel) mais lent | Vérification croisée lente / fallback |
+
+**Arguments POUR « DefiLlama principale + Farside cross-val »** :
+- DefiLlama est la **seule** API REST propre et documentée du lot → robuste,
+  pas de scraping, format JSON stable, maintenance faible.
+- Architecture saine en principe : une source fiable décide, une 2ᵉ source
+  indépendante valide (cohérent ADR-004 cross-validation + ADR-011).
+
+**Arguments CONTRE (qui l'emportent par défaut)** :
+- **Coût 300 $/mois** = violation directe de la règle « pas de budget API
+  payant tant que l'utilisatrice n'a pas validé » (CLAUDE.md §7). Pour un
+  seul overlay parmi ~10, le ROI doit être démontré AVANT de payer.
+- **Farside est un mauvais candidat même en cross-val** : il bloque
+  activement les bots (403). Le scrape est fragile et instable (rappel
+  Reddit IP-ban Bug 11). Il vaut comme 3ᵉ recoupement, pas comme pilier.
+- Aucune **API propre gratuite** n'existe pour ces flux → la « source
+  principale » gratuite sera de toute façon un dashboard à JSON interne
+  (SoSoValue / CoinGlass), pas une vraie API documentée.
+
+**VERDICT (révisé 2026-05-24)** :
+1. **Par défaut (sans budget)** : la source principale ne peut PAS être
+   DefiLlama. → **principale = SoSoValue *ou* CoinGlass free tier** (JSON
+   interne, à arbitrer au moment du codage après vérification réelle de
+   l'endpoint), **vérification croisée = Farside (scrape) + CoinShares
+   (hebdo)**. Farside reste cantonné au recoupement, jamais pilier.
+2. **Conditionnel** : si un jour un **budget 300 $/mois est explicitement
+   validé** par l'utilisatrice ET qu'un edge ETF-flows est mesuré (IC
+   Spearman ≥ 0.10 sur 6-12 mois) → **DefiLlama devient la source
+   principale propre**, les autres passent en cross-validation. C'est
+   l'architecture idéale, mais payante donc gelée par défaut.
+3. **Choix principale gratuite SoSoValue vs CoinGlass tranché au codage**
+   (même prudence que V1.4 : « auditer exactement ce que le free tier
+   expose au moment du codage »). Marqueur : endpoint JSON joignable +
+   stable sur 1 semaine d'observation avant de le déclarer principale.
+
+**Plan B obligatoire dans le code** (inchangé, renforcé) :
+- Alerte si 3 cycles consécutifs sans data sur la source principale →
+  bascule automatique sur la 1ʳᵉ source de cross-val disponible + log
+  error + push.
+- Jamais dépendre d'une source unique (le 403 Farside prouve qu'une
+  source peut disparaître du jour au lendemain).
 
 **Stack technique attendu** :
-- Ingester `farside_btc_etf_ingester.py` : scrape HTML quotidien avec
-  fallback intégré.
-- Overlay `_enrich_with_btc_etf_flows` dans `analyze_swing_btc`.
+- Ingester `btc_etf_flows_ingester.py` : source principale (SoSoValue /
+  CoinGlass) + fallbacks (Farside scrape, CoinShares hebdo) intégrés,
+  polling daily (les flows ne changent pas en intra-day).
+- Overlay `_enrich_with_btc_etf_flows` dans `analyze_swing_btc`
+  (trend-following : inflow net persistant → bull BTC ; outflow → bear).
+- Calibration mapping seuils sur 6-12 mois historique avant activation
+  comme overlay (si IC Spearman < 0.05 → garder en evidence dashboard
+  seulement, pas d'impact direction — même règle que V1.5 Whale Alert).
 
-**Effort estimé** : ~4-6 h backend (dont fallback + monitoring).
-
-**À coder APRÈS V1.2** (mesure 2 semaines V1.2 d'abord).
+**Effort estimé** : ~4-6 h backend (dont fallbacks + monitoring), +
+~1-2 h calibration historique avant enrôlement directionnel.
 
 ---
 
@@ -389,3 +446,16 @@ Vague 2 — décision conditionnelle :
   post-audit UX. Vague 1 cadrée (Silver en entité tradable, EUR/USD
   reporté Vague 3 ou réactivable si demande utilisatrice). Engagements
   méthodologiques rappelés. Date réévaluation J+44 fixée.
+- **2026-05-24** : V1.3 (flux ETF BTC) — section « Arbitrage de source »
+  ajoutée (tableau pour/contre 5 sources) suite à vérification empirique.
+  **Découverte** : l'API REST propre de DefiLlama (`/etfs/flows`) est
+  Pro/payante (300 $/mois), pas gratuite → exclue par défaut (règle
+  no-budget §7). Mea culpa d'une session précédente qui l'avait annoncée
+  gratuite. **Verdict** : par défaut, principale = dashboard à JSON interne
+  gratuit (SoSoValue ou CoinGlass free tier, arbitré au codage), Farside =
+  vérification croisée seulement (403 anti-bot vérifié, fragile),
+  CoinShares = fallback hebdo. DefiLlama-principale réservée au cas où un
+  budget 300 $/mois serait validé. **Aucun code écrit** (enrôlement gaté
+  post go/no-go 27/05 + après V1.2). Origine : analyse des MCP « smart
+  money » d'un lien tiers (Polygon/Unusual Whales/SEC EDGAR/Alpaca/Tradier,
+  tous rejetés pour TIK) qui a relancé la question des flux ETF BTC.
