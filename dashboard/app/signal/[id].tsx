@@ -3,8 +3,10 @@ import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { AntiFakeNewsBadge } from '@/components/dashboard/anti-fake-news-badge';
+import { BrokerComparatorCard } from '@/components/dashboard/broker-comparator-card';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { Collapsible } from '@/components/ui/collapsible';
 import { InfoTooltip } from '@/components/ui/info-tooltip';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -41,12 +43,82 @@ function timeUntil(targetIso: string): string {
   return `dans ${mins}min`;
 }
 
-function TrackRecordBadge({ row, entityId }: { row: TrackRecordRow; entityId: string }) {
-  switch (row.badge) {
+/** Formate un pourcentage signé : +0.52% / -0.38% (signe explicite). */
+function formatSignedPct(v: number): string {
+  return `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`;
+}
+
+/**
+ * Convertit le mouvement brut du marché (delta_pct) en résultat DU PARI :
+ * - long  → on profite de la hausse (delta tel quel)
+ * - short → on profite de la baisse (delta inversé)
+ * - neutral → pas de sens directionnel (le caller affiche le mouvement brut)
+ * Miroir de `_gain_for` côté backend (scripts/backtest.py). C'est ce qui
+ * fait que le signe du chiffre colle au badge vert/rouge.
+ */
+function gainPct(direction: string, deltaPct: number): number {
+  if (direction === 'short') return -deltaPct;
+  return deltaPct;
+}
+
+type TrState = 'correct' | 'sous_seuil' | 'raté' | 'en_attente' | 'données_manquantes';
+
+/**
+ * Verdict affiné d'une ligne de track record, en 3 états pour les signaux
+ * directionnels (au lieu du binaire correct/raté du backend) :
+ *  - correct    : mouvement DANS ton sens ≥ seuil
+ *  - sous_seuil : mouvement plus petit que le seuil (bruit) → ni gagné ni
+ *                 vraiment perdu. C'est le cas "+0.19% mais pastille rouge" :
+ *                 bon sens, trop faible. On l'isole pour ne pas le confondre
+ *                 avec une vraie perte.
+ *  - raté       : mouvement CONTRE ton sens ≥ seuil (vraie perte)
+ * en_attente / données_manquantes : repris tels quels du backend.
+ *
+ * Le backend (_success_for) ne renvoie que correct/raté ; on raffine ici
+ * côté affichage à partir de delta_pct + threshold_pct, sans changer la
+ * définition du hit rate.
+ */
+function effectiveState(row: TrackRecordRow, direction: string): TrState {
+  if (row.badge === 'en_attente' || row.badge === 'données_manquantes') {
+    return row.badge;
+  }
+  const dir = direction.toLowerCase();
+  // Signaux neutres : on garde le verdict binaire du backend.
+  if (row.delta_pct == null || (dir !== 'long' && dir !== 'short')) {
+    return row.badge === 'correct' ? 'correct' : 'raté';
+  }
+  const gain = gainPct(dir, row.delta_pct);
+  if (gain > row.threshold_pct) return 'correct';
+  if (gain < -row.threshold_pct) return 'raté';
+  return 'sous_seuil';
+}
+
+const STATE_COLOR: Record<string, string> = {
+  correct: '#27ae60',
+  sous_seuil: '#e67e22',
+  raté: '#c0392b',
+};
+
+function TrackRecordBadge({
+  state,
+  targetIso,
+  entityId,
+}: {
+  state: TrState;
+  targetIso: string;
+  entityId: string;
+}) {
+  switch (state) {
     case 'correct':
       return (
         <View style={[trStyles.badge, { backgroundColor: '#27ae60' }]}>
           <ThemedText style={trStyles.badgeText}>✓</ThemedText>
+        </View>
+      );
+    case 'sous_seuil':
+      return (
+        <View style={[trStyles.badge, { backgroundColor: '#e67e22' }]}>
+          <ThemedText style={trStyles.badgeText}>≈</ThemedText>
         </View>
       );
     case 'raté':
@@ -65,7 +137,7 @@ function TrackRecordBadge({ row, entityId }: { row: TrackRecordRow; entityId: st
       // données_manquantes : badge spécifique "marché fermé" si GOLD week-end.
       // Yahoo ne renvoie aucune bougie hors fenêtre forex (ven 22h UTC →
       // dim 22h UTC). Cause structurelle, pas un bug Tik.
-      if (entityId === 'GOLD' && isGoldMarketClosed(row.target_iso)) {
+      if (entityId === 'GOLD' && isGoldMarketClosed(targetIso)) {
         return (
           <View style={[trStyles.badge, { backgroundColor: '#34495e' }]}>
             <ThemedText style={trStyles.badgeText}>🌙</ThemedText>
@@ -134,31 +206,62 @@ function TrackRecordSection({
         Direction {record.direction.toUpperCase()} · horizon {record.horizon}
       </ThemedText>
       {record.rows.map((row) => {
+        const eff = effectiveState(row, record.direction);
         const marketClosed =
-          row.badge === 'données_manquantes' &&
+          eff === 'données_manquantes' &&
           record.entity_id === 'GOLD' &&
           isGoldMarketClosed(row.target_iso);
+        const dir = record.direction.toLowerCase();
+        const directional = dir === 'long' || dir === 'short';
+
+        // Le chiffre principal parle dans le sens du PARI, pas du marché :
+        // pour un SHORT, un prix qui baisse = gain positif. Sa couleur suit
+        // le verdict (vert/orange/rouge). Le mouvement brut du marché reste
+        // visible dessous. Corrige la confusion "+ affiché avec une pastille
+        // rouge" (cas "bon sens mais sous le seuil" → désormais orange ≈).
+        let primary: string;
+        let resultColor: string | undefined;
+        let marketSub: string | null = null;
+        if (eff === 'en_attente') {
+          primary = timeUntil(row.target_iso);
+        } else if (eff === 'données_manquantes') {
+          primary = marketClosed ? 'marché GOLD fermé' : 'données non disponibles';
+        } else if (row.delta_pct != null) {
+          if (directional) {
+            primary = formatSignedPct(gainPct(dir, row.delta_pct));
+            resultColor = STATE_COLOR[eff];
+            marketSub = `marché ${formatSignedPct(row.delta_pct)}`;
+          } else {
+            // neutral : c'est l'amplitude du mouvement qui compte → brut.
+            primary = formatSignedPct(row.delta_pct);
+          }
+        } else {
+          primary = '—';
+        }
+
         return (
           <View key={row.label} style={trStyles.row}>
             <ThemedText style={trStyles.label}>{row.label}</ThemedText>
-            <TrackRecordBadge row={row} entityId={record.entity_id} />
-            <ThemedText style={trStyles.value}>
-              {row.badge === 'en_attente'
-                ? timeUntil(row.target_iso)
-                : row.badge === 'données_manquantes'
-                ? marketClosed
-                  ? 'marché GOLD fermé'
-                  : 'données non disponibles'
-                : row.delta_pct != null
-                ? `${row.delta_pct >= 0 ? '+' : ''}${row.delta_pct.toFixed(2)}%`
-                : '—'}
-            </ThemedText>
-            {row.badge === 'correct' || row.badge === 'raté' ? (
+            <TrackRecordBadge state={eff} targetIso={row.target_iso} entityId={record.entity_id} />
+            <View style={trStyles.valueCol}>
+              <ThemedText style={[trStyles.value, resultColor ? { color: resultColor } : null]}>
+                {primary}
+              </ThemedText>
+              {marketSub ? <ThemedText style={trStyles.market}>{marketSub}</ThemedText> : null}
+            </View>
+            {eff === 'correct' || eff === 'sous_seuil' || eff === 'raté' ? (
               <ThemedText style={trStyles.threshold}>seuil {row.threshold_pct}%</ThemedText>
             ) : null}
           </View>
         );
       })}
+      {['long', 'short'].includes(record.direction.toLowerCase()) ? (
+        <ThemedText style={trStyles.legend}>
+          ✓ vert = bon sens, mouvement ≥ seuil · ≈ orange = bon sens mais trop faible (sous le
+          seuil) · ✗ rouge = mauvais sens. Le chiffre = résultat de ton pari ; « marché » =
+          mouvement brut du prix.
+        </ThemedText>
+      ) : null}
       {/* Footer min-max dynamique : adapté aux 3 horizons (flash/swing/macro)
           dont les seuils diffèrent. Affiche "Seuil : X %" si min === max,
           sinon "Seuils : X % à Y % selon l'horizon mesuré". */}
@@ -326,6 +429,13 @@ export default function SignalDetailScreen() {
         <TrackRecordSection signalId={id} client={client} borderColor={palette.icon} />
       ) : null}
 
+      {/* Comparateur de coûts brokers en points (édite src/brokers/config.ts) */}
+      <BrokerComparatorCard
+        entityId={signal.entity_id}
+        direction={signal.direction}
+        borderColor={palette.icon}
+      />
+
       {signal.hypothesis ? (
         <ThemedView style={cardStyle}>
           <ThemedText type="subtitle">Hypothèse</ThemedText>
@@ -404,24 +514,49 @@ export default function SignalDetailScreen() {
         )}
       </ThemedView>
 
-      <ThemedView style={cardStyle}>
-        <ThemedText type="subtitle">Triggers ({signal.triggers.length})</ThemedText>
-        {signal.triggers.length === 0 ? (
-          <ThemedText style={{ opacity: 0.6 }}>Aucun trigger.</ThemedText>
-        ) : (
-          signal.triggers.map((tg, i) => (
-            <ThemedView key={`${tg.type}-${i}`} style={[styles.subItem, { borderColor: palette.icon }]}>
-              <ThemedView style={[styles.evHeader, { backgroundColor: 'transparent' }]}>
-                <ThemedText type="defaultSemiBold">{tg.type}</ThemedText>
-                <ThemedText style={styles.subMeta}>
-                  poids {(tg.weight * 100).toFixed(0)}%
-                </ThemedText>
-              </ThemedView>
-              <ThemedText>{tg.value}</ThemedText>
+      {(() => {
+        // OSINT = triggers qui pèsent dans la décision (poids > 0). Technique
+        // (RSI/EMA/MACD) = poids 0 depuis le refactor OSINT (ADR-018) → replié
+        // dans une sous-section "Contexte technique" pour ne pas laisser croire
+        // qu'il décide quoi que ce soit.
+        const osintTriggers = signal.triggers.filter((t) => t.weight > 0);
+        const techTriggers = signal.triggers.filter((t) => t.weight <= 0);
+
+        const renderTrigger = (tg: (typeof signal.triggers)[number], i: number) => (
+          <ThemedView key={`${tg.type}-${i}`} style={[styles.subItem, { borderColor: palette.icon }]}>
+            <ThemedView style={[styles.evHeader, { backgroundColor: 'transparent' }]}>
+              <ThemedText type="defaultSemiBold">{tg.type}</ThemedText>
+              <ThemedText style={styles.subMeta}>poids {(tg.weight * 100).toFixed(0)}%</ThemedText>
             </ThemedView>
-          ))
-        )}
-      </ThemedView>
+            <ThemedText>{tg.value}</ThemedText>
+          </ThemedView>
+        );
+
+        return (
+          <ThemedView style={cardStyle}>
+            <ThemedText type="subtitle">Triggers OSINT ({osintTriggers.length})</ThemedText>
+            {osintTriggers.length === 0 ? (
+              <ThemedText style={{ opacity: 0.6 }}>Aucun trigger OSINT décisionnel.</ThemedText>
+            ) : (
+              osintTriggers.map(renderTrigger)
+            )}
+
+            {techTriggers.length > 0 ? (
+              <ThemedView style={{ backgroundColor: 'transparent', marginTop: 10 }}>
+                <Collapsible
+                  title={`Contexte technique (${techTriggers.length}) — n'influence pas la décision`}>
+                  <ThemedText style={{ opacity: 0.6, fontSize: 12, marginBottom: 6 }}>
+                    Indicateurs RSI / EMA / MACD fournis à titre informatif (poids 0). Depuis le
+                    refactor OSINT (ADR-018), Tik décide sur le sentiment cross-validé, pas sur la
+                    technique.
+                  </ThemedText>
+                  {techTriggers.map(renderTrigger)}
+                </Collapsible>
+              </ThemedView>
+            ) : null}
+          </ThemedView>
+        );
+      })()}
 
       {signal.advisory?.notes || signal.advisory?.macro_crash_warning || signal.advisory?.bias_on_existing_positions ? (
         <ThemedView style={cardStyle}>
@@ -491,9 +626,23 @@ const trStyles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
-  value: {
+  valueCol: {
     flex: 1,
+  },
+  value: {
     fontSize: 14,
+    fontWeight: '600',
+  },
+  market: {
+    fontSize: 11,
+    opacity: 0.5,
+    marginTop: 1,
+  },
+  legend: {
+    fontSize: 11,
+    opacity: 0.55,
+    marginTop: 6,
+    lineHeight: 15,
   },
   threshold: {
     fontSize: 11,
