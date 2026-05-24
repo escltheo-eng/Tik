@@ -99,6 +99,27 @@ trading manuel J+14 (décalé au 2026-05-24). Stabilité du runtime >
 nouveautés. Tik doit rester sur l'infra connue pendant que la
 trader manuelle se familiarise avec BTC + GOLD existants.
 
+> **MAJ 2026-05-24 — garde-fou calendaire LEVÉ + règle unique SHADOW vs ENRÔLEMENT.**
+> On est le 2026-05-24 → le blocage calendaire ci-dessus a expiré. Pour éviter
+> que des sessions se contredisent (cf. incohérence créée le 2026-05-23 : le
+> Paquet 35 avait posé un « pas avant le 27/05 » non réconcilié avec ce
+> garde-fou), **la règle unique est** :
+> - **SHADOW** (construire l'ingester + collecter en DB/Redis, **sans** le brancher
+>   sur le `combined_bias` des engines) : **autorisé dès maintenant**. Zéro impact
+>   sur les signaux, sur le go/no-go du 27/05, sur le trading. Construit l'historique
+>   nécessaire pour tester la source plus tard. Vérifié en code (2026-05-23) : les
+>   engines lisent des **clés Redis explicites** → une nouvelle clé n'est jamais
+>   ramassée tant qu'aucun `_enrich_with_<source>` n'est câblé.
+> - **ENRÔLEMENT** (brancher la source sur la **direction** des signaux) :
+>   **seulement après** (a) le go/no-go du 27/05 (Tik a-t-il un edge directionnel ?),
+>   (b) mesure de la valeur prédictive propre de la source sur ~2 semaines
+>   (IC Spearman / hit rate / **gain** via `paired_gain_significance`), et idéalement
+>   (c) observation sur un **régime de marché mixte** (pas qu'un baissier).
+>   Rappel (Paquet 33/35) : Tik n'a **aucun edge directionnel démontré** à ce jour
+>   → enrôler un input dans un moteur directionnel non validé est prématuré.
+> - **En NO-GO directionnel** : une source peut quand même servir comme **carte de
+>   contexte** dashboard (ex. Polymarket, Whale Alert), pas comme overlay du bias.
+
 Les 5 éléments suivants sont à coder **dans cet ordre** (séquentiel
 strict, une source à la fois, mesure 2 semaines entre chaque).
 

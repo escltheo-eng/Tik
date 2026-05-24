@@ -2665,6 +2665,19 @@ timing backlog-osint + ne résout pas la colinéarité au trend). Pour le tradin
 demain : Tik = outil de **contexte** (headlines/macro/sentiment), pas signal
 directionnel fiable — renforce Garde-fou 2-bis (sizing 1%, observe ne parie pas).
 
+> **Correctif 2026-05-24 (incohérence de date à éviter).** La phrase « NE PAS
+> ajouter de source avant le 27/05 » ci-dessus était **trop grossière** : elle a
+> introduit une date (27/05) non réconciliée avec le garde-fou de `backlog-osint.md`
+> (« post-J+14 = post 2026-05-24 »). Une nouvelle session du 24/05, lisant le
+> backlog, a (à raison) dit à l'utilisatrice qu'elle pouvait lancer Polymarket.
+> **Règle unique réconciliée** (cf. `backlog-osint.md` MAJ 2026-05-24 + memory
+> `tik-empirical-state-2026-05-23`) : **SHADOW** (construire l'ingester + collecter,
+> sans brancher sur le `combined_bias`) = OK dès le 24/05, zéro impact go/no-go ;
+> **ENRÔLEMENT** sur la direction = seulement après le go/no-go du 27/05 + mesure
+> 2 sem (IC / hit / gain via `paired_gain_significance`) + idéalement un régime
+> mixte ; en NO-GO directionnel, la source sert de **carte de contexte**, pas
+> d'overlay du bias. Ne plus poser de date qui contredit le backlog.
+
 ---
 
 ## 9. Bugs connus et résolus
