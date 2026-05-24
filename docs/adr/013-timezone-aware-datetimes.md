@@ -161,7 +161,7 @@ expiry = (now_utc() + EXPIRY_BY_HORIZON[horizon]).replace(tzinfo=None)
 - Décision 3 (helper `utils/time.py`) inchangée.
 - Décision 4 (pas de migration TIMESTAMPTZ) inchangée mais **maintenant explicitement justifiée par le coût de migration sur hypertable**, plus par la croyance asyncpg-permissif.
 - Commentaire `utils/time.py:18` corrigé en : « asyncpg lève `DataError` sur un datetime aware passé à une telle colonne (régression bug 9 du 2026-05-04...) ».
-- Test pytest Postgres bout-en-bout en CI **toujours à ajouter** comme dette technique tracée — éviterait qu'une régression DB-spécifique invisible en SQLite repasse en prod (cf. section 9 CLAUDE.md).
+- ✅ Test pytest Postgres bout-en-bout — **AJOUTÉ depuis le Paquet 31**, vérifié runtime 2026-05-24 : `core/tests/test_publisher_timezone_db.py` (5 tests, dont 4 contre Postgres réel via fixture `db_engine`) attrape une régression DB-spécifique invisible en SQLite (cf. section 9 CLAUDE.md Bug 9).
 
 **Validation runtime post-fix** : 3 cycles complets en 90 secondes le 2026-05-04 17:11 UTC (swing BTC 138 mots / swing GOLD 105 mots / flash BTC 103 mots), aucune erreur `scheduler.*.error` depuis. Bug 9 résolu côté code.
 

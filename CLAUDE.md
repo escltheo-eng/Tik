@@ -925,7 +925,7 @@ Vue track record signal multi-horizon dans le détail signal. Permet à l'utilis
 **Polish 3 — Dette technique Bug 9 (~20 min, code + doc)** :
 - **Commentaire `core/src/tik_core/utils/time.py:18`** corrigé : « asyncpg strippe silencieusement la tz d'un aware mais autant garder la cohérence » → « asyncpg lève `DataError` sur un datetime aware passé à une telle colonne (régression bug 9 du 2026-05-04 découverte après ADR-013 ; workaround chirurgical dans `publisher._publish_signal` qui strippe la tzinfo avant l'INSERT. Cf. section 9 CLAUDE.md pour le diagnostic complet) ».
 - **ADR-013 amendé** (`docs/adr/013-timezone-aware-datetimes.md`) : nouvelle section « Amendement post-livraison — Bug 9 régression DB asyncpg » qui documente (1) la prémisse erronée originale, (2) la réalité observée runtime, (3) le workaround chirurgical 2 lignes, (4) un tableau pour/contre/verdict des 3 options de fix envisagées (migration TIMESTAMPTZ rejetée, `now_utc_naive` partout rejeté, workaround retenu), (5) les conséquences sur les décisions de l'ADR original (3 et 4 inchangées dans leur conclusion, mais décision 4 maintenant explicitement justifiée par le coût de migration sur hypertable plutôt que par la croyance asyncpg-permissif), (6) la dette tracée du test pytest Postgres bout-en-bout en CI **toujours à ajouter**.
-- **Test pytest Postgres bout-en-bout** : **toujours à faire**, reporté à une session dédiée (~1-2h). Éviterait qu'une régression DB-spécifique invisible en SQLite repasse en prod (bug 9 a tourné 4 h sans détection avec 590 tests verts en CI).
+- ✅ **Test pytest Postgres bout-en-bout** — **FAIT depuis le Paquet 31**, vérifié runtime 2026-05-24 (5 tests verts contre `tik_test`, dont 4 contre Postgres réel via fixture `db_engine`, dans `core/tests/test_publisher_timezone_db.py`). Attrape une régression DB-spécifique invisible en SQLite (le strip de tzinfo dans `publisher._publish_signal`). *(Note d'origine, désormais obsolète : « toujours à faire, reporté à une session dédiée ~1-2h ».)*
 
 **Tests** : aucun test ajouté (audits + 1 commentaire Python + 1 ADR markdown). Suite pytest inchangée à 817 verts. Aucun risque de régression.
 
@@ -1761,7 +1761,7 @@ Audit santé runtime exécuté côté HP avant trading manuel J+14 (cf. Paquet 2
 **Validation runtime fix Bug 10** : restart `tik-core` immédiat post-diagnostic (`docker compose restart core`) → API répond `{"status":"ok","version":"0.1.0"}` après 10 sec warmup. Fix code permanent (Option A `break` après client gone) à appliquer via `docker compose up -d --build core` (image custom buildée, code copié au build, pas bind-mount). Cf. section 9 Bug 10 pour le diagnostic complet.
 
 **Dette technique tracée** :
-- Test pytest spécifique pour le bug Bug 10 (Redis pubsub mock + close brutal WS + assertion non-zombie) : **non ajouté cette session** (effort ~50-80 lignes setup vs 12 lignes fix). À ajouter dans une session dédiée (~1-2h). Infra existe (`test_ws_lifespan.py` Paquet 7 patterns).
+- ✅ Test pytest spécifique Bug 10 (WS zombie) — **FAIT depuis le Paquet 31**, vérifié runtime 2026-05-24 : 2 garde-fous « code source » (présence du `break` après `ws.client_gone` + du `continue` sur payload invalide) + 1 test d'intégration close brutal WS, dans `core/tests/test_ws_lifespan.py`. *(Note d'origine, désormais obsolète : « non ajouté cette session, à ajouter ~1-2h ». Limite connue : le test d'intégration skippe en CI sans Redis → seuls les garde-fous « code source » tournent en CI.)*
 - Issues #2 et #3 ✅ résolues (cf. amendement post-livraison 2026-05-18 ci-dessus) ; Issue #4 (WRONGTYPE Redis baseline) à arbitrer pré-J+14 ou différer post-J+14 (non-bloquant trading manuel, casse seulement la détection volume spike CryptoCompare du Paquet 21 P6).
 - Faille hygiène 3 Tailscale (tik-core sur 0.0.0.0) à traiter post-J+14.
 
@@ -2769,7 +2769,7 @@ ADR-013 reste valide dans son intention (datetimes aware partout en mémoire + s
 **Suites à donner (dette technique)** :
 - ✅ **Commentaire `utils/time.py:18` corrigé (2026-05-05, Paquet 14 polish)** : *"asyncpg strippe silencieusement la tz"* → *"asyncpg lève `DataError` sur un datetime aware passé à une telle colonne"* avec mention bug 9 et workaround `publisher.py`.
 - ✅ **ADR-013 amendé (2026-05-05, Paquet 14 polish)** : nouvelle section « Amendement post-livraison — Bug 9 régression DB asyncpg » qui documente la prémisse erronée + le tableau pour/contre/verdict des 3 options de fix (migration TIMESTAMPTZ rejetée, `now_utc_naive` partout rejeté, workaround chirurgical retenu).
-- **Test pytest Postgres bout-en-bout en CI** — **toujours à faire**. Éviterait qu'une régression DB-spécifique invisible en SQLite repasse en prod. Reportée à une session dédiée (~1-2h).
+- ✅ **Test pytest Postgres bout-en-bout** — **FAIT depuis le Paquet 31**, vérifié runtime 2026-05-24 (5 tests verts contre `tik_test`, `core/tests/test_publisher_timezone_db.py`). Attrape une régression DB-spécifique invisible en SQLite (strip de tzinfo dans `publisher._publish_signal`).
 
 **Ces 9 fixes sont déjà appliqués dans le code actuel** (et poussés sur GitHub).
 
@@ -2806,7 +2806,7 @@ Pourquoi pas Option C (whitelist `WebSocketDisconnect`, `ConnectionClosed`, `Run
 - Plus de spam `ws.send_failed` dans les logs depuis le déploiement du fix ✓
 
 **Suites à donner (dette technique)** :
-- **Test pytest spécifique Bug 10 toujours à faire** (~1-2h, séance dédiée) : démarrer app + Redis + connexion WS authentifiée (pattern `test_ws_lifespan.py` Paquet 7) + publier signal sur canal pubsub + close brutal WS côté client + re-publier signal + asserter que la coroutine s'est terminée (pas de WS zombie qui consomme l'event loop). Éviterait régression future. Reportée car bug fix chirurgical urgent vs setup test complexe.
+- ✅ **Test pytest spécifique Bug 10 — FAIT depuis le Paquet 31**, vérifié runtime 2026-05-24 : `core/tests/test_ws_lifespan.py` couvre app + connexion WS authentifiée + 2 garde-fous « code source » (présence du `break` après `ws.client_gone` + du `continue` sur payload invalide) + 1 test d'intégration (close brutal WS + publication Redis + assertion `/health` rapide). Limite connue : le test d'intégration skippe en CI sans Redis → seuls les garde-fous « code source » tournent en CI (suffisants comme garde-fou principal).
 - **Audit Issues #2, #3, #4 du Paquet 26 audit** : LLM hypothesis NOT active sur HP, CryptoCompare BTC swing à 7 %, baseline anomaly CC WRONGTYPE Redis. À arbitrer pré-J+14.
 - **Setup HP : tik-core sur 0.0.0.0:8200** (faille hygiène 3 Paquet 15) à traiter post-J+14 (ferme tik-core au LAN maison, garder accès localhost + Tailscale subnet).
 
