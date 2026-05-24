@@ -74,7 +74,9 @@ def _build_record(
     headline: dict[str, Any],
 ) -> HeadlineRecord | None:
     """Convertit un dict headline en `HeadlineRecord`. Retourne None si invalide."""
-    title = str(headline.get("title") or "").strip()
+    # Cap défensif : un titre pathologique (bug upstream / entrée hostile) ne
+    # doit pas gonfler la DB ni le hash (audit 2026-05-24 H2).
+    title = str(headline.get("title") or "").strip()[:1000]
     if not title:
         return None
     fetched_at = parse_iso_naive(headline.get("fetched_at")) or now_utc_naive()
@@ -84,9 +86,9 @@ def _build_record(
         source=source,
         title_hash=compute_title_hash(title),
         title=title,
-        url=headline.get("url"),
-        publisher=str(headline.get("publisher") or "unknown"),
-        sentiment=str(headline.get("sentiment") or "neutral"),
+        url=(str(headline["url"])[:2000] if headline.get("url") else None),
+        publisher=str(headline.get("publisher") or "unknown")[:128],
+        sentiment=str(headline.get("sentiment") or "neutral")[:16],
         credibility=credibility,
         published_at=published_at,
         fetched_at=fetched_at,

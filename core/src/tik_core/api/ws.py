@@ -24,20 +24,39 @@ from tik_core.config import get_settings
 # import time (which is `None`), so every WS would close with 1011 and
 # the client would see a 403 forever. Accessing `database._session_maker`
 # at runtime ensures we read the live value.
+from tik_core.auth.provider import AuthContext
 from tik_core.storage import database
 from tik_core.storage.models import ApiKey
+from tik_core.utils.time import now_utc_naive
 
 log = structlog.get_logger()
 router = APIRouter()
 
 
+# Scope requis pour streamer les signaux via WS, cohérent avec les routes REST
+# (read:signals). Sans ça, une clé scopée write:feedback uniquement pourrait
+# lire tous les signaux par le WS (audit 2026-05-24 H1).
+WS_REQUIRED_SCOPE = "read:signals"
+
+
 async def _authenticate_ws(api_key: str, session: AsyncSession) -> ApiKey | None:
-    """Valide la clé API (équivalent WS de ApiKeyProvider)."""
+    """Valide la clé API pour le WS — parité avec ApiKeyProvider REST.
+
+    Vérifie : existence + active + non expirée + scope read:signals.
+    Avant l'audit 2026-05-24 (H1), le WS ne vérifiait NI l'expiration NI le
+    scope — une clé expirée ou sans read:signals pouvait streamer tous les
+    signaux.
+    """
     key_hash_value = hash_key(api_key)
     stmt = select(ApiKey).where(ApiKey.key_hash == key_hash_value)
     result = await session.execute(stmt)
     key = result.scalar_one_or_none()
     if key is None or not key.active:
+        return None
+    if key.expires_at is not None and key.expires_at < now_utc_naive():
+        return None
+    ctx = AuthContext(client_id=key.client_id, scopes=list(key.scopes or []))
+    if not ctx.has_scope(WS_REQUIRED_SCOPE):
         return None
     return key
 

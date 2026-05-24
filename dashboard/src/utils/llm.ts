@@ -35,11 +35,11 @@ export function isLlmCandidateValid(candidate: string | null | undefined): boole
  *   - disabled / fallback : aucun des deux
  */
 export function isSignalLlmEnriched(signal: Signal): boolean {
-  if (isLlmCandidateValid(signal.advisory.llm_hypothesis_candidate)) {
+  if (isLlmCandidateValid(signal.advisory?.llm_hypothesis_candidate)) {
     return true;
   }
   if (
-    signal.advisory.template_hypothesis &&
+    signal.advisory?.template_hypothesis &&
     countWords(signal.hypothesis) >= MIN_LLM_HYPOTHESIS_WORDS
   ) {
     return true;

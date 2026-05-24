@@ -25,6 +25,11 @@ services:
     image: redis:7-alpine
     container_name: tik-redis
     restart: unless-stopped
+    # maxmemory + éviction LRU (audit 2026-05-24 M2) : filet contre une fuite de
+    # clé qui ferait OOM l'hôte (Redis = colonne vertébrale de Tik). allkeys-lru
+    # n'évince que sous pression et ne bloque jamais les writes. 1gb >> usage
+    # actuel (~2 Mo). Appliqué aussi en live via CONFIG SET le 2026-05-24.
+    command: ["redis-server", "--maxmemory", "1gb", "--maxmemory-policy", "allkeys-lru"]
     # Bind sur 127.0.0.1 pour ne PAS exposer Redis au LAN/tailnet —
     # Tik core/ingesters/scheduler accèdent via le réseau Docker interne (redis:6379).
     # Cf. CLAUDE.md Paquet 14 polish + audit Tailscale 2026-05-05.

@@ -8,6 +8,7 @@ Les 4 derniers caractères sont conservés séparément pour affichage UI.
 
 import hashlib
 import secrets
+from datetime import timedelta
 
 from fastapi import HTTPException, Request, status
 from sqlalchemy import select
@@ -77,8 +78,12 @@ class ApiKeyProvider(AuthProvider):
                 detail="Expired API key",
             )
 
-        # Mise à jour last_used_at (best-effort, pas bloquant si échec)
-        api_key.last_used_at = now_utc_naive()
+        # Mise à jour last_used_at throttlée (≤ 1×/h) : évite un write DB à
+        # CHAQUE requête authentifiée (get_session commit derrière) tout en
+        # gardant le signal d'audit "dernière utilisation" (audit 2026-05-24 M5).
+        _now = now_utc_naive()
+        if api_key.last_used_at is None or (_now - api_key.last_used_at) > timedelta(hours=1):
+            api_key.last_used_at = _now
 
         return AuthContext(
             client_id=api_key.client_id,

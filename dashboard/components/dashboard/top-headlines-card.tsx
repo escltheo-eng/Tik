@@ -146,7 +146,11 @@ export function TopHeadlinesCard({
             <Pressable
               key={`${h.source}-${idx}-${h.title.slice(0, 32)}`}
               onPress={() => {
-                if (h.url) void Linking.openURL(h.url);
+                // N'ouvre que http(s) absolu : un titre OSINT externe pourrait
+                // porter une URL javascript:/tel:/deep-link déclenchant une
+                // action native sans confirmation (audit 2026-05-24 H3).
+                const u = h.url?.trim();
+                if (u && /^https?:\/\//i.test(u)) void Linking.openURL(u).catch(() => {});
               }}
               style={({ pressed }) => [
                 styles.headlineRow,

@@ -4,6 +4,7 @@ Usage : `python -m tik_core.scripts.run_ingesters`
 """
 
 import asyncio
+import signal
 
 import redis.asyncio as aioredis
 import structlog
@@ -165,10 +166,19 @@ async def main() -> None:
 
     log.info("ingesters.started", count=len(ingesters))
 
+    # Arrêt gracieux : capte SIGTERM (Docker stop) + SIGINT. Avant l'audit
+    # 2026-05-24 (B1), SIGTERM tuait le process sans stop() des ingesters ni
+    # fermeture de redis/engine.
+    stop_event = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for _sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            loop.add_signal_handler(_sig, stop_event.set)
+        except NotImplementedError:  # plateforme non-Unix
+            pass
     try:
-        while True:
-            await asyncio.sleep(3600)
-    except (KeyboardInterrupt, SystemExit):
+        await stop_event.wait()
+    finally:
         log.info("ingesters.stopping")
         for ing in ingesters:
             await ing.stop()

@@ -24,6 +24,7 @@ Exclus : « Up or Down » (fenêtres 5 min intraday, trop bruité pour le swing)
 
 import asyncio
 import json
+import math
 import re
 from datetime import UTC, datetime
 
@@ -40,6 +41,12 @@ REDIS_KEY = "tik.sentiment.polymarket.btc"  # snapshot courant
 REDIS_HISTORY_KEY = "tik.polymarket.btc.history"  # série temporelle (liste cappée)
 REDIS_TTL_S = 6 * 3600
 HISTORY_MAX = 5000  # ~7 mois à 1 snapshot/heure
+# Caps défensifs (audit 2026-05-24 H4) : on ne fait pas confiance au
+# limit_per_type de l'API pour borner le payload. Un payload anormalement gros
+# × HISTORY_MAX saturerait Redis (noeviction) → tout Tik tombe.
+MAX_EVENTS = 30
+MAX_MARKETS_PER_EVENT = 60
+MAX_PAYLOAD_BYTES = 200_000
 
 _USD_RE = re.compile(r"\$\s?([\d,]+(?:\.\d+)?)\s*([kKmM]?)")
 
@@ -119,6 +126,10 @@ def _build_market_entry(market: dict) -> dict | None:
         vol = float(vol) if vol is not None else None
     except (TypeError, ValueError):
         vol = None
+    # Rejette inf/nan : json.dumps lève dessus, ce qui tuerait la task _run
+    # (audit 2026-05-24 H4).
+    if vol is not None and not math.isfinite(vol):
+        vol = None
     return {
         "question": market.get("question"),
         "threshold_usd": _parse_threshold_usd(market.get("question")),
@@ -133,11 +144,12 @@ def _build_snapshot(events: list[dict], fetched_at_iso: str) -> dict:
     """Snapshot brut : par event pertinent, l'échelle de seuils + volumes."""
     out_events: list[dict] = []
     for ev in events:
+        if len(out_events) >= MAX_EVENTS:
+            break
         if not _is_relevant_btc_event(ev.get("title")):
             continue
-        entries = [
-            e for m in (ev.get("markets") or []) if (e := _build_market_entry(m)) is not None
-        ]
+        markets = (ev.get("markets") or [])[:MAX_MARKETS_PER_EVENT]
+        entries = [e for m in markets if (e := _build_market_entry(m)) is not None]
         if not entries:
             continue
         total_vol = sum(e["volume"] for e in entries if e["volume"] is not None)
@@ -209,11 +221,20 @@ class PolymarketIngester(BaseIngester):
             while self._running:
                 snap = await self._fetch_and_build(client)
                 if snap is not None and snap["n_events"] > 0:
-                    payload = json.dumps(snap)
                     try:
-                        await self.redis.setex(REDIS_KEY, REDIS_TTL_S, payload)
-                        await self.redis.lpush(REDIS_HISTORY_KEY, payload)
-                        await self.redis.ltrim(REDIS_HISTORY_KEY, 0, HISTORY_MAX - 1)
+                        # json.dumps DANS le try : il lève sur inf/nan résiduel,
+                        # ce qui tuerait la task _run sinon (audit 2026-05-24 H4).
+                        payload = json.dumps(snap)
+                        if len(payload) > MAX_PAYLOAD_BYTES:
+                            log.warning(
+                                "polymarket.payload_too_large",
+                                size=len(payload),
+                                n_events=snap["n_events"],
+                            )
+                        else:
+                            await self.redis.setex(REDIS_KEY, REDIS_TTL_S, payload)
+                            await self.redis.lpush(REDIS_HISTORY_KEY, payload)
+                            await self.redis.ltrim(REDIS_HISTORY_KEY, 0, HISTORY_MAX - 1)
                     except Exception as exc:  # noqa: BLE001
                         log.warning("polymarket.redis.error", error=str(exc))
                     log.info(

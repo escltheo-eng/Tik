@@ -172,8 +172,16 @@ export class TikStream {
     const payload = msg.payload;
     if (typeof payload !== 'object' || payload === null) return;
 
-    // On fait confiance au core pour la forme du Signal — pas de validation
-    // Pydantic-like en TS pour cette session. À renforcer si besoin avec zod.
+    // Validation minimale de la forme avant dispatch (audit 2026-05-24 M1/M3) :
+    // le payload WS vient du réseau, on ne le caste plus aveuglément. On vérifie
+    // les champs portants et on normalise `advisory` à {} si absent/non-objet,
+    // pour qu'aucun consommateur ne crashe sur `signal.advisory.x`.
+    const p = payload as Record<string, unknown>;
+    if (typeof p.id !== 'string' || typeof p.entity_id !== 'string') return;
+    if (typeof p.direction !== 'string' || typeof p.veracity !== 'number') return;
+    if (p.advisory == null || typeof p.advisory !== 'object') {
+      p.advisory = {};
+    }
     const signal = payload as Signal;
     this.dispatch(signal);
   }

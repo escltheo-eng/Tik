@@ -344,7 +344,7 @@ export default function SignalDetailScreen() {
         Si aucun des deux n'est présent (mode disabled ou Paquet 6 pas
         encore livré sur ce signal historique), la carte ne s'affiche pas.
       */}
-      {isLlmCandidateValid(signal.advisory.llm_hypothesis_candidate) ? (
+      {isLlmCandidateValid(signal.advisory?.llm_hypothesis_candidate) ? (
         <ThemedView style={[cardStyle, styles.llmCard]}>
           <ThemedView style={[styles.llmHeader, { backgroundColor: 'transparent' }]}>
             <ThemedText type="subtitle">Hypothèse contextuelle</ThemedText>
@@ -352,9 +352,9 @@ export default function SignalDetailScreen() {
               <ThemedText style={styles.llmBadgeLabel}>LLM · validation</ThemedText>
             </ThemedView>
           </ThemedView>
-          <ThemedText>{signal.advisory.llm_hypothesis_candidate}</ThemedText>
+          <ThemedText>{signal.advisory?.llm_hypothesis_candidate}</ThemedText>
         </ThemedView>
-      ) : signal.advisory.template_hypothesis ? (
+      ) : signal.advisory?.template_hypothesis ? (
         <ThemedView style={[cardStyle, styles.llmCard]}>
           <ThemedView style={[styles.llmHeader, { backgroundColor: 'transparent' }]}>
             <ThemedText type="subtitle">Hypothèse template</ThemedText>
@@ -362,7 +362,7 @@ export default function SignalDetailScreen() {
               <ThemedText style={styles.llmBadgeLabel}>référence</ThemedText>
             </ThemedView>
           </ThemedView>
-          <ThemedText>{signal.advisory.template_hypothesis}</ThemedText>
+          <ThemedText>{signal.advisory?.template_hypothesis}</ThemedText>
         </ThemedView>
       ) : null}
 
@@ -423,22 +423,22 @@ export default function SignalDetailScreen() {
         )}
       </ThemedView>
 
-      {signal.advisory.notes || signal.advisory.macro_crash_warning || signal.advisory.bias_on_existing_positions ? (
+      {signal.advisory?.notes || signal.advisory?.macro_crash_warning || signal.advisory?.bias_on_existing_positions ? (
         <ThemedView style={cardStyle}>
           <ThemedText type="subtitle">Advisory</ThemedText>
-          {signal.advisory.macro_crash_warning ? (
+          {signal.advisory?.macro_crash_warning ? (
             <ThemedView style={[styles.cbWarn, { backgroundColor: 'rgba(192, 57, 43, 0.12)' }]}>
               <ThemedText style={{ color: '#c0392b', fontWeight: '600' }}>
                 Macro crash warning actif
               </ThemedText>
             </ThemedView>
           ) : null}
-          {signal.advisory.bias_on_existing_positions ? (
+          {signal.advisory?.bias_on_existing_positions ? (
             <ThemedText>
-              Biais sur positions ouvertes : {signal.advisory.bias_on_existing_positions}
+              Biais sur positions ouvertes : {signal.advisory?.bias_on_existing_positions}
             </ThemedText>
           ) : null}
-          {signal.advisory.notes ? <ThemedText>{signal.advisory.notes}</ThemedText> : null}
+          {signal.advisory?.notes ? <ThemedText>{signal.advisory?.notes}</ThemedText> : null}
         </ThemedView>
       ) : null}
 

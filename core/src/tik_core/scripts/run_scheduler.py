@@ -8,6 +8,7 @@ dans le même container via docker-compose (scaling vertical suffisant).
 """
 
 import asyncio
+import signal
 
 import redis.asyncio as aioredis
 import structlog
@@ -198,10 +199,19 @@ async def main() -> None:
     # les cas de restart Docker fréquents.
     await _run_recalibrate_sources(session_maker, redis)
 
+    # Arrêt gracieux : capte SIGTERM (Docker stop) + SIGINT (Ctrl-C). Avant
+    # l'audit 2026-05-24 (B1), seul KeyboardInterrupt/SystemExit était capté —
+    # SIGTERM tuait le process sans fermer scheduler/redis/engine proprement.
+    stop_event = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for _sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            loop.add_signal_handler(_sig, stop_event.set)
+        except NotImplementedError:  # plateforme non-Unix
+            pass
     try:
-        while True:
-            await asyncio.sleep(3600)
-    except (KeyboardInterrupt, SystemExit):
+        await stop_event.wait()
+    finally:
         log.info("scheduler.stopping")
         scheduler.shutdown()
         await hypothesis_generator.aclose()

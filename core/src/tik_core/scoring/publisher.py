@@ -5,7 +5,7 @@ Utilisé par les engines (swing, flash, macro) pour émettre un signal.
 
 import json
 import uuid
-from datetime import timedelta
+from datetime import UTC, timedelta
 
 import structlog
 from redis.asyncio import Redis
@@ -50,12 +50,17 @@ async def _publish_signal(
     # DataError sur un datetime aware au lieu de stripper silencieusement (le
     # commentaire d'utils/time.py qui prétend le contraire est obsolète). Le
     # serializer Pydantic iso_utc continue de produire `Z` à la sortie API.
+    # Convertit en UTC AVANT de stripper la tzinfo : .replace(tzinfo=None) ne
+    # convertit pas, il fait tomber la tz. Un futur caller passant un aware
+    # non-UTC stockerait l'heure locale étiquetée UTC (régression bug 8). Tous
+    # les callers actuels passent now_utc() (déjà UTC) ; on rend le strip robuste
+    # pour tout futur caller (audit 2026-05-24 B4).
     timestamp_naive = (
-        decision.timestamp.replace(tzinfo=None)
+        decision.timestamp.astimezone(UTC).replace(tzinfo=None)
         if decision.timestamp.tzinfo is not None
         else decision.timestamp
     )
-    expiry = (now_utc() + EXPIRY_BY_HORIZON[horizon]).replace(tzinfo=None)
+    expiry = (now_utc() + EXPIRY_BY_HORIZON[horizon]).astimezone(UTC).replace(tzinfo=None)
     final_veracity = veracity if veracity is not None else decision.veracity
 
     decision_advisory = getattr(decision, "advisory", None)

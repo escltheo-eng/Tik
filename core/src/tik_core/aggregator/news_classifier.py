@@ -205,6 +205,12 @@ BEARISH_KEYWORDS: set[str] = {
 # Tokeniseur simple : extrait les "mots" (lettres + apostrophes/tirets internes).
 WORD_RE = re.compile(r"[A-Za-z][A-Za-z'-]*")
 
+# Cap défensif sur la longueur d'un titre avant classification (audit
+# 2026-05-24 H2). Un titre externe pathologique (10 Mo, bug upstream ou
+# entrée hostile) gonflerait le prompt Ollama (timeout) ou ferait spiker la
+# regex keywords. 500 chars couvrent largement un titre de news réel.
+MAX_TITLE_CHARS = 500
+
 
 # === Interface commune ===
 
@@ -242,7 +248,7 @@ class KeywordClassifier(NewsClassifier):
     def _classify_sync(title: str | None) -> tuple[int, int]:
         if not title:
             return 0, 0
-        words = {w.lower() for w in WORD_RE.findall(title)}
+        words = {w.lower() for w in WORD_RE.findall(title[:MAX_TITLE_CHARS])}
         return len(words & BULLISH_KEYWORDS), len(words & BEARISH_KEYWORDS)
 
 
@@ -305,6 +311,7 @@ class OllamaClassifier(NewsClassifier):
     async def classify(self, title: str | None) -> tuple[int, int]:
         if not title:
             return 0, 0
+        title = title[:MAX_TITLE_CHARS]
 
         # 1. Cache lookup (Lacune C — stabilité sentiment).
         # Si on a déjà classifié ce titre dans les 7 derniers jours, on
