@@ -19,6 +19,7 @@ from tik_core.aggregator.gdelt_ingester import GdeltIngester
 from tik_core.aggregator.google_news_ingester import GoogleNewsIngester
 from tik_core.aggregator.macro_static_ingester import MacroStaticIngester
 from tik_core.aggregator.news_classifier import build_news_classifier
+from tik_core.aggregator.polymarket_ingester import PolymarketIngester
 from tik_core.aggregator.reddit_ingester import RedditIngester
 from tik_core.aggregator.yahoo_ingester import YahooPoller
 from tik_core.config import get_settings
@@ -151,6 +152,12 @@ async def main() -> None:
             session_maker=session_maker,
             interval_s=24 * 3600,
         ),
+        # Polymarket — marchés prédictifs BTC, MODE SHADOW (backlog-osint 2026-05-24).
+        # Collecte les probas implicites dans Redis SANS brancher sur le
+        # combined_bias (aucun _enrich_with_polymarket). But : historique pour
+        # mesurer la valeur prédictive avant tout enrôlement. Retrait = retirer
+        # cette ligne.
+        PolymarketIngester(redis, interval_s=3600),
     ]
 
     for ing in ingesters:
