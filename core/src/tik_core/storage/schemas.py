@@ -348,3 +348,20 @@ class HealthOut(BaseModel):
     status: str
     version: str
     env: str
+
+
+class SignalFreshnessOut(BaseModel):
+    """Fraîcheur de la production de signaux (M4, audit 2026-05-24).
+
+    `stale=True` signale une panne silencieuse probable (aucun signal récent).
+    Le dashboard affiche une bannière rouge dans ce cas.
+    """
+
+    last_signal_at: datetime | None
+    age_seconds: float | None
+    stale: bool
+    threshold_seconds: int
+
+    @field_serializer("last_signal_at", when_used="json")
+    def _ser_last(self, value: datetime | None) -> str | None:
+        return iso_utc(value) if value is not None else None

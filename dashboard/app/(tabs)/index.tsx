@@ -7,6 +7,7 @@ import { HitRateCard } from '@/components/dashboard/hit-rate-card';
 import { KpiCard } from '@/components/dashboard/kpi-card';
 import { MacroEventsCard } from '@/components/dashboard/macro-events-card';
 import { MiniSparkline } from '@/components/dashboard/mini-sparkline';
+import { SignalFreshnessBanner } from '@/components/dashboard/signal-freshness-banner';
 import { StatsLLMCard } from '@/components/dashboard/stats-llm-card';
 import { TopHeadlinesCard } from '@/components/dashboard/top-headlines-card';
 import { VeracityGauge } from '@/components/dashboard/veracity-gauge';
@@ -162,6 +163,7 @@ export default function HomeScreen() {
   // Marché : vue trading manuel quotidien (cf. backlog #5 Levier B+D).
   const renderMarketTab = () => (
     <>
+      <SignalFreshnessBanner />
       <ThemedView style={[styles.disciplineCard, { borderColor: '#e67e22' }]}>
         <ThemedText style={styles.disciplineTitle}>
           ✓ Avant chaque trade — discipline J+24

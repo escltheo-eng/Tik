@@ -234,3 +234,11 @@ export interface SignalTrackRecord {
   computed_at: string;
   cache_hit: boolean;
 }
+
+// M4 (audit 2026-05-24) — fraîcheur de la production de signaux.
+export interface SignalFreshness {
+  last_signal_at: string | null;
+  age_seconds: number | null;
+  stale: boolean;
+  threshold_seconds: number;
+}

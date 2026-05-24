@@ -19,6 +19,7 @@ import {
   HitRateByVeracity,
   MacroEvent,
   Signal,
+  SignalFreshness,
   SignalTrackRecord,
   SourceVeracity,
   VeracityStatus,
@@ -28,6 +29,16 @@ import {
 
 export async function getHealth(client: HttpClient): Promise<Health> {
   return client.get<Health>('/health', undefined, { authenticated: false });
+}
+
+// M4 (audit 2026-05-24) — fraîcheur des signaux (détection panne silencieuse).
+export async function getSignalFreshness(
+  client: HttpClient,
+  thresholdSeconds?: number,
+): Promise<SignalFreshness> {
+  return client.get<SignalFreshness>('/metrics/signal_freshness', {
+    threshold_seconds: thresholdSeconds,
+  });
 }
 
 // ----- Entities -----

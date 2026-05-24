@@ -26,7 +26,7 @@ import httpx
 import redis.asyncio as aioredis
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tik_core.auth import AuthContext, require_scope
@@ -40,6 +40,10 @@ from tik_core.metrics.hit_rate import (
     make_cache_key,
     make_cache_key_by_veracity,
 )
+from tik_core.metrics.freshness import (
+    DEFAULT_STALENESS_THRESHOLD_SECONDS,
+    compute_signal_freshness,
+)
 from tik_core.metrics.signal_track_record import compute_track_record
 from tik_core.scripts.backtest import fetch_btc_history, fetch_gold_history
 from tik_core.storage.database import get_session
@@ -48,6 +52,7 @@ from tik_core.storage.schemas import (
     HitRateByVeracityBucket,
     HitRateByVeracityOut,
     HitRateOut,
+    SignalFreshnessOut,
     SignalTrackRecordOut,
     TrackRecordRow,
 )
@@ -579,3 +584,38 @@ async def get_signal_track_record(
         return out
     finally:
         await redis.close()
+
+
+@router.get("/signal_freshness", response_model=SignalFreshnessOut)
+async def get_signal_freshness(
+    threshold_seconds: int = Query(
+        DEFAULT_STALENESS_THRESHOLD_SECONDS,
+        ge=60,
+        le=86400,
+        description=(
+            "Âge (en secondes) au-delà duquel l'absence de signal est jugée "
+            "anormale. Défaut 3600 (60 min) — un Tik sain publie un swing BTC "
+            "toutes les 15 min."
+        ),
+    ),
+    session: AsyncSession = Depends(get_session),
+    _ctx: AuthContext = Depends(require_scope("read:signals")),
+) -> SignalFreshnessOut:
+    """Fraîcheur de la production de signaux — détection de panne silencieuse (M4).
+
+    Lit le timestamp du signal le plus récent (max sur la colonne indexée
+    `signals.timestamp`) et le compare à maintenant. `stale=True` = aucun signal
+    depuis plus de `threshold_seconds` → le dashboard affiche une bannière rouge.
+
+    Lecture seule, pas de cache (une requête max() indexée est triviale).
+    Garde-fou 1 inchangé, ADR-003 inchangé (pas d'action d'exécution).
+    """
+    result = await session.execute(select(func.max(Signal.timestamp)))
+    last_ts = result.scalar_one_or_none()
+    fr = compute_signal_freshness(last_ts, now_utc_naive(), threshold_seconds)
+    return SignalFreshnessOut(
+        last_signal_at=fr.last_signal_at,
+        age_seconds=fr.age_seconds,
+        stale=fr.stale,
+        threshold_seconds=fr.threshold_seconds,
+    )
