@@ -3,7 +3,6 @@ import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { AntiFakeNewsBadge } from '@/components/dashboard/anti-fake-news-badge';
-import { BrokerComparatorCard } from '@/components/dashboard/broker-comparator-card';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Collapsible } from '@/components/ui/collapsible';
@@ -168,7 +167,6 @@ function TrackRecordSection({
     let cancelled = false;
     (async () => {
       try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const data = await getSignalTrackRecord(client as any, signalId);
         if (!cancelled) setRecord(data);
       } catch {
@@ -429,13 +427,6 @@ export default function SignalDetailScreen() {
         <TrackRecordSection signalId={id} client={client} borderColor={palette.icon} />
       ) : null}
 
-      {/* Comparateur de coûts brokers en points (édite src/brokers/config.ts) */}
-      <BrokerComparatorCard
-        entityId={signal.entity_id}
-        direction={signal.direction}
-        borderColor={palette.icon}
-      />
-
       {signal.hypothesis ? (
         <ThemedView style={cardStyle}>
           <ThemedText type="subtitle">Hypothèse</ThemedText>
@@ -515,11 +506,12 @@ export default function SignalDetailScreen() {
       </ThemedView>
 
       {(() => {
-        // OSINT = triggers qui pèsent dans la décision (poids > 0). Technique
-        // (RSI/EMA/MACD) = poids 0 depuis le refactor OSINT (ADR-018) → replié
-        // dans une sous-section "Contexte technique" pour ne pas laisser croire
-        // qu'il décide quoi que ce soit.
-        const osintTriggers = signal.triggers.filter((t) => t.weight > 0);
+        // Décisionnels = triggers qui pèsent dans la décision (poids > 0) :
+        // sentiment OSINT en swing, microstructure (orderbook/agression) en
+        // flash. Technique (RSI/EMA/MACD/momentum) = poids 0 depuis ADR-018 →
+        // replié dans "Contexte technique" pour ne pas laisser croire qu'il
+        // décide quoi que ce soit.
+        const decisionTriggers = signal.triggers.filter((t) => t.weight > 0);
         const techTriggers = signal.triggers.filter((t) => t.weight <= 0);
 
         const renderTrigger = (tg: (typeof signal.triggers)[number], i: number) => (
@@ -534,11 +526,13 @@ export default function SignalDetailScreen() {
 
         return (
           <ThemedView style={cardStyle}>
-            <ThemedText type="subtitle">Triggers OSINT ({osintTriggers.length})</ThemedText>
-            {osintTriggers.length === 0 ? (
-              <ThemedText style={{ opacity: 0.6 }}>Aucun trigger OSINT décisionnel.</ThemedText>
+            <ThemedText type="subtitle">
+              Triggers décisionnels ({decisionTriggers.length})
+            </ThemedText>
+            {decisionTriggers.length === 0 ? (
+              <ThemedText style={{ opacity: 0.6 }}>Aucun trigger décisionnel (poids &gt; 0).</ThemedText>
             ) : (
-              osintTriggers.map(renderTrigger)
+              decisionTriggers.map(renderTrigger)
             )}
 
             {techTriggers.length > 0 ? (
@@ -546,9 +540,9 @@ export default function SignalDetailScreen() {
                 <Collapsible
                   title={`Contexte technique (${techTriggers.length}) — n'influence pas la décision`}>
                   <ThemedText style={{ opacity: 0.6, fontSize: 12, marginBottom: 6 }}>
-                    Indicateurs RSI / EMA / MACD fournis à titre informatif (poids 0). Depuis le
-                    refactor OSINT (ADR-018), Tik décide sur le sentiment cross-validé, pas sur la
-                    technique.
+                    Indicateurs techniques (RSI / EMA / MACD / momentum) fournis à titre informatif
+                    (poids 0). Depuis le refactor ADR-018, Tik décide sur ses overlays cross-validés
+                    (sentiment OSINT en swing, microstructure en flash), pas sur la technique.
                   </ThemedText>
                   {techTriggers.map(renderTrigger)}
                 </Collapsible>
