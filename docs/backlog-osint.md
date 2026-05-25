@@ -396,6 +396,45 @@ journal de trading.
 - **Miners flows** → pertinence faible documentée par la communauté
   crypto post-2022 (hash rate ne corrèle plus prix BTC depuis l'ère
   ETF)
+- **13F institutionnels (SEC EDGAR) comme overlay BTC/GOLD** (analyse
+  utilisatrice 2026-05-25) → (a) **horizon incompatible** : publiés 45 à
+  135 j après le trimestre, granularité trimestrielle, alors que Tik
+  trade flash (1h) et swing (5j) ; (b) **scope incompatible** : actions
+  US long-only, pas BTC/Gold — lien seulement indirect via les ETF
+  (IBIT/GLD) ; (c) **dominé par les flux ETF quotidiens déjà planifiés**
+  (V1.2 WGC/SPDR GLD + V1.3 ETF BTC) qui donnent la même info "argent
+  institutionnel" en journalier, pas trimestriel-en-retard ; (d) **alpha
+  digéré** : le 13F est l'événement le plus lu de Wall Street, l'edge
+  d'une stratégie de copie est mince-à-nul après le délai de publication
+  (consensus académique, non mesuré pour Tik). *Réactivation possible
+  uniquement comme overlay MACRO de contexte (poids faible), et seulement
+  après que l'engine macro existe ET un edge soit mesuré — on en est
+  loin.*
+- **Leaderboards de "bons traders" / copy-trading** (eToro popular
+  investors, Myfxbook, Collective2, finfluencers) comme source (analyse
+  utilisatrice 2026-05-25) → (a) **biais du survivant** : "bon score"
+  passé ≠ pouvoir prédictif, les classements sont dominés par des chanceux
+  à forte variance ; (b) **gameable/adversarial** : classements manipulés,
+  vendeurs de signaux incités à pumper ; (c) **pas de vérité-terrain
+  vérifiable** → impossible de scorer une crédibilité honnête (viole le
+  principe OSINT preuve+source+crédibilité de Tik, section 6 paranoïa
+  contrôlée) ; (d) **réflexivité/circularité** : ces traders suivent
+  eux-mêmes news/sentiment → ce serait une copie bruitée et en retard de
+  signaux que Tik ingère déjà (pas indépendant) ; (e) **légal/ToS** :
+  scraping souvent interdit, parfois payant. La seule variante défendable
+  (smart money on-chain crypto) est déjà couverte/refusée : Arkham =
+  doublon Whale Alert (V1.5), Nansen "smart money" = payant.
+
+> **Point transversal (paranoïa contrôlée).** Ces deux idées partagent
+> l'angle mort récurrent du projet : croire que *plus de sources = plus
+> d'edge*. C'est faux (ADR-018 : empiler des sources tend à converger vers
+> neutre/bruit). Le vrai problème de Tik n'est pas un manque de sources
+> mais l'**absence d'edge directionnel démontré** (colinéaire à la
+> tendance, perd vs Always SHORT — cf. go/no-go 27/05). Aucune des deux
+> sources ne corrige ça ; elles l'enterrent sous du volume. Si l'envie
+> "suivre l'argent intelligent" persiste, la **seule** piste saine est les
+> **flux ETF quotidiens** (V1.2/V1.3), en shadow, après le go/no-go, une
+> source à la fois.
 
 Une instance Claude future qui voudrait réactiver l'un de ces refus
 doit d'abord fournir un argumentaire écrit chiffré ET valider l'ajout
@@ -459,3 +498,13 @@ Vague 2 — décision conditionnelle :
   post go/no-go 27/05 + après V1.2). Origine : analyse des MCP « smart
   money » d'un lien tiers (Polygon/Unusual Whales/SEC EDGAR/Alpaca/Tradier,
   tous rejetés pour TIK) qui a relancé la question des flux ETF BTC.
+- **2026-05-25** : ajout au REFUSÉ INDÉFINIMENT de deux sources évaluées à
+  la demande de l'utilisatrice (analyse pour/contre/verdict) — **13F
+  institutionnels** (horizon/scope incompatibles + dominés par les flux
+  ETF quotidiens V1.2/V1.3 + alpha digéré) et **leaderboards de "bons
+  traders"** (biais du survivant + gameable + pas de vérité-terrain + ToS
+  + réflexivité). Verdict : non pour Tik. Point transversal rappelé :
+  aucune ne corrige l'absence d'edge directionnel ; "plus de sources ≠
+  plus d'edge" (ADR-018). Si "smart money" souhaité → passer par les flux
+  ETF (V1.2/V1.3), en shadow, après le go/no-go du 27/05, une à la fois.
+  Aucun code écrit.
