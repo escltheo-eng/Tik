@@ -15,6 +15,7 @@ import { Signal, SignalTrackRecord, TrackRecordRow } from '@/src/api/types';
 import { useAuth } from '@/src/auth/AuthContext';
 import { isLlmCandidateValid } from '@/src/utils/llm';
 import { isGoldMarketClosed } from '@/src/utils/markets';
+import { pctToPoints, pointSizeFor, priceDiffToPoints } from '@/src/utils/points';
 import { formatLocal, parseUtcIso } from '@/src/utils/time';
 import { useWatchlist } from '@/src/watchlist/WatchlistContext';
 
@@ -45,6 +46,11 @@ function timeUntil(targetIso: string): string {
 /** Formate un pourcentage signé : +0.52% / -0.38% (signe explicite). */
 function formatSignedPct(v: number): string {
   return `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`;
+}
+
+/** Formate un nombre de points signé : +180 pts / -95 pts. */
+function formatSignedPts(v: number): string {
+  return `${v >= 0 ? '+' : ''}${v.toFixed(0)} pts`;
 }
 
 /**
@@ -194,6 +200,13 @@ function TrackRecordSection({
 
   if (!record) return null;
 
+  // Conversion en points (montée/baisse) : taille du point selon l'instrument
+  // + prix de référence (p0 = prix à l'émission, identique sur toutes les
+  // lignes). Si l'un manque (instrument inconnu ou historique insuffisant),
+  // on n'affiche pas le bloc points.
+  const pointSize = pointSizeFor(record.entity_id);
+  const refPrice = record.rows.find((r) => r.p0 != null)?.p0 ?? null;
+
   return (
     <ThemedView style={cardStyle}>
       <View style={trStyles.headerRow}>
@@ -228,7 +241,11 @@ function TrackRecordSection({
           if (directional) {
             primary = formatSignedPct(gainPct(dir, row.delta_pct));
             resultColor = STATE_COLOR[eff];
-            marketSub = `marché ${formatSignedPct(row.delta_pct)}`;
+            const movePts =
+              pointSize != null && row.p0 != null && row.p1 != null
+                ? ` · ${formatSignedPts(priceDiffToPoints(row.p1, row.p0, pointSize))}`
+                : '';
+            marketSub = `marché ${formatSignedPct(row.delta_pct)}${movePts}`;
           } else {
             // neutral : c'est l'amplitude du mouvement qui compte → brut.
             primary = formatSignedPct(row.delta_pct);
@@ -274,6 +291,31 @@ function TrackRecordSection({
             : `Seuils : ±${min}% à ±${max}% selon l'horizon mesuré`;
         return <ThemedText style={trStyles.note}>{text}</ThemedText>;
       })()}
+
+      {/* Mouvement requis en points (montée/baisse) = seuil × prix de réf,
+          converti via la taille du point de l'instrument. Symétrique (le seuil
+          l'est). C'est l'amplitude à franchir pour valider, pas un objectif. */}
+      {pointSize != null && refPrice != null ? (
+        <ThemedView style={trStyles.pointsBlock}>
+          <ThemedText style={trStyles.subtitle}>Mouvement requis en points</ThemedText>
+          {record.rows.map((row) => {
+            const pts = pctToPoints(row.threshold_pct, refPrice, pointSize);
+            return (
+              <View key={`pts-${row.label}`} style={trStyles.row}>
+                <ThemedText style={trStyles.label}>{row.label}</ThemedText>
+                <ThemedText style={trStyles.value}>
+                  ▲ +{pts.toFixed(0)} pts{'   '}▼ -{pts.toFixed(0)} pts
+                </ThemedText>
+              </View>
+            );
+          })}
+          <ThemedText style={trStyles.legend}>
+            = seuil × prix de réf ({Math.round(refPrice)} · 1 pt = {pointSize} $). Symétrique :
+            c&apos;est le mouvement à franchir pour VALIDER le signal, pas un objectif de gain.
+            Taille du point ajustable dans src/utils/points.ts.
+          </ThemedText>
+        </ThemedView>
+      ) : null}
     </ThemedView>
   );
 }
@@ -637,6 +679,10 @@ const trStyles = StyleSheet.create({
     opacity: 0.55,
     marginTop: 6,
     lineHeight: 15,
+  },
+  pointsBlock: {
+    backgroundColor: 'transparent',
+    marginTop: 12,
   },
   threshold: {
     fontSize: 11,
