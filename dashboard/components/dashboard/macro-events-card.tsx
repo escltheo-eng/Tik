@@ -22,6 +22,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { MacroEvent } from '@/src/api/types';
+import { goldClosureNotice } from '@/src/utils/markets';
 import { formatLocal, timeUntil } from '@/src/utils/time';
 
 export interface MacroEventsCardProps {
@@ -91,12 +92,27 @@ export function MacroEventsCard({
   const featured = visible[0];
   const followUps = visible.slice(1);
 
+  // Notice fermeture marché de l'or (week-end / jour férié US). Le marché GOLD
+  // (GC=F) ne cote pas ces jours-là → les signaux GOLD émis pendant la
+  // fermeture ne sont pas évaluables (track record "marché fermé"). On le
+  // signale ici pour que la trader l'anticipe. Calculé côté client à partir
+  // de la liste partagée US_MARKET_HOLIDAYS (cf. src/utils/markets.ts).
+  const goldNotice = goldClosureNotice(new Date());
+
   return (
     <ThemedView style={[styles.card, { borderColor: palette.icon }]}>
       <ThemedView style={[styles.header, { backgroundColor: 'transparent' }]}>
         <ThemedText type="defaultSemiBold">Calendrier macro</ThemedText>
         <ThemedText style={styles.periodLabel}>7 j à venir</ThemedText>
       </ThemedView>
+
+      {goldNotice ? (
+        <ThemedView style={styles.goldClosureNotice}>
+          <ThemedText style={styles.goldClosureText}>
+            🌙 {goldNotice.label}
+          </ThemedText>
+        </ThemedView>
+      ) : null}
 
       {error ? (
         <ThemedText style={styles.errorText}>Indisponible : {error}</ThemedText>
@@ -213,6 +229,17 @@ const styles = StyleSheet.create({
   periodLabel: {
     fontSize: 12,
     opacity: 0.6,
+  },
+  goldClosureNotice: {
+    backgroundColor: 'rgba(52, 73, 94, 0.12)',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  goldClosureText: {
+    fontSize: 12,
+    fontWeight: '600',
+    opacity: 0.85,
   },
   loading: {
     alignItems: 'center',
