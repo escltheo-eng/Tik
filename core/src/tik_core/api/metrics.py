@@ -20,7 +20,7 @@ pipeline scoring / cross-validation.
 from __future__ import annotations
 
 import json
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import httpx
 import redis.asyncio as aioredis
@@ -31,6 +31,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from tik_core.auth import AuthContext, require_scope
 from tik_core.config import get_settings
+from tik_core.metrics.freshness import (
+    DEFAULT_STALENESS_THRESHOLD_SECONDS,
+    compute_signal_freshness,
+)
 from tik_core.metrics.hit_rate import (
     HORIZON_DEFAULT_THRESHOLD_PCT,
     HORIZON_MEASURE_HOURS,
@@ -39,10 +43,6 @@ from tik_core.metrics.hit_rate import (
     filter_signals_for_horizon,
     make_cache_key,
     make_cache_key_by_veracity,
-)
-from tik_core.metrics.freshness import (
-    DEFAULT_STALENESS_THRESHOLD_SECONDS,
-    compute_signal_freshness,
 )
 from tik_core.metrics.signal_track_record import compute_track_record
 from tik_core.scripts.backtest import fetch_btc_history, fetch_gold_history
@@ -67,10 +67,45 @@ router = APIRouter(prefix="/metrics")
 # économie de fetch Binance/Yahoo répétés sous charge dashboard.
 HIT_RATE_CACHE_TTL_SECONDS = 15 * 60
 
-# TTL du cache Redis pour un track record individuel. 6h : les horizons passés
-# ne changent plus, les horizons futurs seront recalculés naturellement quand
-# le cache expire.
+# TTL du cache Redis pour un track record ENTIÈREMENT résolu : 6h. Les prix
+# passés ne changent plus → le résultat est immuable, on peut le garder
+# longtemps.
 TRACK_RECORD_CACHE_TTL_SECONDS = 6 * 3600
+
+# TTL plancher quand le résultat contient encore des lignes "en_attente"
+# (horizons futurs). Évite de marteler Binance/Yahoo si plusieurs lignes
+# arrivent à échéance presque en même temps.
+TRACK_RECORD_MIN_TTL_SECONDS = 60
+
+
+def _track_record_cache_ttl(rows_dicts: list[dict], now: datetime) -> int:
+    """TTL adaptatif du cache track record.
+
+    Bug historique (Paquet 38) : un TTL fixe de 6h figeait un track record
+    calculé alors que le signal était encore frais — toutes ses lignes étaient
+    "en_attente" (sabliers) et le restaient 6h, bien au-delà de la fenêtre
+    contractuelle (1h pour un flash). Un favori flash ouvert/sondé jeune
+    restait donc "tout sablier" 6h, et son auto-résolution ne se débloquait
+    jamais (elle tapait le même cache figé).
+
+    Correctif : si une ligne est encore "en_attente", on expire le cache peu
+    après que la PROCHAINE ligne devienne disponible (sa cible + petit buffer),
+    borné entre TRACK_RECORD_MIN_TTL_SECONDS et TRACK_RECORD_CACHE_TTL_SECONDS.
+    Quand tout est résolu → TTL long (6h), le résultat ne bougera plus.
+    """
+    pending = [r for r in rows_dicts if r["badge"] == "en_attente"]
+    if not pending:
+        return TRACK_RECORD_CACHE_TTL_SECONDS
+
+    soonest = min(datetime.strptime(r["target_iso"], "%Y-%m-%dT%H:%M:%SZ") for r in pending)
+    # +30s : laisse le temps à la bougie de l'horizon d'être fetchable.
+    seconds_until = (soonest - now).total_seconds() + 30
+    return int(
+        max(
+            TRACK_RECORD_MIN_TTL_SECONDS,
+            min(seconds_until, TRACK_RECORD_CACHE_TTL_SECONDS),
+        )
+    )
 
 
 # Paramètres de fetch klines selon l'horizon contractuel du signal (P5 plan
@@ -441,7 +476,7 @@ async def get_signal_track_record(
 
     La granularité des horizons mesurés s'adapte à l'horizon contractuel
     du signal (P5 plan fiabilité 2026-05-06 — refactor Paquet 12) :
-      flash → 15min / 30min / 1h / 4h
+      flash → 15min / 30min / 45min / 1h
       swing → 1h / 6h / 24h / 5j
       macro → 1j / 7j / 30j / 90j
 
@@ -452,8 +487,9 @@ async def get_signal_track_record(
     - en_attente       : horizon dans le futur
     - données_manquantes : historique de prix insuffisant
 
-    Cache Redis TTL 6h : stable pour les horizons passés, rafraîchi
-    naturellement quand les horizons futurs deviennent disponibles.
+    Cache Redis à TTL adaptatif (cf. _track_record_cache_ttl) : court tant que
+    des horizons sont "en_attente" (recalculé peu après chaque échéance), long
+    (6h) une fois tout résolu — les prix passés ne bougent plus.
 
     Erreurs :
     - 400 : signal flash sur GOLD (cf. ADR-005 — Yahoo 15 min de délai
@@ -467,12 +503,12 @@ async def get_signal_track_record(
     """
     settings = get_settings()
     redis = aioredis.from_url(settings.redis_url, decode_responses=True)
-    # Version v2 dans la clé : invalide les caches Paquet 12 au déploiement
-    # (le format des rows change avec les nouveaux horizons flash/macro).
-    # Bumpé v2 → v3 le 2026-05-19 (Paquet 28 fix) suite à l'extension de la
-    # fenêtre klines flash de 24h à 7j. Invalide les caches antérieurs qui
-    # retournaient badge "données_manquantes" sur les signaux flash > 24h.
-    cache_key = f"tik.track_record.v3.{signal_id}"
+    # Version dans la clé : invalide les caches au déploiement.
+    #   v2 : format des rows changé (horizons flash/macro adaptés, Paquet 17).
+    #   v3 : fenêtre klines flash étendue 24h → 7j (Paquet 28).
+    #   v4 : TTL adaptatif (Paquet 38) — invalide les résultats "tout sablier"
+    #        figés 6h par l'ancien TTL fixe.
+    cache_key = f"tik.track_record.v4.{signal_id}"
 
     try:
         try:
@@ -576,7 +612,7 @@ async def get_signal_track_record(
             await redis.set(
                 cache_key,
                 out.model_dump_json(),
-                ex=TRACK_RECORD_CACHE_TTL_SECONDS,
+                ex=_track_record_cache_ttl(rows_dicts, now),
             )
         except Exception as exc:  # noqa: BLE001
             log.warning("metrics.track_record.cache_write_error", error=str(exc))

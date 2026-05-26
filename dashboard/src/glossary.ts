@@ -125,12 +125,13 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
   triggers: {
     term: 'Triggers',
     short:
-      "Événements techniques (RSI, MACD, EMA) qui ont déclenché le signal. Depuis ADR-018, informatifs (weight 0.0).",
+      "Déclencheurs du signal, séparés par poids. Décisionnels (poids > 0) : sentiment OSINT en swing, microstructure en flash. Le contexte technique (RSI/MACD/EMA) ne déclenche PLUS rien (poids 0.0) depuis ADR-018.",
     long:
-      "Indicateurs techniques attachés au signal pour audit : RSI 14, EMA 9/21, MACD 12/26/9, momentum, ATR. " +
-      "Depuis le refactor OSINT pur ADR-018, leur weight est 0.0 — ils ne participent plus à la décision directionnelle (réservée au combined_bias OSINT). " +
-      "Conservés en evidence/triggers pour la lectrice qui veut voir l'état technique du marché en complément.",
-    ref: 'ADR-018',
+      "Depuis le refactor OSINT pur ADR-018, la direction vient UNIQUEMENT du combined_bias OSINT — pas de l'analyse technique. " +
+      "La carte Triggers est donc séparée en deux : « Triggers décisionnels » (poids > 0, ce qui décide vraiment : les overlays sentiment OSINT en swing, la microstructure orderbook/agression en flash) " +
+      "et « Contexte technique » (RSI 14, EMA 9/21, MACD 12/26/9, momentum, ATR — poids 0.0, purement informatif). " +
+      "Les indicateurs techniques sont conservés pour que tu voies l'état du marché en complément, mais ils ne participent PAS à la décision directionnelle.",
+    ref: 'ADR-018 + Paquet 36',
   },
   counterScenarios: {
     term: 'Counter-scenarios',
