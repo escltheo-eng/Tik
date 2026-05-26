@@ -52,3 +52,7 @@ web-build/
 
 # Claude Code (worktrees temporaires des sessions)
 .claude/
+
+# Archive shadow ForexFactory (donnée qui grossit à chaque cron — cf. V1.6
+# backlog-osint ; on versionne le script, pas le log de snapshots)
+core/data/forexfactory_archive/
