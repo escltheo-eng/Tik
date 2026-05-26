@@ -227,7 +227,7 @@ institutionnelle haussière).
 |---|---|---|---|---|---|
 | **DefiLlama** `/etfs/flows` | API REST propre **documentée** | 🔴 Pro **300 $/mois** | quotidien | Haute (API officielle) | Principale **SEULEMENT si** budget payant validé |
 | **SoSoValue** | Dashboard web (JSON interne **non documenté**, à confirmer) | Gratuit | quotidien temps réel | Moyenne (endpoint non officiel, peut casser) | Candidat principal **gratuit** (à vérifier au codage) |
-| **CoinGlass** ETF | API free tier (scope exact **à revérifier**, cf. V1.4) | Gratuit (free) / 29 $+ pro | quotidien | Moyenne-haute | Candidat principal **gratuit** alternatif |
+| **CoinGlass** ETF | API **clé obligatoire**, **AUCUN free tier** (vérifié 2026-05-27) | 🔴 min **29 $/mois** (HOBBYIST) | quotidien | Moyenne-haute | ❌ Payant → **exclu par défaut** (§7 no-budget) |
 | **Farside** | Scrape HTML, **bloque les bots (403 vérifié 2026-05-24)** | Gratuit | quotidien (soir US) | 🔴 Faible (fragile + anti-bot) | **Vérification croisée uniquement** |
 | **CoinShares** | Blog/PDF hebdo, **pas d'API/JSON** | Gratuit | hebdomadaire | Haute (institutionnel) mais lent | Vérification croisée lente / fallback |
 
@@ -250,10 +250,11 @@ institutionnelle haussière).
 
 **VERDICT (révisé 2026-05-24)** :
 1. **Par défaut (sans budget)** : la source principale ne peut PAS être
-   DefiLlama. → **principale = SoSoValue *ou* CoinGlass free tier** (JSON
-   interne, à arbitrer au moment du codage après vérification réelle de
-   l'endpoint), **vérification croisée = Farside (scrape) + CoinShares
-   (hebdo)**. Farside reste cantonné au recoupement, jamais pilier.
+   DefiLlama. ~~ni CoinGlass free tier~~ (**MAJ 2026-05-27 : CoinGlass n'a
+   AUCUN free tier, cf. V1.4 corrigé** → exclu sans budget). → **principale =
+   SoSoValue** (JSON interne, à vérifier au moment du codage), **vérification
+   croisée = Farside (scrape) + CoinShares (hebdo)**. Farside reste cantonné
+   au recoupement, jamais pilier.
 2. **Conditionnel** : si un jour un **budget 300 $/mois est explicitement
    validé** par l'utilisatrice ET qu'un edge ETF-flows est mesuré (IC
    Spearman ≥ 0.10 sur 6-12 mois) → **DefiLlama devient la source
@@ -286,29 +287,37 @@ institutionnelle haussière).
 
 ---
 
-### V1.4 — CoinGlass free tier (OI, funding, liquidations BTC)
+### V1.4 — CoinGlass (OI, funding, liquidations BTC) — 🔴 GELÉ (payant, pas de free tier)
 
-**Statut** : couche structurée OSINT, overlay swing BTC.
+**Statut** : ~~couche structurée OSINT, overlay swing BTC~~ → **GELÉ par défaut**
+(violation §7 no-budget). À réactiver uniquement si budget payant validé.
 
-**Justification structurelle** : détection baleines indirecte via
+**Justification structurelle (inchangée)** : détection baleines indirecte via
 positionnement dérivés (OI agrégé, funding rates extrêmes, liquidations
 massives).
 
-**Vérification rigoureuse OBLIGATOIRE avant code** : CoinGlass free tier
-expose-t-il vraiment les métriques utiles ? Aux dernières infos publiques
-(à revérifier au moment du codage) :
-- Free tier : OI agrégé multi-exchanges, funding agrégé. **Bon.**
-- Pro tier 29 $/mois : OI par exchange, funding par paire, données
-  granulaires. **Risque coût caché si on veut ces données fines.**
+**⚠️ Vérification empirique 2026-05-27 (curl VPS + page pricing) — la prémisse
+« free tier » du backlog était FAUSSE (mea culpa)** :
+- `curl` sans clé sur tous les endpoints (`open-api-v4`, `open-api-v3`,
+  `open-api.coinglass.com/public/v2/open_interest` et `/funding`) →
+  **`"API key missing"`** systématique. Aucun accès anonyme.
+- Page pricing (coinglass.com/pricing) : **AUCUN plan gratuit**. 5 tiers
+  payants : HOBBYIST **29 $/mois** (80+ endpoints, 30 req/min) · STARTUP
+  79 $ · STANDARD 299 $ · PROFESSIONAL 699 $ · ENTERPRISE custom. Le
+  découpage par tier des métriques (OI/funding/liq) **n'est pas détaillé**
+  sur la page (sans objet puisque payant de toute façon).
+- **Donc l'ancienne ligne « Free tier : OI agrégé… Bon. » est invalidée.**
 
-**Plan d'action** :
-1. Auditer exactement ce que le free tier expose au moment du codage
-2. Si insuffisant → reporter à Vague 3 (avec ROI freemium démontré)
-3. Si suffisant → coder l'ingester + overlay
+**Plan d'action (révisé)** :
+1. **Par défaut : NE PAS coder** (pas de budget validé, cf. CLAUDE.md §7).
+2. Si la trader valide un jour un budget (≥ 29 $/mois) ET qu'un edge dérivés
+   est plausible → **auditer le contenu exact du tier HOBBYIST** (les 80+
+   endpoints incluent-ils OI/funding/liquidations BTC agrégés ?) avant de payer.
+3. Sinon → reporter indéfiniment.
 
-**Effort estimé** : ~3-5 h (si free tier suffisant).
+**Effort estimé** : n/a tant que gelé.
 
-**À coder APRÈS V1.3** (mesure 2 semaines V1.3 d'abord).
+**Non bloquant pour V1.5** : la séquence Vague 1 saute V1.4 par défaut.
 
 ---
 
@@ -337,8 +346,50 @@ on-chain > seuil USD).
 
 **Effort estimé** : ~3-5 h dev + 1-2 h calibration.
 
-**À coder APRÈS V1.4** (mesure 2 semaines V1.4 d'abord, sauf décision
-de skip V1.4 si free tier CoinGlass insuffisant).
+**À coder APRÈS V1.4** (mesure 2 semaines V1.4 d'abord — **mais V1.4 est gelé
+par défaut**, cf. ci-dessus, donc en pratique V1.5 vient après V1.3).
+
+---
+
+### V1.6 (candidat) — Surprise macro gratuite (FRED proxy + ForexFactory)
+
+**Statut** : candidat **identifié et vérifié 2026-05-27**, **collecte shadow
+démarrée** (ForexFactory), **non enrôlé**. PAS un overlay directionnel
+(NO-GO go/no-go 27/05) — angle = **enrichir le calendrier macro existant**
+(ADR-017/020) avec la magnitude de surprise, comme couche de **contexte**.
+
+**Vérification empirique 2026-05-27 (curl VPS, read-only)** :
+
+| Source | Gratuit sans clé payante ? | Données | Verdict |
+|---|---|---|---|
+| **FRED** (`PAYEMS`, `CPIAUCSL`) | ✅ clé FRED gratuite (déjà en `.env`) | actuel + précédent → **momentum** (actuel − précédent), PAS surprise vs consensus ; coïncident/retardé (publié le jour de/après la release) | proxy faible, non leading |
+| **ForexFactory** (`nfs.faireconomy.media/ff_calendar_thisweek.json`) | ✅ aucune clé, HTTP 200, JSON propre ~13 KB | `forecast` (**vrai consensus**) + `previous` + `actual` + `impact` → **vraie surprise = actual − forecast**. 96 events/sem, 49 avec forecast, inclut US (Core PCE F=0,3 %) | **meilleure source surprise gratuite** |
+| Trading Economics `guest:guest` | 🔴 compte invité **supprimé** (HTTP 410) | n/a | mort |
+
+**Pourquoi archiver ForexFactory DÈS MAINTENANT (shadow)** : le feed est
+**rolling-week** (semaine glissante seulement) → impossible de récupérer
+l'historique a posteriori. Pour pouvoir backtester la surprise plus tard
+(IC Spearman surprise ↔ delta prix futur), il faut **accumuler les snapshots
+dans le temps**. D'où le script standalone livré 2026-05-27 :
+`core/src/tik_core/scripts/archive_forexfactory.py` (collecte vers
+`core/data/forexfactory_archive/snapshots.jsonl`, **NON wiré dans
+`run_ingesters.py`**, **zéro impact `combined_bias`**). À cron-er côté VPS
+(ex. toutes les 2 h) pour capturer `forecast` à l'annonce PUIS `actual` après
+la release.
+
+**Limites connues** :
+1. Feed **non officiel** (mirror faireconomy de ForexFactory) → peut casser ;
+   prévoir un fallback (FRED proxy) si 403/timeout persistants.
+2. Fuseau horaire du champ `date` à confirmer avant tout calcul d'alignement
+   prix (piège type Bug 8).
+3. **Sparse** : quelques events HIGH/semaine → overlay rare par nature.
+4. FRED proxy ≠ surprise (momentum + retardé) → utile en fallback/croisement,
+   pas en source primaire de surprise.
+
+**Pré-enrôlement** : comme toute source, **après** mesure ≥ 2 sem de la valeur
+prédictive propre (IC / hit / gain via `paired_gain_significance`) + régime
+mixte + ADR. Et **seulement** comme couche de contexte tant que le go/no-go
+directionnel reste NO-GO.
 
 ---
 
@@ -508,3 +559,19 @@ Vague 2 — décision conditionnelle :
   plus d'edge" (ADR-018). Si "smart money" souhaité → passer par les flux
   ETF (V1.2/V1.3), en shadow, après le go/no-go du 27/05, une à la fois.
   Aucun code écrit.
+- **2026-05-27** : go/no-go officiel J+10 exécuté (`go_no_go_report.sh`,
+  N=396 swing BTC mûrs 5j) → **NO-GO directionnel** : Tik perd vs « toujours
+  short » sur le gain à tous horizons (Δ −0,50 % à 5j, z=−8,2, p<0,001),
+  régime baissier unique (BTC −4,25 %). Tik = outil de **contexte**, pas
+  oracle directionnel. **Spikes de vérification sources gratuites (curl VPS)** :
+  (a) **correction V1.4** — CoinGlass n'a **AUCUN free tier** (min 29 $/mois,
+  `"API key missing"` sans clé) : la prémisse « free tier » du backlog était
+  fausse (mea culpa), V1.4 **gelé** par défaut ; (b) **Whale Alert** confirmé
+  **payant** (pas de free API : Custom Alerts 29,95 $/mois min $100k, REST
+  699 $/mois — cohérent V1.5 paywall) ; (c) **ForexFactory faireconomy**
+  validé comme **meilleure source surprise gratuite** (forecast=consensus +
+  actual, sans clé) → nouvelle entrée **V1.6 (candidat)** + **archiveur shadow
+  livré** (`archive_forexfactory.py`, non wiré) ; (d) FRED surprise-proxy
+  validé mais faible (momentum + retardé). **Aucun enrôlement** (gaté
+  post-mesure 2 sem + NO-GO actuel). Polymarket (shadow depuis 24/05) reste
+  à mesurer EN PREMIER (une source à la fois).
