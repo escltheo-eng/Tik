@@ -55,6 +55,21 @@ class TestParseThresholdUsd:
         assert _parse_threshold_usd("") is None
         assert _parse_threshold_usd(None) is None
 
+    def test_month_after_amount_not_million(self):
+        # Bug 2026-05-27 : « May » directement après le nombre (sans « on »/« in »)
+        # captait le « M » comme « million » → 8,4e10. Doit rester 84000.
+        assert _parse_threshold_usd("Will Bitcoin reach $84,000 May 25-31?") == 84000.0
+        assert _parse_threshold_usd("Will Bitcoin dip to $72,000 May 25-31?") == 72000.0
+
+    def test_month_word_no_dollar_suffix(self):
+        # Un mot commençant par k/m après un nombre ne doit jamais multiplier.
+        assert _parse_threshold_usd("Bitcoin above $90,000 March 7?") == 90000.0
+
+    def test_suffix_still_works_adjacent(self):
+        # Le vrai suffixe colle au nombre : ne doit pas régresser.
+        assert _parse_threshold_usd("Bitcoin hits $150k?") == 150000.0
+        assert _parse_threshold_usd("Bitcoin to $1.5m?") == 1_500_000.0
+
 
 class TestFirstClobTokenId:
     def test_json_string(self):

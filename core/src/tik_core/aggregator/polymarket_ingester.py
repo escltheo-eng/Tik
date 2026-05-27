@@ -48,7 +48,12 @@ MAX_EVENTS = 30
 MAX_MARKETS_PER_EVENT = 60
 MAX_PAYLOAD_BYTES = 200_000
 
-_USD_RE = re.compile(r"\$\s?([\d,]+(?:\.\d+)?)\s*([kKmM]?)")
+# Le suffixe multiplicateur (k/m) doit coller au nombre ET ne pas être suivi
+# d'une lettre. Sinon « ...$84,000 May 25-31? » capte le « M » de « May » comme
+# « million » → seuil aberrant 8,4e10 (bug shadow Polymarket trouvé 2026-05-27,
+# familles « reach/dip $X <plage de dates> » sans « on »/« in »). Pas de \s*
+# entre le nombre et le suffixe + lookahead négatif sur une lettre.
+_USD_RE = re.compile(r"\$\s?([\d,]+(?:\.\d+)?)([kKmM]?)(?![A-Za-z])")
 
 
 def _parse_outcome_prices(raw: object) -> tuple[float, float] | None:
