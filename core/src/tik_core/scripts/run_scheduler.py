@@ -215,7 +215,7 @@ async def main() -> None:
         log.info("scheduler.stopping")
         scheduler.shutdown()
         await hypothesis_generator.aclose()
-        await redis.close()
+        await redis.aclose()
         await engine.dispose()
 
 

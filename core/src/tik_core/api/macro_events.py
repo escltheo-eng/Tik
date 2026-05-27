@@ -153,7 +153,7 @@ async def list_upcoming(
 
         return [MacroEventOut(**item) for item in serialized]
     finally:
-        await redis.close()
+        await redis.aclose()
 
 
 @router.get("/history", response_model=list[MacroEventOut])

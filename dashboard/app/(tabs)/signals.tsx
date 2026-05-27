@@ -110,8 +110,8 @@ export default function SignalsScreen() {
   // libellés "il y a X" (la FlatList mémoïse ses rows par défaut).
   const tick = useTick();
 
-  const renderItem: ListRenderItem<Signal> = useMemo(
-    () => ({ item }) => (
+  const renderItem: ListRenderItem<Signal> = useMemo(() => {
+    const SignalRow: ListRenderItem<Signal> = ({ item }) => (
       <Pressable
         onPress={() => router.push(`/signal/${encodeURIComponent(item.id)}`)}
         style={({ pressed }) => [
@@ -147,9 +147,9 @@ export default function SignalsScreen() {
           </ThemedText>
         </ThemedView>
       </Pressable>
-    ),
-    [router, palette.icon, colorScheme],
-  );
+    );
+    return SignalRow;
+  }, [router, palette.icon, colorScheme]);
 
   const filterPill = (label: string, active: boolean, onPress: () => void) => (
     <Pressable

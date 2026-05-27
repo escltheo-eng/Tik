@@ -253,7 +253,7 @@ async def get_top_headlines(
         finalized = _finalize_headlines(merged, sort, limit, now_utc())
         return [HeadlineOut(**h) for h in finalized]
     finally:
-        await redis.close()
+        await redis.aclose()
 
 
 @router.get("/history/{entity_id}", response_model=list[HeadlineHistoryOut])

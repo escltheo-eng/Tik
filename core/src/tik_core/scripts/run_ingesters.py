@@ -182,7 +182,7 @@ async def main() -> None:
         log.info("ingesters.stopping")
         for ing in ingesters:
             await ing.stop()
-        await redis.close()
+        await redis.aclose()
         await db_engine.dispose()
 
 

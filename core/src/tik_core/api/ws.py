@@ -143,5 +143,5 @@ async def ws_signals(
     finally:
         hb_task.cancel()
         await pubsub.punsubscribe(pattern)
-        await pubsub.close()
-        await redis.close()
+        await pubsub.aclose()
+        await redis.aclose()

@@ -22,9 +22,7 @@ import { parseUtcIso } from '@/src/utils/time';
 
 const REFRESH_INTERVAL_MS = 60_000;
 const DEFAULT_TRACKED_ENTITIES = ['BTC', 'GOLD'] as const;
-const HORIZONS = ['flash', 'swing', 'macro'] as const;
-
-export type TrackedHorizon = (typeof HORIZONS)[number];
+export type TrackedHorizon = 'flash' | 'swing' | 'macro';
 
 export interface HorizonCounts {
   flash: number;

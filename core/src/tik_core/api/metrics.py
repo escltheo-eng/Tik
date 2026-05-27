@@ -302,7 +302,7 @@ async def get_hit_rate(
 
         return out
     finally:
-        await redis.close()
+        await redis.aclose()
 
 
 @router.get("/hit_rate_by_veracity", response_model=HitRateByVeracityOut)
@@ -463,7 +463,7 @@ async def get_hit_rate_by_veracity(
 
         return out
     finally:
-        await redis.close()
+        await redis.aclose()
 
 
 @router.get("/signal_track_record/{signal_id}", response_model=SignalTrackRecordOut)
@@ -619,7 +619,7 @@ async def get_signal_track_record(
 
         return out
     finally:
-        await redis.close()
+        await redis.aclose()
 
 
 @router.get("/signal_freshness", response_model=SignalFreshnessOut)
