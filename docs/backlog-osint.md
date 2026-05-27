@@ -362,9 +362,28 @@ démarrée** (ForexFactory), **non enrôlé**. PAS un overlay directionnel
 
 | Source | Gratuit sans clé payante ? | Données | Verdict |
 |---|---|---|---|
-| **FRED** (`PAYEMS`, `CPIAUCSL`) | ✅ clé FRED gratuite (déjà en `.env`) | actuel + précédent → **momentum** (actuel − précédent), PAS surprise vs consensus ; coïncident/retardé (publié le jour de/après la release) | proxy faible, non leading |
-| **ForexFactory** (`nfs.faireconomy.media/ff_calendar_thisweek.json`) | ✅ aucune clé, HTTP 200, JSON propre ~13 KB | `forecast` (**vrai consensus**) + `previous` + `actual` + `impact` → **vraie surprise = actual − forecast**. 96 events/sem, 49 avec forecast, inclut US (Core PCE F=0,3 %) | **meilleure source surprise gratuite** |
+| **FRED** (`PAYEMS`, `CPIAUCSL`, `PCEPILFE`…) | ✅ clé FRED gratuite (déjà en `.env`) | **actuel** + précédent. Pas de consensus. Actual historique, non périssable (re-vérifié 27/05 : PAYEMS/CPIAUCSL répondent) | **fournit l'`actual`** du montage surprise |
+| **ForexFactory** (`nfs.faireconomy.media/ff_calendar_thisweek.json`) | ✅ aucune clé, HTTP 200, JSON propre ~13 KB | `forecast` (**vrai consensus**) + `previous` + `impact`/title/country/date. **PAS de champ `actual`** (corrigé 27/05). 96 events/sem, 51 avec forecast, inclut US | **fournit le `consensus`** (périssable, rolling-week) |
 | Trading Economics `guest:guest` | 🔴 compte invité **supprimé** (HTTP 410) | n/a | mort |
+
+> **⚠ CORRECTION 2026-05-27 (vérifiée curl VPS, read-only — mea culpa).** La
+> version précédente de ce tableau affirmait que ForexFactory porte un champ
+> `actual` → « vraie surprise = actual − forecast ». **C'est FAUX** : le feed
+> `thisweek` (seul à répondre 200 ; lastweek/nextweek/thismonth = 404) n'expose
+> que `title/country/date/impact/forecast/previous`, **jamais `actual`** (32/32
+> events passés constatés à `actual` absent, sur 5 snapshots ET sur le feed live).
+> La surprise n'est donc PAS calculable depuis ForexFactory seul.
+>
+> **Montage correct (complémentarité)** : `surprise = actual_FRED − forecast_FF`.
+> - FF apporte le **consensus** (`forecast`), introuvable dans FRED, et
+>   **périssable** (rolling-week) → c'est ce que l'archiveur shadow préserve.
+> - FRED apporte l'**actual** (historique, non périssable, récupérable à la
+>   mesure) — avec conversion d'unités par type d'event (PAYEMS niveau→variation
+>   mensuelle, CPI/PCE indice→% m/m, GDP→% annualisé q/q, taux→niveau).
+>   **Couverture US uniquement** (les events non-US du feed n'ont pas d'actual FRED).
+> - **1ʳᵉ validation possible** : Core PCE Price Index m/m (F=0,3 %) + Prelim GDP
+>   q/q (F=2,0 %), tous deux **release 2026-05-28** → leur consensus est archivé
+>   dès maintenant, l'actual FRED suivra → premier point de surprise US mesurable.
 
 **Pourquoi archiver ForexFactory DÈS MAINTENANT (shadow)** : le feed est
 **rolling-week** (semaine glissante seulement) → impossible de récupérer
@@ -373,18 +392,48 @@ l'historique a posteriori. Pour pouvoir backtester la surprise plus tard
 dans le temps**. D'où le script standalone livré 2026-05-27 :
 `core/src/tik_core/scripts/archive_forexfactory.py` (collecte vers
 `core/data/forexfactory_archive/snapshots.jsonl`, **NON wiré dans
-`run_ingesters.py`**, **zéro impact `combined_bias`**). À cron-er côté VPS
-(ex. toutes les 2 h) pour capturer `forecast` à l'annonce PUIS `actual` après
-la release.
+`run_ingesters.py`**, **zéro impact `combined_bias`**). **Cron DÉJÀ ACTIF** côté
+VPS (crontab root, toutes les 2 h, dedup) pour préserver le `forecast`
+(consensus) au fil de la semaine + ses révisions. (Pas pour capter un `actual` :
+ce feed n'en a pas — cf. correction ci-dessus ; l'actual viendra de FRED à la
+mesure.)
 
 **Limites connues** :
-1. Feed **non officiel** (mirror faireconomy de ForexFactory) → peut casser ;
-   prévoir un fallback (FRED proxy) si 403/timeout persistants.
-2. Fuseau horaire du champ `date` à confirmer avant tout calcul d'alignement
-   prix (piège type Bug 8).
-3. **Sparse** : quelques events HIGH/semaine → overlay rare par nature.
-4. FRED proxy ≠ surprise (momentum + retardé) → utile en fallback/croisement,
-   pas en source primaire de surprise.
+1. **Le feed n'a pas d'`actual`** (corrigé 27/05) → la surprise exige un join
+   FRED par type d'event, avec conversion d'unités (le morceau de complexité réel,
+   géré dans `measure_forexfactory_surprise.py` livré 28/05, à valider event par
+   event au fil des releases).
+2. Feed **non officiel** (mirror faireconomy de ForexFactory) → peut casser ;
+   prévoir un fallback si 403/timeout persistants.
+3. Fuseau horaire du champ `date` : format observé `2026-05-28T08:30:00-04:00`
+   (offset explicite -04:00 = ET) → `datetime.fromisoformat` le parse en aware,
+   pas de piège Bug 8 tant qu'on garde l'aware (ne PAS stripper la tz). À
+   re-confirmer à l'inter-saison DST.
+4. **Sparse** : quelques events HIGH US/semaine → couche rare par nature.
+5. Join US-only : les events non-US du feed (AUD/NZD/GBP/EUR/JPY/CAD/CHF/CNY)
+   n'ont pas d'`actual` FRED → surprise calculable seulement pour les events US
+   mappés (NFP, CPI, Core CPI, PCE, GDP, retail sales…).
+
+**Instrument de mesure livré 2026-05-28** : `core/src/tik_core/scripts/
+measure_forexfactory_surprise.py` (lecture seule, calqué sur `measure_polymarket.py`).
+Joint le consensus archivé (FF) aux actuals FRED → `surprise = actual − forecast`
+par event US, puis mesure IC Spearman / hit de signe / gain sur BTC à 1 h / 6 h /
+24 h. Helpers déterministes testés (`core/tests/test_measure_forexfactory_surprise.py`,
+47 tests : parsing consensus, mapping titre→FRED, période de référence
+mensuelle/trimestrielle, conversions d'unités vérifiées contre valeurs FRED réelles).
+Mapping US (`US_EVENT_MAP`) : Core/PCE, CPI/Core CPI (m/m + y/y), NFP, Unemployment
+Rate, Avg Hourly Earnings, Retail Sales, PPI, Personal Income/Spending, GDP q/q —
+**series_id tous vérifiés actifs**. Garde-fou `actual` PENDING : si FRED n'a pas
+encore publié la période de référence, on NE fabrique PAS de surprise (pas de faux
+positif à partir du mois précédent).
+
+> **Validation runtime 2026-05-28** : Prelim GDP q/q → `actual=2.000` (FRED Q1)
+> vs forecast 2,0 % → `surprise=+0,000` (pipeline end-to-end validé). Core PCE /
+> Personal Income / Spending → `PENDING` (FRED n'a pas encore avril). 0 paire mûre
+> (events release du jour, horizon prix non écoulé) → verdict « non concluant,
+> attendu au démarrage ». **1ʳᵉ surprise US réellement mesurable** dès que FRED
+> publie les actuals d'avril (Core PCE attendu fin mai/début juin). Lancer :
+> `docker exec tik-core python -m tik_core.scripts.measure_forexfactory_surprise`.
 
 **Pré-enrôlement** : comme toute source, **après** mesure ≥ 2 sem de la valeur
 prédictive propre (IC / hit / gain via `paired_gain_significance`) + régime
@@ -575,3 +624,36 @@ Vague 2 — décision conditionnelle :
   validé mais faible (momentum + retardé). **Aucun enrôlement** (gaté
   post-mesure 2 sem + NO-GO actuel). Polymarket (shadow depuis 24/05) reste
   à mesurer EN PREMIER (une source à la fois).
+- **2026-05-27 (suite, audit data-quality du shadow ForexFactory)** : audit du
+  cron déjà actif + des 5 snapshots accumulés → **découverte : le feed `thisweek`
+  n'a AUCUN champ `actual`** (clés réelles = title/country/date/impact/forecast/
+  previous ; 32/32 events passés à `actual` absent ; lastweek/nextweek/thismonth
+  = 404). La ligne V1.6 (c) du 27/05 ci-dessus disait « forecast=consensus +
+  actual » → **FAUX, corrigé** (mea culpa, prémisse jamais vérifiée par les
+  sessions précédentes). **Impact** : la collecte reste saine (elle préserve le
+  consensus, qui est la partie périssable rolling-week), mais la surprise n'est
+  PAS calculable depuis FF seul. **Montage correct figé** : `surprise =
+  actual_FRED − forecast_FF` (FRED re-vérifié 27/05 : fournit l'actual historique,
+  US-only, conversion d'unités par event). Docstring `archive_forexfactory.py` +
+  tableau/limites V1.6 corrigés. **Détecté à J+1,5 de collecte** (vs au 2026-06-10)
+  → 2 semaines d'archivage du consensus PAS perdues + futur `measure_forexfactory_
+  surprise.py` cadré sur la bonne mécanique. Limite Bug-8 (#2 d'avant) **levée** :
+  le champ `date` a un offset explicite `-04:00` → parse aware, pas de piège tant
+  qu'on garde la tz. 1ʳᵉ surprise US validable : Core PCE + Prelim GDP (release
+  2026-05-28). Aucun code de pipeline touché ; doc/memory seulement.
+- **2026-05-28 (instrument de mesure surprise livré)** : nouveau script lecture
+  seule `core/src/tik_core/scripts/measure_forexfactory_surprise.py` (calqué sur
+  `measure_polymarket.py`) — joint le consensus FF archivé aux actuals FRED
+  (`surprise = actual − forecast`, conversion d'unités par event), mesure IC
+  Spearman / hit / gain sur BTC à 1 h / 6 h / 24 h, garde-fou `actual` PENDING
+  (pas de surprise fabriquée tant que FRED n'a pas publié). `US_EVENT_MAP` :
+  Core/PCE, CPI, Core CPI (m/m + y/y), NFP, Unemployment Rate, Avg Hourly Earnings,
+  Retail Sales, PPI, Personal Income/Spending, GDP q/q — series_id tous vérifiés
+  actifs (curl FRED). **47 tests purs** (parsing, période réf, conversions vs
+  valeurs FRED réelles) → suite **1159 → 1206 verts** (tik_test, jamais la prod),
+  ruff propre (config repo). **Validé runtime** : Prelim GDP surprise +0,000 (FRED
+  Q1=2,0 vs forecast 2,0 %) ; Core PCE/Income/Spending PENDING ; 0 paire mûre
+  (events du jour) → « non concluant, attendu ». 1ʳᵉ mesure réelle quand FRED
+  publie avril (Core PCE fin mai/début juin) ; mesure ≥ 2 sem avant tout verdict.
+  **Zéro impact pipeline / signaux / `combined_bias`** (lecture seule, SHADOW).
+  Aucun enrôlement (NO-GO inchangé).

@@ -4,17 +4,30 @@ Pourquoi ce script existe
 -------------------------
 Le feed gratuit `nfs.faireconomy.media/ff_calendar_thisweek.json` porte, pour
 chaque événement macro : `forecast` (le **consensus** = vraie attente du
-marché), `previous`, `actual` (rempli APRÈS la release), `impact`, `title`,
-`country`, `date`. C'est la seule source gratuite vérifiée (2026-05-27) qui
-donne un vrai *consensus* → permet de calculer une **surprise = actual −
-forecast** (ce que FRED ne donne pas : FRED ne fournit que actuel − précédent,
-un proxy de momentum, et en retard).
+marché), `previous`, `impact`, `title`, `country`, `date`.
 
-MAIS le feed est **rolling-week** (semaine glissante) : impossible de récupérer
-l'historique a posteriori. Pour pouvoir backtester la valeur prédictive de la
-surprise plus tard (IC Spearman surprise ↔ delta prix futur, hit rate, gain),
-il faut **accumuler les snapshots dans le temps DÈS MAINTENANT**. Ce script
-fait exactement ça, et rien d'autre.
+⚠ CORRECTION 2026-05-27 (vérifié curl VPS — read-only). Ce feed NE porte PAS
+de champ `actual` : ni avant ni après la release. Les seules clés réelles sont
+`title/country/date/impact/forecast/previous`, et les events déjà passés de la
+semaine en cours restent SANS `actual` (32/32 events passés à `actual` absent
+constatés). Les anciennes versions de cette docstring affirmaient à tort que
+`actual` se remplissait après la release et qu'on pouvait calculer ICI
+`surprise = actual − forecast`. C'est FAUX : ce feed apporte UN seul plus par
+rapport à FRED, le `forecast` (consensus).
+
+Montage correct de la surprise (à la mesure, pas ici) : **consensus (ce feed,
+archivé) + actual (FRED, historique)** → `surprise = actual_FRED − forecast_FF`,
+avec conversion d'unités par type d'event (PAYEMS niveau→variation, CPI/PCE
+indice→% m/m, etc.). FRED donne l'actual mais PAS le consensus ; ce feed donne
+le consensus mais PAS l'actual : ils sont **complémentaires**.
+
+Pourquoi archiver MALGRÉ tout, et dès maintenant : le `forecast` (consensus) est
+la partie **périssable** (le feed est rolling-week → le consensus de la semaine
+courante disparaît au rollover, irrécupérable a posteriori). L'`actual`, lui,
+n'est PAS périssable (FRED/BEA le publient et le conservent). Ce script préserve
+donc le consensus dans le temps pour pouvoir, plus tard, backtester la surprise
+(IC Spearman surprise ↔ delta prix futur, hit rate, gain) en le joignant aux
+actuals FRED. Il fait exactement ça, et rien d'autre.
 
 Mode SHADOW STRICT — garde-fous
 -------------------------------
@@ -37,9 +50,10 @@ Usage (depuis le VPS, dans le conteneur core)
     docker exec tik-core python -m tik_core.scripts.archive_forexfactory --dedup
     docker exec tik-core python -m tik_core.scripts.archive_forexfactory --stats
 
-Cron suggéré (capture forecast à l'annonce PUIS actual après release) — à
-ajouter côté VPS, PAS automatique :
-    0 */2 * * *  docker exec tik-core python -m tik_core.scripts.archive_forexfactory --dedup >/dev/null 2>&1
+Cron (préserve le consensus `forecast` au fil de la semaine + ses révisions ;
+l'actual viendra de FRED à la mesure, pas d'ici) — DÉJÀ ACTIF côté VPS (crontab
+root, posé 2026-05-27) :
+    0 */2 * * *  docker exec tik-core python -m tik_core.scripts.archive_forexfactory --dedup >> /opt/tik/forexfactory-archive-cron.log 2>&1
 """
 
 from __future__ import annotations
@@ -59,9 +73,11 @@ log = structlog.get_logger()
 
 # Feed gratuit ForexFactory (mirror faireconomy, utilisé par les EAs MT4/MT5).
 # Vérifié 2026-05-27 : SEUL `thisweek` répond 200 ; nextweek/lastweek/thismonth
-# renvoient 404 chez faireconomy. On reste donc sur thisweek (semaine glissante),
-# d'où la nécessité de snapshots fréquents pour capter les `actual` qui se
-# remplissent en cours de semaine.
+# renvoient 404 chez faireconomy. On reste donc sur thisweek (semaine glissante).
+# Snapshots fréquents = capter le `forecast` (consensus) avant chaque release +
+# ses révisions de consensus. PAS pour capter un `actual` : ce feed n'en expose
+# aucun (clés réelles = title/country/date/impact/forecast/previous, cf.
+# docstring) — l'actual viendra de FRED au moment de la mesure.
 FEED_URLS: dict[str, str] = {
     "thisweek": "https://nfs.faireconomy.media/ff_calendar_thisweek.json",
 }
