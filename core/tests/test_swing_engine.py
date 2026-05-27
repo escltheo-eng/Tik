@@ -12,6 +12,7 @@ import pytest
 from tik_core.scoring.swing_engine import (
     SOURCE_SCORES,
     SwingDecision,
+    _compute_coingecko_bias,
     _compute_cot_bias,
     _compute_cryptocompare_bias,
     _compute_dxy_bias,
@@ -19,6 +20,7 @@ from tik_core.scoring.swing_engine import (
     _compute_gdelt_bias,
     _compute_google_news_bias,
     _compute_reddit_bias,
+    _enrich_with_coingecko,
     _enrich_with_cot,
     _enrich_with_cryptocompare,
     _enrich_with_dxy,
@@ -1131,3 +1133,72 @@ class TestGoldDxyCotOverlaysSettingADR018Amendment:
         monkeypatch.setenv("TIK_GOLD_DXY_COT_OVERLAYS_ENABLED", "false")
         settings = Settings(_env_file=None)
         assert settings.gold_dxy_cot_overlays_enabled is False
+
+
+# ----- Overlay CoinGecko sentiment (ADR-021, SHADOW) -----
+
+
+class TestCoinGeckoOverlayADR021:
+    """Overlay CoinGecko sentiment : toggle shadow + bias contrarian + enrich.
+
+    Candidat 4e overlay BTC suite ban IP Reddit (Bug 11). DÉSACTIVÉ par défaut
+    (collecte shadow), mapping contrarian PROVISOIRE à valider en shadow.
+    """
+
+    def test_setting_default_is_disabled(self):
+        """Par défaut, l'overlay CoinGecko est désactivé (shadow)."""
+        from tik_core.config import Settings
+
+        settings = Settings(_env_file=None)
+        assert settings.coingecko_overlay_enabled is False
+
+    def test_setting_can_be_enabled_via_env(self, monkeypatch):
+        """Override via TIK_COINGECKO_OVERLAY_ENABLED=true."""
+        from tik_core.config import Settings
+
+        monkeypatch.setenv("TIK_COINGECKO_OVERLAY_ENABLED", "true")
+        settings = Settings(_env_file=None)
+        assert settings.coingecko_overlay_enabled is True
+
+    @pytest.mark.parametrize(
+        "up_pct, expected_bias, expected_zone",
+        [
+            (10, 1.0, "extreme_bearish_crowd"),  # foule capitulante → contrarian bull
+            (30, 1.0, "extreme_bearish_crowd"),  # borne
+            (40, 0.5, "bearish_crowd"),
+            (50, 0.0, "neutral_crowd"),
+            (65, -0.5, "bullish_crowd"),
+            (90, -1.0, "extreme_bullish_crowd"),  # foule euphorique → contrarian bear
+        ],
+    )
+    def test_compute_coingecko_bias_contrarian(self, up_pct, expected_bias, expected_zone):
+        bias, zone = _compute_coingecko_bias(up_pct)
+        assert bias == expected_bias
+        assert zone == expected_zone
+
+    def test_enrich_valid_returns_bias_and_adds_evidence(self):
+        decision = _make_decision("long")
+        bias = _enrich_with_coingecko(decision, {"up_pct": 90.0, "down_pct": 10.0})
+        assert bias == -1.0  # foule euphorique → contrarian bear
+        assert len(decision.evidence) == 1
+        assert decision.evidence[0]["source"] == "coingecko_sentiment"
+        assert decision.evidence[0]["score"] == SOURCE_SCORES["coingecko_sentiment"]
+        assert "90.0%" in decision.evidence[0]["fact"]
+        assert len(decision.triggers) == 1
+        assert decision.triggers[0]["type"] == "coingecko_sentiment"
+
+    def test_enrich_missing_field_returns_none(self):
+        decision = _make_decision()
+        assert _enrich_with_coingecko(decision, {}) is None
+        assert decision.evidence == []
+        assert decision.triggers == []
+
+    def test_enrich_invalid_type_returns_none(self):
+        decision = _make_decision()
+        assert _enrich_with_coingecko(decision, {"up_pct": "x"}) is None
+        assert decision.evidence == []
+
+    def test_enrich_out_of_range_returns_none(self):
+        decision = _make_decision()
+        assert _enrich_with_coingecko(decision, {"up_pct": 150.0}) is None
+        assert decision.evidence == []

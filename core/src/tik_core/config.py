@@ -86,6 +86,14 @@ class Settings(BaseSettings):
     # période bear pour confirmer si l'inversion est régime-spécifique.
     gold_dxy_cot_overlays_enabled: bool = False
 
+    # --- Overlay CoinGecko sentiment (ADR-021, SHADOW) ---
+    # Sentiment communautaire CoinGecko (vote up/down BTC) ajouté comme 4e
+    # overlay candidat suite au ban IP de Reddit (Bug 11). DÉSACTIVÉ par défaut :
+    # l'ingester collecte en shadow (Redis), l'overlay swing ne touche aux
+    # signaux émis que si ce toggle passe à true — après mesure de la divergence
+    # vs Fear & Greed (apport indépendant ?). Toggle env : TIK_COINGECKO_OVERLAY_ENABLED.
+    coingecko_overlay_enabled: bool = False
+
     # --- CORS ---
     cors_origins: str = "http://localhost:3000"
 

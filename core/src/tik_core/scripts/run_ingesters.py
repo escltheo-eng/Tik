@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from tik_core.aggregator.binance_ingester import BinanceTradesIngester
 from tik_core.aggregator.cftc_cot_ingester import CftcCotIngester
+from tik_core.aggregator.coingecko_sentiment_ingester import CoinGeckoSentimentIngester
 from tik_core.aggregator.cryptocompare_ingester import CryptoCompareIngester
 from tik_core.aggregator.fear_greed_ingester import FearGreedIngester
 from tik_core.aggregator.fred_calendar_ingester import FredCalendarIngester
@@ -159,6 +160,13 @@ async def main() -> None:
         # mesurer la valeur prédictive avant tout enrôlement. Retrait = retirer
         # cette ligne.
         PolymarketIngester(redis, interval_s=3600),
+        # CoinGecko sentiment communautaire BTC — MODE SHADOW (ADR-021).
+        # Collecte le vote up/down dans Redis (+ historique cappé) SANS toucher
+        # le combined_bias : l'overlay swing est gaté par
+        # settings.coingecko_overlay_enabled (défaut False). But : mesurer la
+        # divergence vs Fear & Greed avant enrôlement. Retrait = retirer cette
+        # ligne. Candidat 4e overlay BTC suite ban IP Reddit (Bug 11).
+        CoinGeckoSentimentIngester(redis, interval_s=3600),
     ]
 
     for ing in ingesters:

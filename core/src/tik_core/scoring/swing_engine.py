@@ -52,6 +52,9 @@ UA = "Mozilla/5.0 (compatible; TikBot/0.1)"
 # reddit_btc = sentiment retail communautaire pondéré par log(upvotes), score
 #   provisoire 0.65 — un cran sous mainstream pour refléter la nature retail
 #   amateur, mais pas trop pénalisant (cf. ADR-009) ;
+# coingecko_sentiment = vote communautaire CoinGecko (up/down %), score
+#   provisoire 0.60 — jauge retail crude (type FG), overlay SHADOW désactivé
+#   par défaut, candidat 4e overlay BTC suite ban IP Reddit (cf. ADR-021) ;
 # gdelt_news = NLP scientifique mondial (GDELT 2.0 timelinetone), tone brut
 #   non passé par Ollama, méthode différente des autres news textuelles
 #   (cf. ADR-010) ; score 0.75 entre éditorial (0.70) et officiel chiffré (0.85) ;
@@ -64,6 +67,7 @@ SOURCE_SCORES: dict[str, float] = {
     "cryptocompare_news": 0.70,
     "google_news_rss": 0.70,
     "reddit_btc": 0.65,
+    "coingecko_sentiment": 0.60,
     "gdelt_news": 0.75,
     "cftc_cot": 0.80,
 }
@@ -72,6 +76,7 @@ FG_REDIS_KEY = "tik.sentiment.fear_greed"
 CC_REDIS_KEY_TPL = "tik.sentiment.cryptocompare.{currency}"
 GN_REDIS_KEY_TPL = "tik.sentiment.google_news.{entity}"
 RED_REDIS_KEY_TPL = "tik.sentiment.reddit.{entity}"
+CG_REDIS_KEY = "tik.sentiment.coingecko.btc"
 GDELT_REDIS_KEY_TPL = "tik.sentiment.gdelt.{entity}"
 COT_REDIS_KEY = "tik.macro.cftc_cot.gold"
 FRED_OBS_URL = "https://api.stlouisfed.org/fred/series/observations"
@@ -509,6 +514,71 @@ def _enrich_with_fear_greed(decision: SwingDecision, fg: dict) -> float | None:
     return bias
 
 
+def _compute_coingecko_bias(up_pct: float) -> tuple[float, str]:
+    """Mappe le % de votes haussiers CoinGecko (0..100) à un bias CONTRARIAN + zone.
+
+    ⚠ Mapping PROVISOIRE (ADR-021) calqué sur le Fear & Greed (contrarian) :
+    une foule très haussière (up_pct élevé) → contrarian bear ; une foule
+    capitulante (up_pct faible) → contrarian bull. L'hypothèse contrarian est
+    à VALIDER pendant la phase shadow (l'overlay est désactivé par défaut via
+    `settings.coingecko_overlay_enabled`) — elle pourrait s'avérer
+    trend-following. Ne pas cristalliser avant mesure (cf. ADR-021 + caveat
+    corrélation Fear & Greed).
+    """
+    if up_pct <= 30:
+        return 1.0, "extreme_bearish_crowd"
+    if up_pct <= 45:
+        return 0.5, "bearish_crowd"
+    if up_pct < 55:
+        return 0.0, "neutral_crowd"
+    if up_pct < 70:
+        return -0.5, "bullish_crowd"
+    return -1.0, "extreme_bullish_crowd"
+
+
+async def _read_coingecko(redis: Redis) -> dict | None:
+    raw = await redis.get(CG_REDIS_KEY)
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _enrich_with_coingecko(decision: SwingDecision, cg: dict) -> float | None:
+    """Ajoute evidence + trigger CoinGecko, retourne le bias contrarian (provisoire).
+
+    NE set PAS la veracity — responsabilité du caller. Retourne None si la
+    donnée est invalide. Overlay SHADOW : n'est appelé que si
+    `settings.coingecko_overlay_enabled` est True (cf. ADR-021).
+    """
+    try:
+        up_pct = float(cg["up_pct"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not (0.0 <= up_pct <= 100.0):
+        return None
+
+    bias, zone = _compute_coingecko_bias(up_pct)
+    bias_label = "contrarian bull" if bias > 0 else "contrarian bear" if bias < 0 else "neutral"
+    decision.evidence.append(
+        {
+            "source": "coingecko_sentiment",
+            "score": get_effective_score("coingecko_sentiment", SOURCE_SCORES),
+            "fact": f"CoinGecko up-vote={up_pct:.1f}% ({zone})",
+        }
+    )
+    decision.triggers.append(
+        {
+            "type": "coingecko_sentiment",
+            "value": f"up={up_pct:.1f}% ({zone} → {bias_label})",
+            "weight": 0.10,
+        }
+    )
+    return bias
+
+
 async def _read_cryptocompare(redis: Redis, currency: str = "BTC") -> dict | None:
     raw = await redis.get(CC_REDIS_KEY_TPL.format(currency=currency.lower()))
     if not raw:
@@ -723,6 +793,7 @@ async def analyze_swing_btc(
     - CryptoCompare news (Redis, trend-following, crypto-éditorial)
     - Google News BTC (Redis, trend-following, mainstream-éditorial)
     - Reddit BTC (Redis, trend-following, retail-communautaire pondéré log)
+    - CoinGecko sentiment (Redis, contrarian, SHADOW désactivé par défaut — ADR-021)
 
     La veracity finale est calculée sur la concordance moyenne des biais
     des sources de sentiment disponibles. Permet d'ajouter facilement de
@@ -752,7 +823,13 @@ async def analyze_swing_btc(
     # Précharge les scores dynamiques (override Redis sur SOURCE_SCORES) — ADR-011
     dynamic_scores = await preload_source_scores(
         redis,
-        ["alternative_me_fng", "cryptocompare_news", "google_news_rss", "reddit_btc"],
+        [
+            "alternative_me_fng",
+            "cryptocompare_news",
+            "google_news_rss",
+            "reddit_btc",
+            "coingecko_sentiment",
+        ],
     )
     token = set_dynamic_scores(dynamic_scores)
     try:
@@ -789,6 +866,21 @@ async def analyze_swing_btc(
                 biases_by_source["reddit_btc"] = bias
         else:
             log.info("swing.btc.reddit_unavailable")
+
+        # ADR-021 — overlay CoinGecko sentiment en SHADOW : désactivé par
+        # défaut. L'ingester collecte la donnée dans Redis, mais elle ne touche
+        # le combined_bias que si le toggle est activé (après mesure de la
+        # divergence vs Fear & Greed). Candidat 4e overlay BTC suite ban Reddit.
+        if settings.coingecko_overlay_enabled:
+            cg = await _read_coingecko(redis)
+            if cg is not None:
+                bias = _enrich_with_coingecko(decision, cg)
+                if bias is not None:
+                    biases_by_source["coingecko_sentiment"] = bias
+            else:
+                log.info("swing.btc.coingecko_unavailable")
+        else:
+            log.info("swing.btc.coingecko_skipped_overlay_disabled")
 
         if biases_by_source:
             cv = apply_cross_validation_to_decision(
