@@ -263,3 +263,33 @@ export interface SourceHealth {
   critical_down: string[];
   sources: SourceHealthItem[];
 }
+
+// ----- Polymarket (marchés prédictifs, SHADOW — contexte de marché) -----
+
+export interface PolymarketMarket {
+  question: string | null;
+  threshold_usd: number | null;
+  yes_prob: number | null;
+  no_prob: number | null;
+  volume: number | null;
+  clob_token_id: string | null;
+}
+
+export interface PolymarketEvent {
+  title: string | null;
+  slug: string | null;
+  end_date: string | null;
+  n_markets: number;
+  total_volume: number;
+  markets: PolymarketMarket[];
+}
+
+export interface PolymarketSnapshot {
+  source: string;
+  entity: string;
+  mode: string;
+  fetched_at: string | null;
+  n_events: number;
+  total_volume: number;
+  events: PolymarketEvent[];
+}

@@ -110,6 +110,14 @@ SOURCE_SPECS: tuple[SourceSpec, ...] = (
         "shadow (non enrôlé) — collecte pour mesure",
     ),
     SourceSpec(
+        "polymarket_gold",
+        "tik.sentiment.polymarket.gold",
+        "fetched_at",
+        3 * _H,
+        False,
+        "shadow (non enrôlé) — contexte marché OR pour le trader",
+    ),
+    SourceSpec(
         "price_btc",
         "tik.last_price.BTC",
         "timestamp",

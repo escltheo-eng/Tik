@@ -18,6 +18,7 @@ import {
   HitRate,
   HitRateByVeracity,
   MacroEvent,
+  PolymarketSnapshot,
   Signal,
   SignalFreshness,
   SignalTrackRecord,
@@ -150,6 +151,22 @@ export async function getTopHeadlines(
       sort: params.sort ?? 'credibility_recency',
     },
   );
+}
+
+// ----- Polymarket (marchés prédictifs, SHADOW — contexte de marché) -----
+
+export interface PolymarketParams {
+  limit?: number;
+}
+
+export async function getPolymarketMarkets(
+  client: HttpClient,
+  entityId: string,
+  params: PolymarketParams = {},
+): Promise<PolymarketSnapshot> {
+  return client.get<PolymarketSnapshot>(`/polymarket/${encodeURIComponent(entityId)}`, {
+    limit: params.limit ?? 10,
+  });
 }
 
 // ----- Macro events (Lacune B Phase B1 trading manuel J+10) -----

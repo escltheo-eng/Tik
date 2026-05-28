@@ -154,12 +154,13 @@ async def main() -> None:
             session_maker=session_maker,
             interval_s=24 * 3600,
         ),
-        # Polymarket — marchés prédictifs BTC, MODE SHADOW (backlog-osint 2026-05-24).
-        # Collecte les probas implicites dans Redis SANS brancher sur le
-        # combined_bias (aucun _enrich_with_polymarket). But : historique pour
-        # mesurer la valeur prédictive avant tout enrôlement. Retrait = retirer
-        # cette ligne.
-        PolymarketIngester(redis, interval_s=3600),
+        # Polymarket — marchés prédictifs BTC + GOLD, MODE SHADOW (backlog-osint
+        # 2026-05-24). Collecte les probas implicites dans Redis SANS brancher sur
+        # le combined_bias (aucun _enrich_with_polymarket). But : historique pour
+        # mesurer la valeur prédictive avant tout enrôlement + contexte de marché
+        # pour le trader (GOLD ajouté 2026-05-28). Retrait = retirer ces lignes.
+        PolymarketIngester(redis, entity="BTC", interval_s=3600),
+        PolymarketIngester(redis, entity="GOLD", interval_s=3600),
         # CoinGecko sentiment communautaire BTC — MODE SHADOW (ADR-021).
         # Collecte le vote up/down dans Redis (+ historique cappé) SANS toucher
         # le combined_bias : l'overlay swing est gaté par

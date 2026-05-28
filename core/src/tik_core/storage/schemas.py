@@ -399,3 +399,44 @@ class SourceHealthOut(BaseModel):
     @field_serializer("checked_at", when_used="json")
     def _ser_checked(self, value: datetime) -> str:
         return iso_utc(value)
+
+
+# ----- Polymarket (marchés prédictifs, SHADOW — contexte) -----
+
+
+class PolymarketMarketOut(BaseModel):
+    """Une ligne de seuil d'un marché Polymarket : proba Yes/No + volume."""
+
+    question: str | None = None
+    threshold_usd: float | None = None
+    yes_prob: float | None = None
+    no_prob: float | None = None
+    volume: float | None = None
+    clob_token_id: str | None = None
+
+
+class PolymarketEventOut(BaseModel):
+    """Un event Polymarket (échelle de seuils à un horizon) + ses marchés."""
+
+    title: str | None = None
+    slug: str | None = None
+    end_date: str | None = None
+    n_markets: int = 0
+    total_volume: float = 0.0
+    markets: list[PolymarketMarketOut] = Field(default_factory=list)
+
+
+class PolymarketSnapshotOut(BaseModel):
+    """Snapshot Polymarket par entité (contexte de marché, mode shadow).
+
+    `fetched_at` est une chaîne ISO produite par l'ingester (déjà UTC `+00:00`),
+    pas un datetime SQLAlchemy — donc pas de field_serializer ici.
+    """
+
+    source: str = "polymarket"
+    entity: str
+    mode: str = "shadow"
+    fetched_at: str | None = None
+    n_events: int = 0
+    total_volume: float = 0.0
+    events: list[PolymarketEventOut] = Field(default_factory=list)

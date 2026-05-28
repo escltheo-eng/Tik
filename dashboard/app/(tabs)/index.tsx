@@ -6,6 +6,7 @@ import { HitRateByVeracityCard } from '@/components/dashboard/hit-rate-by-veraci
 import { HitRateCard } from '@/components/dashboard/hit-rate-card';
 import { KpiCard } from '@/components/dashboard/kpi-card';
 import { MacroEventsCard } from '@/components/dashboard/macro-events-card';
+import { PolymarketCard } from '@/components/dashboard/polymarket-card';
 import { MiniSparkline } from '@/components/dashboard/mini-sparkline';
 import { SignalFreshnessBanner } from '@/components/dashboard/signal-freshness-banner';
 import { SourceHealthCard } from '@/components/dashboard/source-health-card';
@@ -25,6 +26,7 @@ import { useDashboardKpis } from '@/src/hooks/useDashboardKpis';
 import { useHitRate } from '@/src/hooks/useHitRate';
 import { useHitRateByVeracity } from '@/src/hooks/useHitRateByVeracity';
 import { useTick } from '@/src/hooks/use-tick';
+import { usePolymarket } from '@/src/hooks/usePolymarket';
 import { useTopHeadlines } from '@/src/hooks/useTopHeadlines';
 import { useUpcomingMacroEvents } from '@/src/hooks/useUpcomingMacroEvents';
 import { timeAgo } from '@/src/utils/time';
@@ -110,6 +112,11 @@ export default function HomeScreen() {
   const kpis = useDashboardKpis();
   const [headlinesEntity, setHeadlinesEntity] = useState<string>('BTC');
   const headlinesState = useTopHeadlines(headlinesEntity, { limit: 5 });
+
+  // Polymarket (contexte de marché, shadow) — défaut GOLD : l'or est léger
+  // côté signaux Tik, c'est là que ce contexte apporte le plus.
+  const [polymarketEntity, setPolymarketEntity] = useState<string>('GOLD');
+  const polymarketState = usePolymarket(polymarketEntity, { limit: 4 });
   // Lacune B Phase B1 — calendrier macro/géopolitique 7 j à venir.
   // Cap 4 events sur Home (1 mis en avant + 3 suivants), poll 5 min
   // (cohérent TTL cache Redis 5 min).
@@ -217,6 +224,16 @@ export default function HomeScreen() {
         loading={macroEventsState.loading}
         error={macroEventsState.error}
         displayLimit={4}
+      />
+
+      <PolymarketCard
+        snapshot={polymarketState.snapshot}
+        entityId={polymarketEntity}
+        onEntityChange={setPolymarketEntity}
+        displayLimit={3}
+        marketsPerEvent={4}
+        loading={polymarketState.loading}
+        error={polymarketState.error}
       />
 
       <ThemedView style={styles.section}>

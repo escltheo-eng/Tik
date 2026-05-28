@@ -8,6 +8,7 @@ from tik_core.aggregator.polymarket_ingester import (
     _build_snapshot,
     _first_clob_token_id,
     _is_relevant_btc_event,
+    _is_relevant_gold_event,
     _parse_outcome_prices,
     _parse_threshold_usd,
 )
@@ -189,3 +190,59 @@ class TestBuildSnapshot:
         snap = _build_snapshot([], "2026-05-24T03:00:00Z")
         assert snap["n_events"] == 0
         assert snap["events"] == []
+
+    def test_default_entity_is_btc(self):
+        snap = _build_snapshot([], "2026-05-24T03:00:00Z")
+        assert snap["entity"] == "BTC"
+
+    def test_closed_event_excluded(self):
+        ev = self._ev(
+            "Bitcoin above ___ on May 24?",
+            [{"question": "above $70,000 on May 24?", "outcomePrices": ["0.99", "0.01"]}],
+        )
+        ev["closed"] = True  # marché résolu → écarté même si pertinent
+        snap = _build_snapshot([ev], "2026-05-24T03:00:00Z")
+        assert snap["n_events"] == 0
+
+    def test_gold_entity_and_relevance(self):
+        good = {
+            "title": "What will Gold (GC) hit by end of June?",
+            "slug": "g",
+            "endDate": "2026-06-30T00:00:00Z",
+            "markets": [
+                {"question": "Gold above $3,600 by end of June?", "outcomePrices": ["0.6", "0.4"]},
+            ],
+        }
+        btc_noise = self._ev(
+            "Bitcoin above ___ on May 24?",
+            [{"question": "above $70,000 on May 24?", "outcomePrices": ["0.5", "0.5"]}],
+        )
+        snap = _build_snapshot(
+            [good, btc_noise], "2026-05-28T03:00:00Z", _is_relevant_gold_event, entity="GOLD"
+        )
+        assert snap["entity"] == "GOLD"
+        assert snap["n_events"] == 1  # le BTC est exclu par le filtre OR
+        assert snap["events"][0]["title"].startswith("What will Gold")
+
+
+class TestIsRelevantGoldEvent:
+    def test_hit_by_end_of(self):
+        assert _is_relevant_gold_event("What will Gold (GC) hit by end of June?") is True
+
+    def test_what_will_gold(self):
+        assert _is_relevant_gold_event("What will Gold (XAUUSD) hit in May 2026?") is True
+
+    def test_above_end_of(self):
+        assert _is_relevant_gold_event("Gold (GC) above ___ end of June?") is True
+
+    def test_hit_before(self):
+        assert _is_relevant_gold_event("Will Gold hit $3,600 before June?") is True
+
+    def test_up_or_down_excluded(self):
+        assert _is_relevant_gold_event("Gold (XAUUSD) Up or Down on May 28?") is False
+
+    def test_non_gold_excluded(self):
+        assert _is_relevant_gold_event("What price will Bitcoin hit in May?") is False
+
+    def test_none(self):
+        assert _is_relevant_gold_event(None) is False
