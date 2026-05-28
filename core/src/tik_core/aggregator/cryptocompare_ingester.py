@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tik_core.aggregator.base import BaseIngester
 from tik_core.aggregator.news_classifier import NewsClassifier
-from tik_core.scoring.anomaly_detector import detect_volume_spike
+from tik_core.scoring.anomaly_detector import detect_publisher_diversity_spike
 from tik_core.storage.headlines_repo import persist_headlines
 
 log = structlog.get_logger()
@@ -33,13 +33,16 @@ NEWS_URL = "https://min-api.cryptocompare.com/data/v2/news/"
 REDIS_TTL_S = 2 * 3600  # 2h, plus court que FG car les news bougent vite
 MAX_HEADLINES = 25
 
-# Baseline volume P6 — stockée en Redis pour persistance entre cycles.
-# Polling horaire → 7 baseline points = 7 h minimum d'activation, cap à 168
-# = rolling window 7 jours une fois mature. TTL 14 j pour survivre à un
-# arrêt prolongé (vacances, redémarrages cumulés).
-VOLUME_BASELINE_KEY_TPL = "tik.anomaly.baseline.cryptocompare.{currency}"
-VOLUME_BASELINE_TTL_S = 14 * 24 * 3600  # 14 jours
-VOLUME_BASELINE_MAX_POINTS = 168  # 7 jours de polling horaire
+# Baseline diversité éditeurs P6 (backlog #8, Option B) — stockée en Redis
+# pour persistance entre cycles. Polling horaire → 7 baseline points = 7 h
+# minimum d'activation, cap à 168 = rolling window 7 jours une fois mature.
+# TTL 14 j pour survivre à un arrêt prolongé (vacances, redémarrages cumulés).
+# Clé distincte de l'ancienne baseline volume (`tik.anomaly.baseline.*`) car
+# les valeurs historiques diffèrent sémantiquement (comptes d'éditeurs vs
+# comptes d'articles) — on repart d'une baseline propre.
+PUBDIV_BASELINE_KEY_TPL = "tik.anomaly.pubdiv_baseline.cryptocompare.{currency}"
+PUBDIV_BASELINE_TTL_S = 14 * 24 * 3600  # 14 jours
+PUBDIV_BASELINE_MAX_POINTS = 168  # 7 jours de polling horaire
 
 
 class CryptoCompareIngester(BaseIngester):
@@ -109,13 +112,13 @@ class CryptoCompareIngester(BaseIngester):
         except (TypeError, ValueError, OverflowError, OSError):
             return None
 
-    async def _read_volume_baseline(self) -> list[int]:
-        """Lit la baseline volume historique depuis Redis. [] si absente."""
-        key = VOLUME_BASELINE_KEY_TPL.format(currency=self.currency.lower())
+    async def _read_pubdiv_baseline(self) -> list[int]:
+        """Lit la baseline diversité éditeurs historique depuis Redis. [] si absente."""
+        key = PUBDIV_BASELINE_KEY_TPL.format(currency=self.currency.lower())
         try:
             raw = await self.redis.get(key)
         except Exception as exc:  # noqa: BLE001
-            log.warning("cryptocompare.baseline.read_error", error=str(exc))
+            log.warning("cryptocompare.pubdiv_baseline.read_error", error=str(exc))
             return []
         if not raw:
             return []
@@ -128,15 +131,15 @@ class CryptoCompareIngester(BaseIngester):
             pass
         return []
 
-    async def _push_volume_baseline(self, baseline: list[int], current_volume: int) -> None:
-        """Append `current_volume` à la baseline, cap à VOLUME_BASELINE_MAX_POINTS,
+    async def _push_pubdiv_baseline(self, baseline: list[int], current_distinct: int) -> None:
+        """Append `current_distinct` à la baseline, cap à PUBDIV_BASELINE_MAX_POINTS,
         écrit en Redis avec TTL. Best-effort — si Redis échoue, on log et continue."""
-        new_baseline = (baseline + [current_volume])[-VOLUME_BASELINE_MAX_POINTS:]
-        key = VOLUME_BASELINE_KEY_TPL.format(currency=self.currency.lower())
+        new_baseline = (baseline + [current_distinct])[-PUBDIV_BASELINE_MAX_POINTS:]
+        key = PUBDIV_BASELINE_KEY_TPL.format(currency=self.currency.lower())
         try:
-            await self.redis.setex(key, VOLUME_BASELINE_TTL_S, json.dumps(new_baseline))
+            await self.redis.setex(key, PUBDIV_BASELINE_TTL_S, json.dumps(new_baseline))
         except Exception as exc:  # noqa: BLE001
-            log.warning("cryptocompare.baseline.write_error", error=str(exc))
+            log.warning("cryptocompare.pubdiv_baseline.write_error", error=str(exc))
 
     @staticmethod
     def _extract_publisher(article: dict) -> str:
@@ -191,6 +194,7 @@ class CryptoCompareIngester(BaseIngester):
         n_bearish = 0
         n_neutral = 0
         headlines: list[dict] = []
+        distinct_publishers: set[str] = set()
         fetched_at = datetime.now(tz=UTC).isoformat()
         for a in articles:
             title = a.get("title", "")
@@ -202,12 +206,17 @@ class CryptoCompareIngester(BaseIngester):
                 n_bearish += 1
             else:
                 n_neutral += 1
+            # Diversité éditeurs (backlog #8) : compté sur TOUS les articles
+            # (pas seulement les MAX_HEADLINES retenus), "unknown" exclu.
+            publisher = self._extract_publisher(a)
+            if publisher and publisher != "unknown":
+                distinct_publishers.add(publisher)
             if len(headlines) < MAX_HEADLINES:
                 headlines.append(
                     {
                         "title": str(title).strip(),
                         "url": a.get("url") or None,
-                        "publisher": self._extract_publisher(a),
+                        "publisher": publisher,
                         "sentiment": sentiment,
                         "published_at": self._parse_unix_iso(a.get("published_on")),
                         "fetched_at": fetched_at,
@@ -217,13 +226,16 @@ class CryptoCompareIngester(BaseIngester):
         n_classified = n_bullish + n_bearish
         score = (n_bullish - n_bearish) / n_classified if n_classified > 0 else 0.0
 
-        # P6 — Détection pic volume vs baseline 7j (rolling, persistée Redis).
-        # Lecture baseline historique → détection sur cycle actuel → mise à
-        # jour baseline avec le volume actuel pour le cycle suivant.
-        # Désactivé tant que < 7 baseline points (cf. detect_volume_spike).
-        baseline = await self._read_volume_baseline()
-        anomaly = detect_volume_spike(len(articles), baseline)
-        await self._push_volume_baseline(baseline, len(articles))
+        # P6 (backlog #8, Option B) — Détection pic de DIVERSITÉ D'ÉDITEURS vs
+        # baseline 7j (rolling, persistée Redis). Remplace l'ancienne détection
+        # de pic de volume brut (dormante : l'API CC renvoie ~50 articles fixes).
+        # Lecture baseline → détection sur cycle actuel → push pour le suivant.
+        # Désactivé tant que < 7 baseline points, ET mode observation par défaut
+        # (severity forcée "ok" tant que non calibré — cf. anomaly_detector).
+        n_distinct_publishers = len(distinct_publishers)
+        baseline = await self._read_pubdiv_baseline()
+        anomaly = detect_publisher_diversity_spike(n_distinct_publishers, baseline)
+        await self._push_pubdiv_baseline(baseline, n_distinct_publishers)
 
         return {
             "source": "cryptocompare_news",
@@ -234,6 +246,7 @@ class CryptoCompareIngester(BaseIngester):
             "n_bullish": n_bullish,
             "n_bearish": n_bearish,
             "n_neutral": n_neutral,
+            "n_distinct_publishers": n_distinct_publishers,
             "headlines": headlines,
             "anomaly": anomaly,
             "fetched_at": fetched_at,
@@ -265,8 +278,10 @@ class CryptoCompareIngester(BaseIngester):
                         n_bullish=point["n_bullish"],
                         n_bearish=point["n_bearish"],
                         n_neutral=point["n_neutral"],
+                        n_distinct_publishers=point["n_distinct_publishers"],
                         n_headlines=len(point["headlines"]),
                         n_persisted=n_persisted,
+                        anomaly_type=anomaly["type"],
                         anomaly_severity=anomaly["severity"],
                         anomaly_score=anomaly["score"],
                     )

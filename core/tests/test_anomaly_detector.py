@@ -12,6 +12,9 @@ from tik_core.scoring.anomaly_detector import (
     BRIGADING_MIN_POSTS,
     BRIGADING_THRESHOLD_HIGH,
     BRIGADING_THRESHOLD_MEDIUM,
+    PUBLISHER_DIVERSITY_MIN_BASELINE_POINTS,
+    PUBLISHER_DIVERSITY_SPIKE_THRESHOLD_HIGH,
+    PUBLISHER_DIVERSITY_SPIKE_THRESHOLD_MEDIUM,
     PUBLISHER_DOMINANCE_MIN_TITLES,
     PUBLISHER_DOMINANCE_THRESHOLD_HIGH,
     PUBLISHER_DOMINANCE_THRESHOLD_MEDIUM,
@@ -19,6 +22,7 @@ from tik_core.scoring.anomaly_detector import (
     VOLUME_SPIKE_THRESHOLD_HIGH,
     VOLUME_SPIKE_THRESHOLD_MEDIUM,
     detect_brigading_reddit,
+    detect_publisher_diversity_spike,
     detect_publisher_dominance,
     detect_volume_spike,
 )
@@ -250,3 +254,86 @@ class TestDetectVolumeSpike:
         assert "300" in result["detail"]
         assert "50" in result["detail"]
         assert "×6.00" in result["detail"]
+
+
+class TestDetectPublisherDiversitySpike:
+    """Backlog #8 Option B. Le mode observation (défaut) force severity=ok ;
+    les seuils ne s'appliquent que via observation_mode=False (post-calibration)."""
+
+    def test_baseline_empty_returns_ok(self):
+        result = detect_publisher_diversity_spike(current_distinct_publishers=20, baseline=[])
+        assert result["type"] == "publisher_diversity_spike"
+        assert result["severity"] == "ok"
+        assert "baseline insufficient" in result["detail"]
+
+    def test_baseline_below_min_returns_ok(self):
+        baseline = [10] * (PUBLISHER_DIVERSITY_MIN_BASELINE_POINTS - 1)
+        result = detect_publisher_diversity_spike(current_distinct_publishers=30, baseline=baseline)
+        assert result["severity"] == "ok"
+        assert "baseline insufficient" in result["detail"]
+
+    def test_baseline_all_invalid_returns_ok(self):
+        baseline = [-1, 0, "abc", None, [], -5, 0] * 2  # tous filtrés → vide
+        result = detect_publisher_diversity_spike(current_distinct_publishers=20, baseline=baseline)
+        assert result["severity"] == "ok"
+
+    def test_current_zero_returns_ok(self):
+        baseline = [10] * PUBLISHER_DIVERSITY_MIN_BASELINE_POINTS
+        result = detect_publisher_diversity_spike(current_distinct_publishers=0, baseline=baseline)
+        assert result["severity"] == "ok"
+        assert "current distinct publishers is zero" in result["detail"]
+
+    # --- Mode observation (défaut) : jamais d'action, mais métrique calculée ---
+
+    def test_observation_mode_forces_ok_even_on_high_ratio(self):
+        baseline = [10] * PUBLISHER_DIVERSITY_MIN_BASELINE_POINTS
+        # ratio 4x = franchement au-dessus de high (2.0), mais observation → ok
+        result = detect_publisher_diversity_spike(current_distinct_publishers=40, baseline=baseline)
+        assert result["severity"] == "ok"
+        assert result["score"] == 4.0  # la métrique reste exposée
+        assert "[observation]" in result["detail"]
+
+    def test_observation_mode_detail_contains_metrics(self):
+        baseline = [10] * PUBLISHER_DIVERSITY_MIN_BASELINE_POINTS
+        result = detect_publisher_diversity_spike(current_distinct_publishers=25, baseline=baseline)
+        assert "25 distinct publishers" in result["detail"]
+        assert "×2.50" in result["detail"]
+
+    # --- Mode enforce (post-calibration) : les seuils s'appliquent ---
+
+    def test_enforce_ratio_normal_is_ok(self):
+        baseline = [10] * PUBLISHER_DIVERSITY_MIN_BASELINE_POINTS
+        result = detect_publisher_diversity_spike(
+            current_distinct_publishers=12, baseline=baseline, observation_mode=False
+        )
+        assert result["severity"] == "ok"
+        assert result["score"] == 1.2
+        assert "[observation]" not in result["detail"]
+
+    def test_enforce_ratio_at_medium_threshold_is_medium(self):
+        baseline = [10] * PUBLISHER_DIVERSITY_MIN_BASELINE_POINTS
+        current = int(10 * PUBLISHER_DIVERSITY_SPIKE_THRESHOLD_MEDIUM)  # 15 → ratio 1.5
+        result = detect_publisher_diversity_spike(
+            current_distinct_publishers=current, baseline=baseline, observation_mode=False
+        )
+        assert result["severity"] == "medium"
+        assert result["score"] == PUBLISHER_DIVERSITY_SPIKE_THRESHOLD_MEDIUM
+
+    def test_enforce_ratio_at_high_threshold_is_high(self):
+        baseline = [10] * PUBLISHER_DIVERSITY_MIN_BASELINE_POINTS
+        current = int(10 * PUBLISHER_DIVERSITY_SPIKE_THRESHOLD_HIGH)  # 20 → ratio 2.0
+        result = detect_publisher_diversity_spike(
+            current_distinct_publishers=current, baseline=baseline, observation_mode=False
+        )
+        assert result["severity"] == "high"
+        assert result["score"] == PUBLISHER_DIVERSITY_SPIKE_THRESHOLD_HIGH
+
+    def test_enforce_baseline_mixed_valid_invalid_uses_valid_only(self):
+        baseline = [10, 12, 8, 0, -3, 14, 16, 18]  # 6 valides (10,12,8,14,16,18), 2 ignorés
+        # mean = (10+12+8+14+16+18)/6 = 13
+        result = detect_publisher_diversity_spike(
+            current_distinct_publishers=26, baseline=baseline, observation_mode=False
+        )
+        # ratio = 26/13 = 2.0 → high
+        assert result["severity"] == "high"
+        assert result["score"] == 2.0

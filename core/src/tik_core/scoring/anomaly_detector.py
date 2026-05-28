@@ -13,9 +13,18 @@ le scoring engine :
    plus de la moitié des titres du cycle (suggère cycle éditorialement
    biaisé).
 
-3. **Pic volume CryptoCompare** : volume du cycle anormalement élevé
-   par rapport à la baseline 7 jours (suggère campagne PR coordonnée
-   ou vrai event majeur — à interpréter avec prudence).
+3. **Pic diversité éditeurs CryptoCompare** : nombre d'éditeurs distincts
+   couvrant l'actif sur le cycle, anormalement élevé vs baseline 7 jours
+   (suggère un événement majeur — approbation ETF, hack, décision
+   réglementaire — où beaucoup d'outlets couvrent la même story).
+   Remplace l'ancienne détection de pic de *volume* brut, dormante car
+   l'API CryptoCompare renvoie ~50 articles par défaut (volume quasi
+   constant). Le détecteur de volume `detect_volume_spike` reste fourni
+   ici comme helper générique mais n'est plus câblé sur un ingester.
+   Cf. backlog #8 (Option B). Livré en **mode observation** d'abord :
+   la métrique est calculée et loguée, mais severity reste "ok" (aucune
+   pondération du bias) tant que la corrélation pic ↔ événement n'a pas
+   été validée empiriquement (cf. `PUBLISHER_DIVERSITY_OBSERVATION_MODE`).
 
 Architecture (cf. CLAUDE.md Paquet 21 P6 décision D-P6-2) :
 
@@ -83,6 +92,25 @@ PUBLISHER_DOMINANCE_MIN_TITLES = 5  # < 5 titres = pas assez pour juger
 VOLUME_SPIKE_THRESHOLD_HIGH = 5.0
 VOLUME_SPIKE_THRESHOLD_MEDIUM = 3.0
 VOLUME_SPIKE_MIN_BASELINE_POINTS = 7  # baseline insuffisante = severity=ok
+
+# Pic diversité éditeurs CryptoCompare : ratio nb_éditeurs_distincts_today /
+# mean(baseline_7d). Contrairement au volume brut (toujours ~50 articles via
+# l'API CC → dormant), le nombre d'éditeurs distincts varie : un pic signale
+# que beaucoup d'outlets couvrent simultanément l'actif (event majeur).
+# Seuils pifomètre raisonné, À CALIBRER après la phase d'observation (cf.
+# backlog #8). Bornés bas car le nombre d'éditeurs est plafonné par l'univers
+# fini de publishers CC (~30-40) et par les ~50 articles du cycle.
+PUBLISHER_DIVERSITY_SPIKE_THRESHOLD_HIGH = 2.0
+PUBLISHER_DIVERSITY_SPIKE_THRESHOLD_MEDIUM = 1.5
+PUBLISHER_DIVERSITY_MIN_BASELINE_POINTS = 7  # baseline insuffisante = severity=ok
+
+# Mode observation : tant que True, `detect_publisher_diversity_spike` calcule
+# et expose le ratio dans `detail` mais force severity="ok" (zéro pondération
+# du bias). Permet de mesurer la corrélation pic ↔ événement sur plusieurs
+# semaines AVANT d'activer le flag (cf. backlog #8 « valider empiriquement
+# avant de coder dur » + garde-fou trading manuel actif). Passer à False après
+# calibration pour activer la sévérité.
+PUBLISHER_DIVERSITY_OBSERVATION_MODE = True
 
 
 # ----- Helpers de détection -----
@@ -294,5 +322,102 @@ def detect_volume_spike(
         severity=severity,
         detail=(
             f"current volume {current_volume} vs baseline mean {mean_baseline:.1f} (×{ratio:.2f})"
+        ),
+    )
+
+
+def detect_publisher_diversity_spike(
+    current_distinct_publishers: int,
+    baseline: list[int],
+    *,
+    observation_mode: bool = PUBLISHER_DIVERSITY_OBSERVATION_MODE,
+) -> AnomalyResult:
+    """Détecte un pic de diversité d'éditeurs vs baseline N derniers cycles.
+
+    Remplace `detect_volume_spike` pour CryptoCompare (backlog #8, Option B).
+    L'API CryptoCompare renvoie ~50 articles par défaut → le volume brut est
+    quasi constant (baseline `[50, 50, ...]`) → détection volume dormante. Le
+    nombre d'éditeurs DISTINCTS couvrant l'actif sur un cycle est en revanche
+    variable : un pic (beaucoup d'outlets sur la même story) signale un
+    événement majeur (approbation ETF, hack, décision réglementaire).
+
+    Mode observation (`observation_mode=True`, défaut) : le ratio est calculé
+    et exposé dans `detail`, mais severity est forcée à "ok" — aucune
+    pondération du bias en aval. Permet de mesurer empiriquement la corrélation
+    pic ↔ événement sur plusieurs semaines AVANT d'activer le flag (cf. backlog
+    #8 « valider empiriquement avant de coder dur » + garde-fou trading manuel
+    actif). Passer `observation_mode=False` après calibration pour activer la
+    sévérité.
+
+    Args:
+        current_distinct_publishers: nombre d'éditeurs distincts du cycle actuel
+            (les "unknown" doivent être exclus en amont par le caller).
+        baseline: comptes d'éditeurs distincts des cycles précédents (ordre
+            indifférent, on ne fait que la moyenne). Doit contenir au moins
+            `PUBLISHER_DIVERSITY_MIN_BASELINE_POINTS` éléments — sinon ok.
+        observation_mode: si True, severity toujours "ok" (mesure sans agir).
+
+    Returns:
+        AnomalyResult (type="publisher_diversity_spike").
+    """
+    obs_suffix = " [observation]" if observation_mode else ""
+
+    if len(baseline) < PUBLISHER_DIVERSITY_MIN_BASELINE_POINTS:
+        return AnomalyResult(
+            type="publisher_diversity_spike",
+            score=0.0,
+            severity="ok",
+            detail=(
+                f"baseline insufficient ({len(baseline)} < "
+                f"{PUBLISHER_DIVERSITY_MIN_BASELINE_POINTS} points){obs_suffix}"
+            ),
+        )
+
+    valid_baseline = [int(v) for v in baseline if isinstance(v, (int, float)) and v > 0]
+    if not valid_baseline:
+        return AnomalyResult(
+            type="publisher_diversity_spike",
+            score=0.0,
+            severity="ok",
+            detail=f"baseline contains no valid (positive) values{obs_suffix}",
+        )
+
+    mean_baseline = sum(valid_baseline) / len(valid_baseline)
+    if mean_baseline <= 0:
+        return AnomalyResult(
+            type="publisher_diversity_spike",
+            score=0.0,
+            severity="ok",
+            detail=f"baseline mean is zero{obs_suffix}",
+        )
+
+    if current_distinct_publishers <= 0:
+        return AnomalyResult(
+            type="publisher_diversity_spike",
+            score=0.0,
+            severity="ok",
+            detail=f"current distinct publishers is zero{obs_suffix}",
+        )
+
+    ratio = current_distinct_publishers / mean_baseline
+
+    if ratio >= PUBLISHER_DIVERSITY_SPIKE_THRESHOLD_HIGH:
+        severity: Severity = "high"
+    elif ratio >= PUBLISHER_DIVERSITY_SPIKE_THRESHOLD_MEDIUM:
+        severity = "medium"
+    else:
+        severity = "ok"
+
+    # Mode observation : on garde la métrique mais on n'agit pas (severity=ok).
+    if observation_mode:
+        severity = "ok"
+
+    return AnomalyResult(
+        type="publisher_diversity_spike",
+        score=round(ratio, 2),
+        severity=severity,
+        detail=(
+            f"{current_distinct_publishers} distinct publishers vs baseline mean "
+            f"{mean_baseline:.1f} (×{ratio:.2f}){obs_suffix}"
         ),
     )

@@ -74,7 +74,7 @@ def _make_ingester(
     classifier: NewsClassifier | None = None,
 ) -> CryptoCompareIngester:
     # AsyncMock requis depuis P6 (Paquet 21) car _fetch lit/écrit la baseline
-    # volume via await self.redis.get/setex pour la détection volume_spike.
+    # diversité éditeurs via await self.redis.get/setex (backlog #8, Option B).
     redis_mock = MagicMock()
     redis_mock.get = AsyncMock(return_value=None)  # baseline absente → ok
     redis_mock.setex = AsyncMock(return_value=True)
@@ -242,3 +242,50 @@ async def test_fetch_returns_none_when_api_type_not_100():
 
     payload = await ing._fetch(client)
     assert payload is None
+
+
+# =============================================================================
+# Diversité d'éditeurs (backlog #8, Option B) — mode observation
+# =============================================================================
+
+
+async def test_fetch_includes_n_distinct_publishers():
+    """Le payload expose le nombre d'éditeurs distincts (doublons comptés 1×)."""
+    ing = _make_ingester()
+    payload_data = {
+        "Type": 100,
+        "Data": [
+            _make_article("a", publisher_info_name="CoinDesk", source_raw="coindesk"),
+            _make_article("b", publisher_info_name="Decrypt", source_raw="decrypt"),
+            _make_article("c", publisher_info_name="CoinDesk", source_raw="coindesk"),
+        ],
+    }
+    payload = await ing._fetch(_FakeClient(payload_data))
+    assert payload is not None
+    assert payload["n_distinct_publishers"] == 2  # CoinDesk + Decrypt
+
+
+async def test_fetch_distinct_publishers_excludes_unknown():
+    """Les articles sans éditeur identifiable ("unknown") ne comptent pas."""
+    ing = _make_ingester()
+    payload_data = {
+        "Type": 100,
+        "Data": [
+            _make_article("a", publisher_info_name="CoinDesk", source_raw="coindesk"),
+            {"title": "no-publisher"},  # ni source_info ni source → "unknown"
+        ],
+    }
+    payload = await ing._fetch(_FakeClient(payload_data))
+    assert payload is not None
+    assert payload["n_distinct_publishers"] == 1  # seul CoinDesk compte
+
+
+async def test_fetch_anomaly_is_publisher_diversity_observation():
+    """L'anomalie publiée est de type publisher_diversity_spike, ok (baseline absente)."""
+    ing = _make_ingester()
+    payload_data = {"Type": 100, "Data": [_make_article("a")]}
+    payload = await ing._fetch(_FakeClient(payload_data))
+    assert payload is not None
+    anomaly = payload["anomaly"]
+    assert anomaly["type"] == "publisher_diversity_spike"
+    assert anomaly["severity"] == "ok"  # baseline absente → pas d'action
