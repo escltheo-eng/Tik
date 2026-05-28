@@ -759,7 +759,38 @@ Garde-fou 1 inchangé. Garde-fou 2-bis inchangé. ADR-003 inchangé.
 ADR-004 inchangé. ADR-011 inchangé. ADR-018 renforcé (calibrations
 listées ici amélioreront empiriquement les choix pifomètre actuels).
 
-## 8. Limite structurelle `detect_volume_spike` sur CryptoCompare (identifiée 2026-05-18, post-J+14)
+## 8. Limite structurelle `detect_volume_spike` sur CryptoCompare (identifiée 2026-05-18) — ✅ TRAITÉ mode observation 2026-05-28 (Option B)
+
+### ✅ Statut — livré en mode observation (2026-05-28, commit `96fabcf`)
+
+Option B implémentée : `detect_volume_spike` (dormant) remplacé pour
+CryptoCompare par `detect_publisher_diversity_spike` (nb d'éditeurs
+distincts couvrant l'actif sur un cycle, métrique variable contrairement
+au volume figé à ~50). Voir `core/src/tik_core/scoring/anomaly_detector.py`
++ `cryptocompare_ingester.py`. `detect_volume_spike` conservé comme helper
+générique non câblé.
+
+**Livré en MODE OBSERVATION** (`PUBLISHER_DIVERSITY_OBSERVATION_MODE = True`
+dans `anomaly_detector.py`) : la métrique `n_distinct_publishers` est
+calculée, loguée (`cryptocompare.published`) et accumulée dans une nouvelle
+baseline Redis `tik.anomaly.pubdiv_baseline.cryptocompare.{currency}`, mais
+**severity est forcée "ok" → zéro pondération du bias, zéro impact signaux**.
+Conforme à « valider empiriquement avant de coder dur ». Runtime confirmé :
+1er cycle post-restart `n_distinct_publishers=13` (vs 50 articles).
+
+**Calibration / activation (à faire ~2026-06-11, après ~2 sem d'observation)** :
+1. Vérifier sur les logs / Redis que les pics de `n_distinct_publishers`
+   coïncident avec de vrais événements (ETF, hack, décision réglementaire).
+2. Si corrélation établie → caler `PUBLISHER_DIVERSITY_SPIKE_THRESHOLD_MEDIUM`
+   / `_HIGH` sur la distribution observée (actuels 1.5 / 2.0 = pifomètre).
+3. Passer `PUBLISHER_DIVERSITY_OBSERVATION_MODE = False` pour activer le flag
+   (alors severity medium/high → `_apply_anomaly_pondération` divise le bias /2
+   sur high, comme les détecteurs Reddit/Google News).
+4. Si AUCUNE corrélation utile → garder en observation ou retirer (Option D).
+
+La suite ci-dessous est l'analyse d'origine (2026-05-18), conservée pour contexte.
+
+---
 
 Découverte lors de l'audit Issue #4 baseline WRONGTYPE (Paquet 26 →
 résolution post-rebuild 2026-05-17). La clé `tik.anomaly.baseline.cryptocompare.btc`
