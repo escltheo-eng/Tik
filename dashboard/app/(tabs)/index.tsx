@@ -174,22 +174,22 @@ export default function HomeScreen() {
       <SignalFreshnessBanner />
       <ThemedView style={[styles.disciplineCard, { borderColor: '#e67e22' }]}>
         <ThemedText style={styles.disciplineTitle}>
-          ✓ Avant chaque trade — discipline J+24
+          ⚠ Avant chaque trade — Tik = contexte, pas un ordre
         </ThemedText>
         <ThemedText style={styles.disciplineLine}>
-          • Pas de macro event HIGH dans ±4h (voir Calendrier macro)
+          • Aucun edge directionnel prouvé (ni BTC ni GOLD) : ne suis pas la flèche mécaniquement, croise avec ton jugement
         </ThemedText>
         <ThemedText style={styles.disciplineLine}>
-          • BTC uniquement — pas de GOLD (aucun edge directionnel mesuré)
+          • Sizing 1 % du capital max — c&apos;est ta vraie protection
         </ThemedText>
         <ThemedText style={styles.disciplineLine}>
-          • Direction long ou short — pas neutral
+          • Pas de trade ±4h autour d&apos;un event macro HIGH (voir Calendrier macro)
         </ThemedText>
         <ThemedText style={styles.disciplineLine}>
-          • Veracity ≥ 85 % sur swing BTC (seuil transitoire Reddit IP-banni)
+          • Veracity ≥ 85 % (swing BTC) = filtre de bruit, pas une garantie de sens
         </ThemedText>
         <ThemedText style={styles.disciplineLine}>
-          • Sizing 1 % du capital max — montée progressive après période profitable
+          • Tik neutral = pas de vue → ne force pas un trade
         </ThemedText>
       </ThemedView>
 
