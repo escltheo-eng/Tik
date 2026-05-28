@@ -10,7 +10,10 @@
  * directionnel + Garde-fou 2-bis : on ne trade pas le GOLD sur les signaux Tik).
  *
  * - Sélecteur BTC/GOLD
- * - Par event (échéance + volume), les seuils les plus tradés avec leur proba YES
+ * - Par event (échéance + volume), les seuils les plus INFORMATIFS (proba la plus
+ *   proche de 50 % = là où le marché est vraiment incertain), affichés en ordre
+ *   de prix. On évite les seuils extrêmes quasi-certains (~0/100 %) qui n'apportent
+ *   aucune info, même s'ils concentrent le volume.
  * - Tap sur un event → ouvre la page Polymarket dans le navigateur natif
  */
 
@@ -30,7 +33,7 @@ export interface PolymarketCardProps {
   entityOptions?: readonly string[];
   /** Nombre d'events affichés (défaut 3). */
   displayLimit?: number;
-  /** Nombre de seuils affichés par event (défaut 4, les plus tradés). */
+  /** Nombre de seuils affichés par event (défaut 4, les plus informatifs). */
   marketsPerEvent?: number;
   loading?: boolean;
   error?: string | null;
@@ -58,9 +61,17 @@ function formatPct(p: number | null): string {
 }
 
 function topMarkets(ev: PolymarketEvent, n: number): PolymarketMarket[] {
-  return [...ev.markets]
-    .sort((a, b) => (b.volume ?? 0) - (a.volume ?? 0))
+  // Les plus informatifs = proba la plus proche de 50 % (marché incertain).
+  // Un seuil à 0,5 % ou 99,5 % ne dit rien d'actionnable, même très tradé.
+  // On exclut donc le tri par volume (qui remontait du bruit extrême).
+  const informative = ev.markets
+    .filter((m) => m.yes_prob != null)
+    .sort((a, b) => Math.abs((a.yes_prob ?? 0) - 0.5) - Math.abs((b.yes_prob ?? 0) - 0.5))
     .slice(0, n);
+  // Affichage en ordre de seuil croissant (lecture naturelle en échelle).
+  return informative.sort(
+    (a, b) => (a.threshold_usd ?? Infinity) - (b.threshold_usd ?? Infinity),
+  );
 }
 
 function polymarketUrl(ev: PolymarketEvent): string | null {
