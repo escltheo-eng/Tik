@@ -34,6 +34,7 @@ const OUTCOME_LABELS: Record<WatchlistEntry['outcome'], string> = {
   pending: 'En attente',
   confirmed: 'Confirmé',
   refuted: 'Infirmé',
+  inconclusive: 'Non concluant',
   n_a: 'N/A',
 };
 
@@ -41,6 +42,7 @@ const OUTCOME_COLORS: Record<WatchlistEntry['outcome'], string> = {
   pending: '#7f8c8d',
   confirmed: '#27ae60',
   refuted: '#c0392b',
+  inconclusive: '#e67e22',
   n_a: '#95a5a6',
 };
 

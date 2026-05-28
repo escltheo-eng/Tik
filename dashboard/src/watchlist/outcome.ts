@@ -9,21 +9,6 @@
 import type { FeedbackOutcome, SignalTrackRecord, TrackRecordRow } from '@/src/api/types';
 import type { WatchlistOutcome } from './WatchlistContext';
 
-/**
- * Mapping horizon signal → label du row de référence (row le plus long de
- * la fenêtre TTL contractuelle) qui détermine l'outcome final.
- *
- * Cohérent Paquet 17 (granularité adaptée par horizon) :
- *   - flash : 15min / 30min / 45min / 1h → row final = 1h (TTL signal = 1h)
- *   - swing : 1h / 6h / 24h / 5j → row final = 5j (sweet spot mesuré Paquet 1.x)
- *   - macro : 1j / 7j / 30j / 90j → row final = 90j
- */
-export const REFERENCE_ROW_BY_HORIZON: Record<string, string> = {
-  flash: '1h',
-  swing: '5j',
-  macro: '90j',
-};
-
 export interface DerivedOutcome {
   outcome: WatchlistOutcome;
   sourceRowLabel: string;
@@ -32,67 +17,106 @@ export interface DerivedOutcome {
   badge: string;
 }
 
+/** État affiné d'une ligne (réplique `effectiveState` du détail signal). */
+type RowState = 'correct' | 'sous_seuil' | 'raté' | 'données_manquantes';
+
+function rowState(row: TrackRecordRow, dir: string): RowState {
+  if (row.badge === 'données_manquantes' || row.delta_pct == null) {
+    return 'données_manquantes';
+  }
+  // Signaux neutres : on garde le verdict binaire du backend.
+  if (dir !== 'long' && dir !== 'short') {
+    return row.badge === 'correct' ? 'correct' : 'raté';
+  }
+  const gain = dir === 'long' ? row.delta_pct : -row.delta_pct;
+  if (gain > row.threshold_pct) return 'correct';
+  if (gain < -row.threshold_pct) return 'raté';
+  return 'sous_seuil';
+}
+
 /**
- * Dérive l'outcome watchlist depuis un track record. Retourne `null` si
- * le row de référence n'est pas encore résolu (en_attente).
+ * Dérive l'outcome watchlist depuis un track record — FENÊTRE-AWARE.
  *
- * Mapping :
- *   - row.badge === 'correct' (success=true) → confirmed
- *   - row.badge === 'raté' (success=false) → refuted
- *   - row.badge === 'données_manquantes' → n_a (résolu mais data indisponible)
- *   - row.badge === 'en_attente' → null (pas de résolution, reste pending)
+ * On ne se base plus sur la seule ligne de l'horizon contractuel (qui ratait
+ * un flash monté à 30 min puis redescendu à 1h pile). On regarde TOUTES les
+ * lignes échues de la fenêtre :
+ *   - une ligne au moins atteint ton sens (≥ son seuil)  → confirmed
+ *   - aucune dans ton sens MAIS au moins une contre toi   → refuted
+ *   - que du sous-seuil (ça a stagné)                     → inconclusive
+ *   - que des données manquantes                          → n_a
  *
- * Cas dégradés :
- *   - Pas de row matching → null (rare, défense)
- *   - Horizon inconnu → null
+ * Retourne `null` (reste pending) tant que la fenêtre n'est pas complète
+ * (dernière ligne encore en_attente) ou s'il n'y a aucune ligne.
+ *
+ * Le verdict diverge volontairement du hit rate global (mesuré à l'instant
+ * contractuel) : la watchlist répond « le mouvement s'est-il produit pendant
+ * la fenêtre », pas « où était le prix à l'instant T ».
  */
 export function deriveOutcomeFromTrackRecord(
   record: SignalTrackRecord,
 ): DerivedOutcome | null {
-  const refLabel = REFERENCE_ROW_BY_HORIZON[record.horizon];
-  if (!refLabel) return null;
+  const rows = record.rows ?? [];
+  if (rows.length === 0) return null;
+  // Fenêtre pas encore complète → on attend (le cooldown évite le spam).
+  if (rows[rows.length - 1].badge === 'en_attente') return null;
 
-  const row = record.rows.find((r) => r.label === refLabel);
-  if (!row) return null;
+  const dir = record.direction.toLowerCase();
+  let firstCorrect: TrackRecordRow | null = null;
+  let lastRate: TrackRecordRow | null = null;
+  let lastSubThreshold: TrackRecordRow | null = null;
+  let anyEvaluable = false;
 
-  return mapRowToOutcome(row);
-}
-
-/**
- * Helper interne. Exposé pour tests + cas edge où on aurait directement
- * un `TrackRecordRow` (ex. inspection manuelle).
- */
-export function mapRowToOutcome(row: TrackRecordRow): DerivedOutcome | null {
-  switch (row.badge) {
-    case 'correct':
-      return {
-        outcome: 'confirmed',
-        sourceRowLabel: row.label,
-        deltaPct: row.delta_pct,
-        success: row.success,
-        badge: row.badge,
-      };
-    case 'raté':
-      return {
-        outcome: 'refuted',
-        sourceRowLabel: row.label,
-        deltaPct: row.delta_pct,
-        success: row.success,
-        badge: row.badge,
-      };
-    case 'données_manquantes':
-      return {
-        outcome: 'n_a',
-        sourceRowLabel: row.label,
-        deltaPct: row.delta_pct,
-        success: row.success,
-        badge: row.badge,
-      };
-    case 'en_attente':
-      return null;
-    default:
-      return null;
+  for (const row of rows) {
+    if (row.badge === 'en_attente') continue;
+    const st = rowState(row, dir);
+    if (st === 'données_manquantes') continue;
+    anyEvaluable = true;
+    if (st === 'correct') {
+      if (firstCorrect === null) firstCorrect = row;
+    } else if (st === 'raté') {
+      lastRate = row;
+    } else {
+      lastSubThreshold = row;
+    }
   }
+
+  if (!anyEvaluable) {
+    const last = rows[rows.length - 1];
+    return {
+      outcome: 'n_a',
+      sourceRowLabel: last.label,
+      deltaPct: last.delta_pct,
+      success: null,
+      badge: 'données_manquantes',
+    };
+  }
+  if (firstCorrect) {
+    return {
+      outcome: 'confirmed',
+      sourceRowLabel: firstCorrect.label,
+      deltaPct: firstCorrect.delta_pct,
+      success: true,
+      badge: 'correct',
+    };
+  }
+  if (lastRate) {
+    return {
+      outcome: 'refuted',
+      sourceRowLabel: lastRate.label,
+      deltaPct: lastRate.delta_pct,
+      success: false,
+      badge: 'raté',
+    };
+  }
+  // que du sous-seuil → ni gagné ni vraiment perdu
+  const ref = lastSubThreshold ?? rows[rows.length - 1];
+  return {
+    outcome: 'inconclusive',
+    sourceRowLabel: ref.label,
+    deltaPct: ref.delta_pct,
+    success: null,
+    badge: 'sous_seuil',
+  };
 }
 
 /**
@@ -105,6 +129,8 @@ export function mapRowToOutcome(row: TrackRecordRow): DerivedOutcome | null {
  *   - confirmed (direction Tik correcte) → win
  *   - refuted (direction Tik incorrecte) → loss
  *   - n_a (data manquante ou explicite non-trading) → not_taken
+ *   - inconclusive (mouvement sous le seuil) → null (on N'envoie PAS : ce
+ *     n'est ni un win ni un loss, ça polluerait la calibration source)
  *   - pending → null (ne pas envoyer, pas encore résolu)
  *
  * Note : `breakeven` n'est pas exposé par l'auto-resolution car le track
@@ -121,6 +147,8 @@ export function mapOutcomeToFeedback(
       return 'loss';
     case 'n_a':
       return 'not_taken';
+    case 'inconclusive':
+      return null;
     case 'pending':
       return null;
     default:

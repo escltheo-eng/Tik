@@ -23,6 +23,8 @@ export interface PersonalHitRateStats {
   confirmed: number;
   /** Nombre d'entries `refuted`. */
   refuted: number;
+  /** Nombre d'entries `inconclusive` (mouvement sous le seuil — ni win ni loss). */
+  inconclusive: number;
   /** Nombre d'entries `n_a`. */
   na: number;
   /**
@@ -44,6 +46,7 @@ export function computePersonalStats(entries: WatchlistEntry[]): PersonalHitRate
   let pending = 0;
   let confirmed = 0;
   let refuted = 0;
+  let inconclusive = 0;
   let na = 0;
   let manuallyResolvedCount = 0;
 
@@ -58,6 +61,9 @@ export function computePersonalStats(entries: WatchlistEntry[]): PersonalHitRate
       case 'refuted':
         refuted += 1;
         break;
+      case 'inconclusive':
+        inconclusive += 1;
+        break;
       case 'n_a':
         na += 1;
         break;
@@ -66,7 +72,9 @@ export function computePersonalStats(entries: WatchlistEntry[]): PersonalHitRate
   }
 
   const total = entries.length;
-  const resolved = confirmed + refuted + na;
+  // inconclusive et n_a sont "résolus" mais SANS verdict directionnel → exclus
+  // du dénominateur du hit rate (evaluable = confirmed + refuted seulement).
+  const resolved = confirmed + refuted + inconclusive + na;
   const evaluable = confirmed + refuted;
   const hitRate = evaluable > 0 ? confirmed / evaluable : null;
 
@@ -77,6 +85,7 @@ export function computePersonalStats(entries: WatchlistEntry[]): PersonalHitRate
     evaluable,
     confirmed,
     refuted,
+    inconclusive,
     na,
     hitRate,
     manuallyResolvedCount,

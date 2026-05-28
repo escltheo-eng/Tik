@@ -175,7 +175,7 @@ export function createResolveEntryFn(deps: {
   client: HttpClient;
   setOutcomeAuto: (
     signalId: string,
-    outcome: 'confirmed' | 'refuted' | 'n_a' | 'pending',
+    outcome: 'confirmed' | 'refuted' | 'inconclusive' | 'n_a' | 'pending',
     error: string | null,
   ) => void;
   markAutoAttempt: (signalId: string, error: string | null) => void;

@@ -35,7 +35,7 @@ import { Signal } from '@/src/api/types';
 const MAX_WATCHLIST = 200;
 const STORAGE_KEY = 'tik.watchlist.v1';
 
-export type WatchlistOutcome = 'pending' | 'confirmed' | 'refuted' | 'n_a';
+export type WatchlistOutcome = 'pending' | 'confirmed' | 'refuted' | 'inconclusive' | 'n_a';
 
 /**
  * Snapshot des champs du signal au moment du suivi. On stocke localement

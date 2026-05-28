@@ -72,7 +72,7 @@ export function PersonalHitRateCard({
             {stats.confirmed} confirmé{stats.confirmed > 1 ? 's' : ''} / {stats.evaluable} évaluable{stats.evaluable > 1 ? 's' : ''}
           </ThemedText>
           <ThemedText style={styles.counterMuted}>
-            ({stats.na} sans verdict · {stats.pending} en attente)
+            ({stats.inconclusive} non concluant{stats.inconclusive > 1 ? 's' : ''} · {stats.na} sans verdict · {stats.pending} en attente)
           </ThemedText>
         </View>
       </View>
