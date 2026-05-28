@@ -8,12 +8,13 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { getHitRate, reportFeedback } from '@/src/api/endpoints';
+import { getHitRate, getSignalTrackRecord, reportFeedback } from '@/src/api/endpoints';
 import type { HitRate } from '@/src/api/types';
 import { useAuth } from '@/src/auth/AuthContext';
 import { useTick } from '@/src/hooks/use-tick';
 import { timeAgo } from '@/src/utils/time';
 import {
+  deriveOutcomeFromTrackRecord,
   formatExitReason,
   formatTradeId,
   mapOutcomeToFeedback,
@@ -62,7 +63,7 @@ export default function WatchlistScreen() {
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme() ?? 'light';
   const palette = Colors[colorScheme];
-  const { entries, remove, setOutcome, clear, hydrated } = useWatchlist();
+  const { entries, remove, setOutcome, setOutcomeAuto, clear, hydrated } = useWatchlist();
   const { client, isAuthenticated } = useAuth();
   useTick();
 
@@ -75,6 +76,7 @@ export default function WatchlistScreen() {
   const [globalRef, setGlobalRef] = useState<HitRate | null>(null);
   const [globalLoading, setGlobalLoading] = useState(false);
   const [globalError, setGlobalError] = useState<string | null>(null);
+  const [reevaluating, setReevaluating] = useState(false);
 
   const comparison = useMemo(() => {
     const h = dominantHorizon(entries);
@@ -169,6 +171,39 @@ export default function WatchlistScreen() {
     [client, setOutcome],
   );
 
+  // « Ré-évaluer » — recalcule les entrées DÉJÀ auto-résolues avec la logique
+  // fenêtre-aware (rattrape les anciennes « infirmé » à tort). Ne touche pas les
+  // overrides manuels (sanctuaire) et N'envoie PAS de feedback (évite les
+  // doublons en DB ; la calibration n'est de toute façon que cosmétique).
+  const handleReevaluate = useCallback(async () => {
+    if (!isAuthenticated || reevaluating) return;
+    const targets = entries
+      .filter((e) => !e.manuallyResolved && e.outcome !== 'pending')
+      .slice(0, 60);
+    if (targets.length === 0) {
+      Alert.alert('Ré-évaluer', 'Aucune entrée auto-résolue à recalculer.');
+      return;
+    }
+    setReevaluating(true);
+    const results = await Promise.allSettled(
+      targets.map(async (e) => {
+        const record = await getSignalTrackRecord(client, e.signalId);
+        const derived = deriveOutcomeFromTrackRecord(record);
+        if (derived && derived.outcome !== e.outcome) {
+          setOutcomeAuto(e.signalId, derived.outcome, null);
+          return true;
+        }
+        return false;
+      }),
+    );
+    const changed = results.filter((r) => r.status === 'fulfilled' && r.value).length;
+    setReevaluating(false);
+    Alert.alert(
+      'Ré-évaluation terminée',
+      `${changed} verdict(s) mis à jour sur ${targets.length} entrée(s) recalculée(s).`,
+    );
+  }, [entries, client, isAuthenticated, reevaluating, setOutcomeAuto]);
+
   // F2 audit UX 2026-05-17 : 2 lignes lisibles.
   //   Ligne 1 : entity · direction badge · horizon   |   timestamp
   //   Ligne 2 : outcome badge · veracity %           (confidence retiré,
@@ -255,6 +290,17 @@ export default function WatchlistScreen() {
         ) : null}
         {personalStats.total > 0 ? (
           <View style={styles.actions}>
+            <Pressable
+              onPress={handleReevaluate}
+              disabled={reevaluating}
+              style={({ pressed }) => [
+                styles.actionBtn,
+                { borderColor: palette.icon, opacity: pressed || reevaluating ? 0.6 : 1 },
+              ]}>
+              <ThemedText style={{ color: palette.text, fontSize: 13 }}>
+                {reevaluating ? 'Ré-évaluation…' : 'Ré-évaluer'}
+              </ThemedText>
+            </Pressable>
             <Pressable
               onPress={clear}
               style={({ pressed }) => [
