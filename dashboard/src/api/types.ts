@@ -242,3 +242,24 @@ export interface SignalFreshness {
   stale: boolean;
   threshold_seconds: number;
 }
+
+// Santé par source OSINT (2026-05-28) — détection de dégradation silencieuse.
+export interface SourceHealthItem {
+  name: string;
+  status: 'ok' | 'stale' | 'missing';
+  age_seconds: number | null;
+  max_age_seconds: number;
+  critical: boolean;
+  note: string;
+}
+
+export interface SourceHealth {
+  checked_at: string;
+  n_total: number;
+  n_ok: number;
+  n_stale: number;
+  n_missing: number;
+  any_critical_down: boolean;
+  critical_down: string[];
+  sources: SourceHealthItem[];
+}

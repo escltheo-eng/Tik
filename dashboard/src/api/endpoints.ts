@@ -21,6 +21,7 @@ import {
   Signal,
   SignalFreshness,
   SignalTrackRecord,
+  SourceHealth,
   SourceVeracity,
   VeracityStatus,
 } from './types';
@@ -39,6 +40,11 @@ export async function getSignalFreshness(
   return client.get<SignalFreshness>('/metrics/signal_freshness', {
     threshold_seconds: thresholdSeconds,
   });
+}
+
+// Santé par source OSINT (2026-05-28) — dégradation silencieuse par source.
+export async function getSourceHealth(client: HttpClient): Promise<SourceHealth> {
+  return client.get<SourceHealth>('/metrics/source_health');
 }
 
 // ----- Entities -----

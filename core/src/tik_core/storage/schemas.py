@@ -365,3 +365,37 @@ class SignalFreshnessOut(BaseModel):
     @field_serializer("last_signal_at", when_used="json")
     def _ser_last(self, value: datetime | None) -> str | None:
         return iso_utc(value) if value is not None else None
+
+
+class SourceHealthItem(BaseModel):
+    """État d'une source OSINT (fraîcheur de sa clé Redis)."""
+
+    name: str
+    status: str  # "ok" | "stale" | "missing"
+    age_seconds: float | None
+    max_age_seconds: int
+    critical: bool
+    note: str
+
+
+class SourceHealthOut(BaseModel):
+    """Santé par source OSINT — détection de dégradation silencieuse (complète M4).
+
+    `any_critical_down=True` = au moins une source dont l'absence dégrade la
+    production de signaux actuelle (FG, CryptoCompare, Google News BTC, prix BTC).
+    Les sources non critiques dégradées (Reddit Bug 11, shadow, GOLD-side) sont
+    listées pour transparence sans déclencher d'alerte.
+    """
+
+    checked_at: datetime
+    n_total: int
+    n_ok: int
+    n_stale: int
+    n_missing: int
+    any_critical_down: bool
+    critical_down: list[str]
+    sources: list[SourceHealthItem]
+
+    @field_serializer("checked_at", when_used="json")
+    def _ser_checked(self, value: datetime) -> str:
+        return iso_utc(value)

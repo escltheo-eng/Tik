@@ -45,6 +45,11 @@ from tik_core.metrics.hit_rate import (
     make_cache_key_by_veracity,
 )
 from tik_core.metrics.signal_track_record import compute_track_record
+from tik_core.metrics.source_health import (
+    SOURCE_SPECS,
+    compute_source_health,
+    summarize,
+)
 from tik_core.scripts.backtest import fetch_btc_history, fetch_gold_history
 from tik_core.storage.database import get_session
 from tik_core.storage.models import Signal
@@ -54,6 +59,8 @@ from tik_core.storage.schemas import (
     HitRateOut,
     SignalFreshnessOut,
     SignalTrackRecordOut,
+    SourceHealthItem,
+    SourceHealthOut,
     TrackRecordRow,
 )
 from tik_core.utils.time import now_utc, now_utc_naive
@@ -654,4 +661,56 @@ async def get_signal_freshness(
         age_seconds=fr.age_seconds,
         stale=fr.stale,
         threshold_seconds=fr.threshold_seconds,
+    )
+
+
+@router.get("/source_health", response_model=SourceHealthOut)
+async def get_source_health(
+    _ctx: AuthContext = Depends(require_scope("read:signals")),
+) -> SourceHealthOut:
+    """Santé par source OSINT — détection de dégradation silencieuse (complète M4).
+
+    Lit la clé Redis-sentinelle de chaque source (`fetched_at` pour les overlays
+    sentiment, `timestamp` pour les flux prix) et la classe ok / stale / missing
+    selon une tolérance d'âge ≈ 3× l'intervalle de polling. Une source critique
+    dégradée (FG, CryptoCompare, Google News BTC, prix BTC) lève `any_critical_down`.
+    Reddit apparaît `missing` (Bug 11 IP-ban, non critique car mitigé).
+
+    Lecture seule, best-effort (une erreur Redis sur une clé → cette source comptée
+    `missing`, jamais de 500). Garde-fou 1 / ADR-003 inchangés (aucune exécution).
+    """
+    settings = get_settings()
+    redis = aioredis.from_url(settings.redis_url, decode_responses=True)
+    try:
+        raw_by_key: dict[str, str | None] = {}
+        for spec in SOURCE_SPECS:
+            try:
+                raw_by_key[spec.redis_key] = await redis.get(spec.redis_key)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("metrics.source_health.read_error", key=spec.redis_key, error=str(exc))
+                raw_by_key[spec.redis_key] = None
+    finally:
+        await redis.aclose()
+
+    items = compute_source_health(raw_by_key, now_utc())
+    summary = summarize(items)
+    return SourceHealthOut(
+        checked_at=now_utc(),
+        n_total=summary["n_total"],
+        n_ok=summary["n_ok"],
+        n_stale=summary["n_stale"],
+        n_missing=summary["n_missing"],
+        any_critical_down=summary["any_critical_down"],
+        critical_down=summary["critical_down"],
+        sources=[
+            SourceHealthItem(
+                name=i.name,
+                status=i.status,
+                age_seconds=i.age_seconds,
+                max_age_seconds=i.max_age_seconds,
+                critical=i.critical,
+                note=i.note,
+            )
+            for i in items
+        ],
     )

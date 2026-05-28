@@ -8,6 +8,7 @@ import { KpiCard } from '@/components/dashboard/kpi-card';
 import { MacroEventsCard } from '@/components/dashboard/macro-events-card';
 import { MiniSparkline } from '@/components/dashboard/mini-sparkline';
 import { SignalFreshnessBanner } from '@/components/dashboard/signal-freshness-banner';
+import { SourceHealthCard } from '@/components/dashboard/source-health-card';
 import { StatsLLMCard } from '@/components/dashboard/stats-llm-card';
 import { TopHeadlinesCard } from '@/components/dashboard/top-headlines-card';
 import { VeracityGauge } from '@/components/dashboard/veracity-gauge';
@@ -342,6 +343,8 @@ export default function HomeScreen() {
           <ThemedText style={styles.refreshLabel}>Rafraîchir</ThemedText>
         </Pressable>
       </ThemedView>
+
+      <SourceHealthCard />
 
       <ThemedView style={styles.versionBox}>
         <ThemedText style={styles.versionText}>
