@@ -18,6 +18,7 @@ import {
   HitRate,
   HitRateByVeracity,
   MacroEvent,
+  MacroReading,
   PolymarketSnapshot,
   Signal,
   SignalFreshness,
@@ -151,6 +152,12 @@ export async function getTopHeadlines(
       sort: params.sort ?? 'credibility_recency',
     },
   );
+}
+
+// ----- Lecture macro (éducatif curé + réaction mesurée, SHADOW) -----
+
+export async function getMacroReading(client: HttpClient): Promise<MacroReading[]> {
+  return client.get<MacroReading[]>('/macro_reading');
 }
 
 // ----- Polymarket (marchés prédictifs, SHADOW — contexte de marché) -----

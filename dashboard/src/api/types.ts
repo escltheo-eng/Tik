@@ -293,3 +293,32 @@ export interface PolymarketSnapshot {
   total_volume: number;
   events: PolymarketEvent[];
 }
+
+// ----- Lecture macro (éducatif curé + réaction mesurée, SHADOW) -----
+
+export interface MacroReactionStat {
+  n: number;
+  median: number;
+  pct_up: number;
+  mean_abs: number;
+}
+
+export interface MacroAssetReaction {
+  same_day: MacroReactionStat | null;
+  d1: MacroReactionStat | null;
+  d3: MacroReactionStat | null;
+}
+
+export interface MacroReading {
+  event_code: string;
+  event_name: string;
+  importance: string;
+  one_liner: string;
+  mechanism: string;
+  assets_in_play: string[];
+  regime_caveat: string;
+  n_dates: number;
+  measured_available: boolean;
+  btc: MacroAssetReaction | null;
+  gold: MacroAssetReaction | null;
+}
