@@ -1168,3 +1168,24 @@ Les étapes lint CI (jobs core-lint + core-test) repassent vertes.
 **Limite résiduelle** : 1 `DeprecationWarning` runtime non-lint subsiste
 (`pubsub.close()` → `aclose()` dans `ws.py:127`) — warning bénin, hors scope
 lint, à traiter avec le prochain bump de la lib redis.
+
+## 13. Calibration des « points » dashboard sur les specs MT5 du broker (demandé 2026-05-28)
+
+**En attente des valeurs MT5 de l'utilisatrice — à faire dans une instance future.**
+
+Objectif : que les « points » affichés par Tik (carte Track record, « mouvement
+requis en points », `dashboard/src/utils/points.ts`) parlent le **même langage
+que son MT5**, pour poser SL/TP/lots sans conversion mentale en trading manuel.
+
+- **Valeurs actuelles** : BTC = 1 $/point, GOLD = 0,01 $/point (≈ convention MT5
+  courante, non confirmées pour SON broker ActivTrades, compte pro 1:1000).
+- **Source de vérité** = son MT5 : clic droit symbole → *Spécification* → champs
+  **Digits** et **Point**, pour **BTCUSD** ET **XAUUSD**. Le web ne donne pas la
+  spec exacte du compte → **ne pas deviner** (risque de fausser ses tailles d'ordre).
+- **Quand elle fournit ses valeurs** :
+  - Option A (rapide) : corriger les constantes dans `points.ts`.
+  - Option B (robuste, recommandée) : réglage dans l'onglet **Config** (elle saisit
+    Point BTCUSD + Point XAUUSD) → plus de hardcode, autonomie si changement de broker.
+  - Frontend uniquement, bump version dashboard, tsc + eslint, **aucun backend**.
+
+Cf. memory `mt5-points-calibration-todo`.
