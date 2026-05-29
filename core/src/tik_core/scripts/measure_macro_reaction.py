@@ -154,6 +154,50 @@ def _fmt(agg: dict | None) -> str:
     return f"n={agg['n']:>3} méd={agg['median']:+.2f}% haut={agg['pct_up']:>3.0f}% |{agg['mean_abs']:.2f}%|"
 
 
+async def fetch_price_maps(client: httpx.AsyncClient) -> tuple[dict, dict]:
+    """Maps {date: clôture} BTC (Binance 1d, ~2.7 ans) et GOLD (Yahoo 1d, 5 ans)."""
+    btc = date_close_map(await fetch_btc_history(client, interval="1d", limit=1000))
+    gold = date_close_map(await fetch_gold_history(client, interval="1d", range_param="5y"))
+    return btc, gold
+
+
+async def compute_event_reactions(
+    client: httpx.AsyncClient,
+    api_key: str,
+    *,
+    limit: int = 48,
+    price_maps: tuple[dict, dict] | None = None,
+) -> dict:
+    """Réaction historique par event FRED — réutilisable (script ET endpoint).
+
+    Retour : {event_code: {"event_name", "importance", "n_dates",
+              "assets": {"BTC": {label: agg|None}, "GOLD": {...}}}}.
+    Un event dont le fetch des dates échoue est simplement absent du dict.
+    """
+    if price_maps is None:
+        price_maps = await fetch_price_maps(client)
+    btc, gold = price_maps
+    out: dict = {}
+    for spec in FRED_RELEASES:
+        try:
+            dates = await fetch_release_dates(client, api_key, spec.release_id, limit)
+        except Exception:  # noqa: BLE001
+            continue
+        assets: dict = {}
+        for asset, m in (("BTC", btc), ("GOLD", gold)):
+            reactions = [r for d in dates if (r := reaction(m, d)) is not None]
+            assets[asset] = {
+                label: aggregate([r[label] for r in reactions]) for label, _ in HORIZONS
+            }
+        out[spec.event_code] = {
+            "event_name": spec.event_name,
+            "importance": spec.importance,
+            "n_dates": len(dates),
+            "assets": assets,
+        }
+    return out
+
+
 async def main() -> int:
     ap = argparse.ArgumentParser(
         description="Réaction historique BTC/GOLD aux events macro US (shadow)."
@@ -167,8 +211,8 @@ async def main() -> int:
         return 1
 
     async with httpx.AsyncClient() as client:
-        btc = date_close_map(await fetch_btc_history(client, interval="1d", limit=1000))
-        gold = date_close_map(await fetch_gold_history(client, interval="1d", range_param="5y"))
+        price_maps = await fetch_price_maps(client)
+        btc, gold = price_maps
         btc_span = f"{min(btc)} → {max(btc)}" if btc else "vide"
         gold_span = f"{min(gold)} → {max(gold)}" if gold else "vide"
 
@@ -182,21 +226,22 @@ async def main() -> int:
         print("            sur la surprise · descriptif, PAS un edge.")
         print("=" * 78)
 
+        reactions_by_event = await compute_event_reactions(
+            client, api_key, limit=args.limit, price_maps=price_maps
+        )
         for spec in FRED_RELEASES:
-            try:
-                dates = await fetch_release_dates(client, api_key, spec.release_id, args.limit)
-            except Exception as exc:  # noqa: BLE001
-                print(f"\n{spec.event_code} : échec fetch dates ({exc})")
+            ev = reactions_by_event.get(spec.event_code)
+            if ev is None:
+                print(f"\n{spec.event_code} : pas de données (fetch dates échoué)")
                 continue
             print(
-                f"\n### {spec.event_code} ({spec.event_name}, {spec.importance}) — {len(dates)} dates FRED"
+                f"\n### {spec.event_code} ({ev['event_name']}, {ev['importance']}) "
+                f"— {ev['n_dates']} dates FRED"
             )
-            for asset, m in (("BTC", btc), ("GOLD", gold)):
-                reactions = [r for d in dates if (r := reaction(m, d)) is not None]
+            for asset in ("BTC", "GOLD"):
                 line = f"  {asset:<4} "
                 for label, _ in HORIZONS:
-                    agg = aggregate([r[label] for r in reactions])
-                    line += f"| {label}: {_fmt(agg)} "
+                    line += f"| {label}: {_fmt(ev['assets'][asset][label])} "
                 print(line)
 
     print("\n" + "=" * 78)

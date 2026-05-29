@@ -440,3 +440,44 @@ class PolymarketSnapshotOut(BaseModel):
     n_events: int = 0
     total_volume: float = 0.0
     events: list[PolymarketEventOut] = Field(default_factory=list)
+
+
+# ----- Lecture macro (éducatif curé + réaction mesurée, SHADOW) -----
+
+
+class MacroReactionStat(BaseModel):
+    """Stat agrégée d'une réaction historique sur un horizon (mesuré Tik)."""
+
+    n: int
+    median: float
+    pct_up: float
+    mean_abs: float
+
+
+class MacroAssetReaction(BaseModel):
+    """Réaction mesurée d'un actif aux 3 horizons (same_day / +1j / +3j)."""
+
+    same_day: MacroReactionStat | None = None
+    d1: MacroReactionStat | None = None
+    d3: MacroReactionStat | None = None
+
+
+class MacroReadingOut(BaseModel):
+    """Lecture macro d'un type d'event : mécanisme ÉDUCATIF + réaction MESURÉE.
+
+    `mechanism`/`assets_in_play`/`regime_caveat` = savoir général curé (hedgé,
+    PAS mesuré). `btc`/`gold` = réaction historique réellement mesurée par Tik
+    (None si indisponible). À afficher en deux couches distinctes côté UI.
+    """
+
+    event_code: str
+    event_name: str
+    importance: str
+    one_liner: str
+    mechanism: str
+    assets_in_play: list[str]
+    regime_caveat: str
+    n_dates: int = 0
+    measured_available: bool = False
+    btc: MacroAssetReaction | None = None
+    gold: MacroAssetReaction | None = None
