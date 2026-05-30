@@ -322,3 +322,25 @@ export interface MacroReading {
   btc: MacroAssetReaction | null;
   gold: MacroAssetReaction | null;
 }
+
+// ----- Lecture macro LIVE (compte à rebours + réaction réelle ±48h) -----
+
+export interface MacroLiveEvent {
+  event_code: string;
+  event_name: string;
+  importance: string;
+  scheduled_for: string; // ISO UTC (suffixe Z)
+  one_liner: string;
+}
+
+export interface MacroLiveRecent extends MacroLiveEvent {
+  // % BRUT depuis l'heure de l'annonce (pas isolé à la surprise). null si prix indispo.
+  btc_move_pct: number | null;
+  gold_move_pct: number | null;
+}
+
+export interface MacroLiveOut {
+  now: string; // ISO UTC
+  next_event: MacroLiveEvent | null;
+  recent_event: MacroLiveRecent | null;
+}

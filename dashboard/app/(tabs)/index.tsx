@@ -6,6 +6,7 @@ import { HitRateByVeracityCard } from '@/components/dashboard/hit-rate-by-veraci
 import { HitRateCard } from '@/components/dashboard/hit-rate-card';
 import { KpiCard } from '@/components/dashboard/kpi-card';
 import { MacroEventsCard } from '@/components/dashboard/macro-events-card';
+import { MacroLiveCard } from '@/components/dashboard/macro-live-card';
 import { MacroReadingCard } from '@/components/dashboard/macro-reading-card';
 import { PolymarketCard } from '@/components/dashboard/polymarket-card';
 import { MiniSparkline } from '@/components/dashboard/mini-sparkline';
@@ -28,6 +29,7 @@ import { useHitRate } from '@/src/hooks/useHitRate';
 import { useHitRateByVeracity } from '@/src/hooks/useHitRateByVeracity';
 import { useTick } from '@/src/hooks/use-tick';
 import { useMacroReading } from '@/src/hooks/useMacroReading';
+import { useMacroReadingLive } from '@/src/hooks/useMacroReadingLive';
 import { usePolymarket } from '@/src/hooks/usePolymarket';
 import { useTopHeadlines } from '@/src/hooks/useTopHeadlines';
 import { useUpcomingMacroEvents } from '@/src/hooks/useUpcomingMacroEvents';
@@ -124,6 +126,7 @@ export default function HomeScreen() {
   // (cohérent TTL cache Redis 5 min).
   const macroEventsState = useUpcomingMacroEvents({ hours: 7 * 24, limit: 4 });
   const macroReadingState = useMacroReading();
+  const macroLiveState = useMacroReadingLive();
   const [hitRateEntity, setHitRateEntity] = useState<string>('BTC');
   const [hitRateHorizon, setHitRateHorizon] = useState<string>('swing');
   const [hitRateIncludeFlagged, setHitRateIncludeFlagged] = useState<boolean>(false);
@@ -227,6 +230,12 @@ export default function HomeScreen() {
         loading={macroEventsState.loading}
         error={macroEventsState.error}
         displayLimit={4}
+      />
+
+      <MacroLiveCard
+        live={macroLiveState.live}
+        loading={macroLiveState.loading}
+        error={macroLiveState.error}
       />
 
       <MacroReadingCard

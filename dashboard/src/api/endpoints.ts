@@ -18,6 +18,7 @@ import {
   HitRate,
   HitRateByVeracity,
   MacroEvent,
+  MacroLiveOut,
   MacroReading,
   PolymarketSnapshot,
   Signal,
@@ -158,6 +159,10 @@ export async function getTopHeadlines(
 
 export async function getMacroReading(client: HttpClient): Promise<MacroReading[]> {
   return client.get<MacroReading[]>('/macro_reading');
+}
+
+export async function getMacroReadingLive(client: HttpClient): Promise<MacroLiveOut> {
+  return client.get<MacroLiveOut>('/macro_reading/live');
 }
 
 // ----- Polymarket (marchés prédictifs, SHADOW — contexte de marché) -----
