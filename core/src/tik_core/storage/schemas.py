@@ -481,3 +481,39 @@ class MacroReadingOut(BaseModel):
     measured_available: bool = False
     btc: MacroAssetReaction | None = None
     gold: MacroAssetReaction | None = None
+
+
+class MacroLiveEvent(BaseModel):
+    """Event macro DATÉ du calendrier, pour la lecture LIVE (avant / après)."""
+
+    event_code: str
+    event_name: str
+    importance: str
+    scheduled_for: str  # ISO UTC (suffixe Z)
+    one_liner: str
+
+
+class MacroLiveRecent(MacroLiveEvent):
+    """Event récemment passé + mouvement RÉEL BTC/OR depuis l'heure de l'annonce.
+
+    `*_move_pct` = variation brute prix(maintenant) vs prix(annonce). BRUT : PAS
+    isolé à la surprise (pas de consensus dispo). None si prix indisponible
+    (ex. OR weekend / délai Yahoo / event trop frais).
+    """
+
+    btc_move_pct: float | None = None
+    gold_move_pct: float | None = None
+
+
+class MacroLiveOut(BaseModel):
+    """Lecture macro LIVE : se cale sur le calendrier réel (réagit à l'actu).
+
+    `next_event` = prochain event programmé (compte à rebours côté UI).
+    `recent_event` = dernier event passé dans la fenêtre récente (±48h) + le
+    mouvement réel BTC/OR depuis l'annonce. None si rien dans la fenêtre.
+    Pure couche de contexte : aucun edge, aucune prédiction.
+    """
+
+    now: str  # ISO UTC (suffixe Z)
+    next_event: MacroLiveEvent | None = None
+    recent_event: MacroLiveRecent | None = None
