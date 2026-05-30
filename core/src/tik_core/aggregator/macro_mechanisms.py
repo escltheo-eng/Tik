@@ -108,6 +108,97 @@ MECHANISMS: dict[str, MacroMechanism] = {
         assets_in_play=("ACTIONS", "USD", "OR", "BTC", "PÉTROLE"),
         regime_caveat=_REGIME,
     ),
+    "RETAIL_SALES": MacroMechanism(
+        event_code="RETAIL_SALES",
+        one_liner="Consommation US (~70 % du PIB) : santé de la demande domestique.",
+        mechanism=(
+            "Retail Sales mesurent la dépense des ménages US. Un chiffre fort signale "
+            "une consommation résiliente : économie OK mais pression à la hausse sur "
+            "l'inflation → la Fed peut rester restrictive plus longtemps → dollar et "
+            "rendements tendent à monter, pression sur or et actifs risqués. Un chiffre "
+            "faible nourrit les anticipations de ralentissement (risk-off) ou de baisses "
+            "de taux (risk-on) — la lecture dépend de ce que le marché priorise. Impact "
+            "généralement moindre que CPI/NFP mais souvent suiveur le mois d'après."
+        ),
+        assets_in_play=("USD", "ACTIONS", "OR", "OBLIGATIONS", "BTC"),
+        regime_caveat=_REGIME,
+    ),
+    "INDUSTRIAL_PRODUCTION": MacroMechanism(
+        event_code="INDUSTRIAL_PRODUCTION",
+        one_liner="Production industrielle US : indicateur cyclique (souvent peu market-moving).",
+        mechanism=(
+            "L'IP mesure l'output des usines, mines et utilities US. Une publication "
+            "forte signale une économie cyclique en expansion → tend à soutenir le "
+            "dollar et les secteurs cycliques (matières premières demandées : pétrole, "
+            "cuivre). Une publication faible signale un ralentissement industriel, "
+            "parfois précurseur de récession. Impact généralement contenu : les PMI "
+            "publiés en amont anticipent déjà partiellement le chiffre."
+        ),
+        assets_in_play=("USD", "ACTIONS", "PÉTROLE", "MATIÈRES PREMIÈRES", "OR"),
+        regime_caveat=_REGIME,
+    ),
+    "INITIAL_CLAIMS": MacroMechanism(
+        event_code="INITIAL_CLAIMS",
+        one_liner="Inscriptions hebdo au chômage US : baromètre haute fréquence du marché du travail.",
+        mechanism=(
+            "Les Initial Claims mesurent les nouvelles demandes d'allocations chômage "
+            "(données hebdo, donc volatiles). Une hausse signale un marché du travail "
+            "qui faiblit → anticipations de Fed dovish → dollar tend à baisser, taux "
+            "longs aussi, actions souvent positives (« bad news = good news »). Une "
+            "baisse signale un emploi tendu → Fed potentiellement plus dure → dollar "
+            "ferme. Un chiffre isolé bouge peu le marché : c'est la MOYENNE 4 semaines "
+            "et la TENDANCE qui comptent."
+        ),
+        assets_in_play=("USD", "ACTIONS", "OBLIGATIONS", "OR", "BTC"),
+        regime_caveat=_REGIME,
+    ),
+    "ECB_GOVERNING_COUNCIL": MacroMechanism(
+        event_code="ECB_GOVERNING_COUNCIL",
+        one_liner="Décision BCE : taux zone euro + ton Lagarde (équivalent européen du FOMC).",
+        mechanism=(
+            "Le Conseil des gouverneurs BCE fixe les taux de la zone euro. Un ton "
+            "restrictif (hawkish) ou une décision plus dure qu'attendue → l'euro tend à "
+            "monter contre le dollar (EUR/USD ↑), les rendements souverains européens "
+            "montent, pression sur actions européennes et indirectement sur l'or "
+            "(taux réels). Un ton accommodant joue dans l'autre sens. L'effet est "
+            "amplifié par l'ÉCART de politique avec la Fed plutôt que par les niveaux "
+            "absolus — la BCE étant souvent en retard de phase. Impact sur BTC indirect "
+            "(via dollar et risk-on global)."
+        ),
+        assets_in_play=("EUR/USD", "ACTIONS EU", "OBLIGATIONS EU", "OR", "BTC"),
+        regime_caveat=_REGIME,
+    ),
+    "BOJ_MPM": MacroMechanism(
+        event_code="BOJ_MPM",
+        one_liner="BoJ (Banque du Japon) : pilotage du yen + normalisation post-NIRP.",
+        mechanism=(
+            "La BoJ pilote le yen via taux et politique de contrôle de courbe (YCC). "
+            "Depuis 2024 elle est sortie progressivement du Negative Interest Rate "
+            "Policy → toute hausse/normalisation supplémentaire renforce le JPY contre "
+            "le dollar (USD/JPY ↓). Effet collatéral majeur : peut déclencher un "
+            "« unwind » du carry trade JPY global (positions risquées financées en yen) "
+            "→ actions/crypto sous pression (épisode août 2024 = exemple récent). Un "
+            "ton dovish (maintien) laisse le carry trade vivre → risk-on global. La "
+            "BoJ est l'événement le MOINS prévisible des grandes banques centrales."
+        ),
+        assets_in_play=("USD/JPY", "ACTIONS GLOBALES", "ACTIONS JP", "BTC", "OR"),
+        regime_caveat=_REGIME,
+    ),
+    "BOE_MPC": MacroMechanism(
+        event_code="BOE_MPC",
+        one_liner="BoE (Banque d'Angleterre) : taux UK + ton Bailey (effet souvent contenu hors UK).",
+        mechanism=(
+            "Le MPC de la BoE fixe les taux UK. Un ton restrictif tend à renforcer la "
+            "livre (GBP/USD ↑), pousser les rendements souverains UK vers le haut et "
+            "peser sur le FTSE et les actions UK. Un ton dovish joue dans l'autre sens. "
+            "L'effet sur or et BTC reste essentiellement indirect (via dollar et "
+            "risk-on global). La sterling est aussi très sensible à la politique "
+            "intérieure UK (budget, politique fiscale) — un signal BoE peut être "
+            "neutralisé par un facteur domestique le même jour."
+        ),
+        assets_in_play=("GBP/USD", "ACTIONS UK", "OBLIGATIONS UK", "OR", "BTC"),
+        regime_caveat=_REGIME,
+    ),
 }
 
 

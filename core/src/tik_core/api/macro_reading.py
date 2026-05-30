@@ -60,13 +60,20 @@ RECENT_WINDOW_H = 48
 # On ne surface que les events qui bougent vraiment les marchés.
 LIVE_IMPORTANCE = ["HIGH", "MEDIUM"]
 
-# Importance par event curé (FOMC absent de FRED_RELEASES → fallback ici).
+# Importance par event curé (FOMC + BC non-US absents de FRED_RELEASES → fallback ici).
+# Cohérent avec Phase B1/B2 (ADR-017/020) : BoE en MEDIUM (effet contenu hors UK).
 _IMPORTANCE = {
     "CPI": "HIGH",
     "NFP": "HIGH",
     "FOMC_MEETING": "HIGH",
+    "ECB_GOVERNING_COUNCIL": "HIGH",
+    "BOJ_MPM": "HIGH",
+    "BOE_MPC": "MEDIUM",
     "PPI": "MEDIUM",
     "GDP": "MEDIUM",
+    "RETAIL_SALES": "MEDIUM",
+    "INDUSTRIAL_PRODUCTION": "LOW",
+    "INITIAL_CLAIMS": "LOW",
 }
 
 
