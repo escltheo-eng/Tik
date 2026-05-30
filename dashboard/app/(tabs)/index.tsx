@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, StyleSheet } from 'react-native';
 
 import { HitRateByVeracityCard } from '@/components/dashboard/hit-rate-by-veracity-card';
+import { FlashStabilityCard } from '@/components/dashboard/flash-stability-card';
 import { HitRateCard } from '@/components/dashboard/hit-rate-card';
 import { KpiCard } from '@/components/dashboard/kpi-card';
 import { MacroEventsCard } from '@/components/dashboard/macro-events-card';
@@ -22,12 +23,11 @@ import { getHealth } from '@/src/api/endpoints';
 import { TikError } from '@/src/api/errors';
 import { Health } from '@/src/api/types';
 import { useAuth } from '@/src/auth/AuthContext';
+import { useFlashCardSetting } from '@/src/flash/flashCardSetting';
 import { useDashboardKpis } from '@/src/hooks/useDashboardKpis';
 import { useHitRate } from '@/src/hooks/useHitRate';
 import { useHitRateByVeracity } from '@/src/hooks/useHitRateByVeracity';
 import { useTick } from '@/src/hooks/use-tick';
-import { useMacroReading } from '@/src/hooks/useMacroReading';
-import { useMacroReadingLive } from '@/src/hooks/useMacroReadingLive';
 import { usePolymarket } from '@/src/hooks/usePolymarket';
 import { useTopHeadlines } from '@/src/hooks/useTopHeadlines';
 import { useUpcomingMacroEvents } from '@/src/hooks/useUpcomingMacroEvents';
@@ -83,6 +83,7 @@ export default function HomeScreen() {
   const palette = Colors[colorScheme];
 
   const [activeTab, setActiveTab] = useState<HomeTab>('market');
+  const [flashCardEnabled] = useFlashCardSetting();
 
   const [healthState, setHealthState] = useState<HealthState>(INITIAL_HEALTH);
 
@@ -123,8 +124,6 @@ export default function HomeScreen() {
   // Cap 4 events sur Home (1 mis en avant + 3 suivants), poll 5 min
   // (cohérent TTL cache Redis 5 min).
   const macroEventsState = useUpcomingMacroEvents({ hours: 7 * 24, limit: 4 });
-  const macroReadingState = useMacroReading();
-  const macroLiveState = useMacroReadingLive();
   const [hitRateEntity, setHitRateEntity] = useState<string>('BTC');
   const [hitRateHorizon, setHitRateHorizon] = useState<string>('swing');
   const [hitRateIncludeFlagged, setHitRateIncludeFlagged] = useState<boolean>(false);
@@ -197,6 +196,8 @@ export default function HomeScreen() {
         </ThemedText>
       </ThemedView>
 
+      {flashCardEnabled ? <FlashStabilityCard signals={kpis.signals24h} /> : null}
+
       <TopHeadlinesCard
         headlines={headlinesState.headlines}
         entityId={headlinesEntity}
@@ -228,8 +229,6 @@ export default function HomeScreen() {
         loading={macroEventsState.loading}
         error={macroEventsState.error}
         displayLimit={4}
-        readings={macroReadingState.readings}
-        live={macroLiveState.live}
       />
 
       <PolymarketCard

@@ -294,53 +294,5 @@ export interface PolymarketSnapshot {
   events: PolymarketEvent[];
 }
 
-// ----- Lecture macro (éducatif curé + réaction mesurée, SHADOW) -----
-
-export interface MacroReactionStat {
-  n: number;
-  median: number;
-  pct_up: number;
-  mean_abs: number;
-}
-
-export interface MacroAssetReaction {
-  same_day: MacroReactionStat | null;
-  d1: MacroReactionStat | null;
-  d3: MacroReactionStat | null;
-}
-
-export interface MacroReading {
-  event_code: string;
-  event_name: string;
-  importance: string;
-  one_liner: string;
-  mechanism: string;
-  assets_in_play: string[];
-  regime_caveat: string;
-  n_dates: number;
-  measured_available: boolean;
-  btc: MacroAssetReaction | null;
-  gold: MacroAssetReaction | null;
-}
-
-// ----- Lecture macro LIVE (compte à rebours + réaction réelle ±48h) -----
-
-export interface MacroLiveEvent {
-  event_code: string;
-  event_name: string;
-  importance: string;
-  scheduled_for: string; // ISO UTC (suffixe Z)
-  one_liner: string;
-}
-
-export interface MacroLiveRecent extends MacroLiveEvent {
-  // % BRUT depuis l'heure de l'annonce (pas isolé à la surprise). null si prix indispo.
-  btc_move_pct: number | null;
-  gold_move_pct: number | null;
-}
-
-export interface MacroLiveOut {
-  now: string; // ISO UTC
-  next_event: MacroLiveEvent | null;
-  recent_event: MacroLiveRecent | null;
-}
+// Couche éducative « Lecture macro » supprimée 2026-05-30 (cf. memory
+// macro-reading-removed-2026-05-30 pour rebuild guide en Option C / liens externes).

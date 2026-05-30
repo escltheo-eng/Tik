@@ -442,78 +442,8 @@ class PolymarketSnapshotOut(BaseModel):
     events: list[PolymarketEventOut] = Field(default_factory=list)
 
 
-# ----- Lecture macro (éducatif curé + réaction mesurée, SHADOW) -----
-
-
-class MacroReactionStat(BaseModel):
-    """Stat agrégée d'une réaction historique sur un horizon (mesuré Tik)."""
-
-    n: int
-    median: float
-    pct_up: float
-    mean_abs: float
-
-
-class MacroAssetReaction(BaseModel):
-    """Réaction mesurée d'un actif aux 3 horizons (same_day / +1j / +3j)."""
-
-    same_day: MacroReactionStat | None = None
-    d1: MacroReactionStat | None = None
-    d3: MacroReactionStat | None = None
-
-
-class MacroReadingOut(BaseModel):
-    """Lecture macro d'un type d'event : mécanisme ÉDUCATIF + réaction MESURÉE.
-
-    `mechanism`/`assets_in_play`/`regime_caveat` = savoir général curé (hedgé,
-    PAS mesuré). `btc`/`gold` = réaction historique réellement mesurée par Tik
-    (None si indisponible). À afficher en deux couches distinctes côté UI.
-    """
-
-    event_code: str
-    event_name: str
-    importance: str
-    one_liner: str
-    mechanism: str
-    assets_in_play: list[str]
-    regime_caveat: str
-    n_dates: int = 0
-    measured_available: bool = False
-    btc: MacroAssetReaction | None = None
-    gold: MacroAssetReaction | None = None
-
-
-class MacroLiveEvent(BaseModel):
-    """Event macro DATÉ du calendrier, pour la lecture LIVE (avant / après)."""
-
-    event_code: str
-    event_name: str
-    importance: str
-    scheduled_for: str  # ISO UTC (suffixe Z)
-    one_liner: str
-
-
-class MacroLiveRecent(MacroLiveEvent):
-    """Event récemment passé + mouvement RÉEL BTC/OR depuis l'heure de l'annonce.
-
-    `*_move_pct` = variation brute prix(maintenant) vs prix(annonce). BRUT : PAS
-    isolé à la surprise (pas de consensus dispo). None si prix indisponible
-    (ex. OR weekend / délai Yahoo / event trop frais).
-    """
-
-    btc_move_pct: float | None = None
-    gold_move_pct: float | None = None
-
-
-class MacroLiveOut(BaseModel):
-    """Lecture macro LIVE : se cale sur le calendrier réel (réagit à l'actu).
-
-    `next_event` = prochain event programmé (compte à rebours côté UI).
-    `recent_event` = dernier event passé dans la fenêtre récente (±48h) + le
-    mouvement réel BTC/OR depuis l'annonce. None si rien dans la fenêtre.
-    Pure couche de contexte : aucun edge, aucune prédiction.
-    """
-
-    now: str  # ISO UTC (suffixe Z)
-    next_event: MacroLiveEvent | None = None
-    recent_event: MacroLiveRecent | None = None
+# Couche éducative « Lecture macro » supprimée 2026-05-30 sur décision trader
+# (cf. memory macro-reading-removed-2026-05-30 pour rebuild guide). Schémas
+# MacroReactionStat / MacroAssetReaction / MacroReadingOut / MacroLiveEvent /
+# MacroLiveRecent / MacroLiveOut retirés en même temps que api/macro_reading.py,
+# aggregator/macro_mechanisms.py et scripts/measure_macro_reaction.py.

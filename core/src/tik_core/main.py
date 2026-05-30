@@ -18,7 +18,6 @@ from tik_core.api import (
     headlines,
     health,
     macro_events,
-    macro_reading,
     metrics,
     polymarket,
     signals,
@@ -100,7 +99,6 @@ def create_app() -> FastAPI:
     app.include_router(feedback.router, prefix=prefix, tags=["feedback"])
     app.include_router(headlines.router, prefix=prefix, tags=["headlines"])
     app.include_router(macro_events.router, prefix=prefix, tags=["macro_events"])
-    app.include_router(macro_reading.router, prefix=prefix, tags=["macro_reading"])
     app.include_router(metrics.router, prefix=prefix, tags=["metrics"])
     app.include_router(polymarket.router, prefix=prefix, tags=["polymarket"])
     app.include_router(ws.router, prefix=prefix, tags=["websocket"])

@@ -18,8 +18,6 @@ import {
   HitRate,
   HitRateByVeracity,
   MacroEvent,
-  MacroLiveOut,
-  MacroReading,
   PolymarketSnapshot,
   Signal,
   SignalFreshness,
@@ -155,15 +153,8 @@ export async function getTopHeadlines(
   );
 }
 
-// ----- Lecture macro (éducatif curé + réaction mesurée, SHADOW) -----
-
-export async function getMacroReading(client: HttpClient): Promise<MacroReading[]> {
-  return client.get<MacroReading[]>('/macro_reading');
-}
-
-export async function getMacroReadingLive(client: HttpClient): Promise<MacroLiveOut> {
-  return client.get<MacroLiveOut>('/macro_reading/live');
-}
+// Couche éducative « Lecture macro » supprimée 2026-05-30 (cf. memory
+// macro-reading-removed-2026-05-30 pour rebuild guide en Option C / liens externes).
 
 // ----- Polymarket (marchés prédictifs, SHADOW — contexte de marché) -----
 
