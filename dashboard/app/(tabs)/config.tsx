@@ -5,6 +5,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   TextInput,
   View,
 } from 'react-native';
@@ -19,6 +20,7 @@ import { HttpClient } from '@/src/api/client';
 import { getHealth, listEntities } from '@/src/api/endpoints';
 import { AuthError, NetworkError, TikError } from '@/src/api/errors';
 import { useAuth } from '@/src/auth/AuthContext';
+import { useFlashCardSetting } from '@/src/flash/flashCardSetting';
 import { GLOSSARY } from '@/src/glossary';
 import { fetchExpoPushToken, getStoredPushToken, type PushTokenInfo } from '@/src/notifications/push-token';
 import pkg from '../../package.json';
@@ -65,6 +67,8 @@ export default function ConfigScreen() {
   const [pushStatus, setPushStatus] = useState<PushTokenInfo['permissionStatus']>('undetermined');
   const [pushReason, setPushReason] = useState<string | null>(null);
   const [pushLoading, setPushLoading] = useState(false);
+
+  const [flashCardEnabled, setFlashCardEnabled] = useFlashCardSetting();
 
   useEffect(() => {
     setDraftBaseUrl(baseUrl);
@@ -328,6 +332,20 @@ export default function ConfigScreen() {
       </ThemedView>
 
       <ThemedView style={[styles.card, { borderColor: palette.icon }]}>
+        <ThemedText type="subtitle">Affichage</ThemedText>
+        <View style={styles.toggleRow}>
+          <View style={styles.toggleText}>
+            <ThemedText style={styles.toggleLabel}>Carte « Stabilité flash · BTC »</ThemedText>
+            <ThemedText style={styles.muted}>
+              Sur l&apos;onglet Marché : verdict de stabilité (instable / stable / indécis) et
+              croisement carnet vs flux agressif. Aide à ne pas trader sur du bruit.
+            </ThemedText>
+          </View>
+          <Switch value={flashCardEnabled} onValueChange={setFlashCardEnabled} />
+        </View>
+      </ThemedView>
+
+      <ThemedView style={[styles.card, { borderColor: palette.icon }]}>
         <ThemedText type="subtitle">Glossaire</ThemedText>
         <ThemedText style={styles.muted}>
           Vocabulaire technique Tik. Tape l&apos;icône ? à côté d&apos;un terme dans
@@ -534,6 +552,20 @@ const styles = StyleSheet.create({
     fontSize: 12,
     opacity: 0.7,
     lineHeight: 18,
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  toggleText: {
+    flex: 1,
+    gap: 2,
+  },
+  toggleLabel: {
+    fontSize: 14,
+    fontWeight: '600',
   },
   signOutBtn: {
     marginTop: 12,
