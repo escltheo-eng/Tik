@@ -13,11 +13,17 @@ import pytest
 from tik_core.scripts.measure_coingecko_divergence import (
     COMPLEMENTARY_THRESHOLD,
     REDUNDANT_THRESHOLD,
+    _median,
+    centered_directional_agreement,
     daily_coingecko,
     directional_agreement,
     divergence_stats,
     fg_by_day,
+    movement_agreement,
+    movement_deltas,
+    movement_stats,
     pair_by_day,
+    primary_spearman,
     verdict_label,
 )
 
@@ -137,3 +143,99 @@ class TestVerdictLabel:
 
     def test_none(self):
         assert "indéterminé" in verdict_label(None)
+
+
+class TestMedian:
+    def test_odd(self):
+        assert _median([3.0, 1.0, 2.0]) == pytest.approx(2.0)
+
+    def test_even(self):
+        assert _median([1.0, 2.0, 3.0, 4.0]) == pytest.approx(2.5)
+
+
+class TestMovementDeltas:
+    def test_consecutive_deltas(self):
+        # paires triées par jour → deltas jour-à-jour
+        pairs = [(60.0, 25.0), (63.0, 22.0), (65.0, 23.0)]
+        assert movement_deltas(pairs) == [(3.0, -3.0), (2.0, 1.0)]
+
+    def test_too_few_pairs(self):
+        assert movement_deltas([(60.0, 25.0)]) == []
+
+    def test_empty(self):
+        assert movement_deltas([]) == []
+
+
+class TestMovementAgreement:
+    def test_same_direction_agree(self):
+        assert movement_agreement([(3.0, 2.0), (-1.0, -4.0)]) == pytest.approx(100.0)
+
+    def test_opposite_disagree(self):
+        assert movement_agreement([(3.0, -2.0), (-1.0, 4.0)]) == pytest.approx(0.0)
+
+    def test_mixed_50(self):
+        assert movement_agreement([(3.0, 2.0), (3.0, -2.0)]) == pytest.approx(50.0)
+
+    def test_zero_delta_excluded(self):
+        # (0, 3) exclu → reste (2, 5) qui s'accorde
+        assert movement_agreement([(0.0, 3.0), (2.0, 5.0)]) == pytest.approx(100.0)
+
+    def test_none_when_all_zero(self):
+        assert movement_agreement([(0.0, 1.0), (2.0, 0.0)]) is None
+
+    def test_empty_none(self):
+        assert movement_agreement([]) is None
+
+
+class TestCenteredDirectionalAgreement:
+    def test_all_agree(self):
+        # cg médiane 65, fg médiane 25 ; chaque paire du même côté des deux médianes
+        pairs = [(60.0, 20.0), (70.0, 30.0), (50.0, 15.0), (80.0, 40.0)]
+        assert centered_directional_agreement(pairs) == pytest.approx(100.0)
+
+    def test_all_disagree(self):
+        # mêmes niveaux, FG inversé → opposés vs leurs médianes respectives
+        pairs = [(60.0, 40.0), (70.0, 15.0), (50.0, 30.0), (80.0, 20.0)]
+        assert centered_directional_agreement(pairs) == pytest.approx(0.0)
+
+    def test_too_few_pairs(self):
+        assert centered_directional_agreement([(60.0, 20.0)]) is None
+
+    def test_all_at_median_none(self):
+        assert centered_directional_agreement([(50.0, 50.0), (50.0, 50.0)]) is None
+
+
+class TestMovementStats:
+    def test_perfect_movement_correlation(self):
+        # deltas cg [1,2,3,4,5] vs fg [2,4,6,8,10] → Spearman des variations = 1.0
+        cg = [60.0, 61.0, 63.0, 66.0, 70.0, 75.0]
+        fg = [20.0, 22.0, 26.0, 32.0, 40.0, 50.0]
+        pairs = list(zip(cg, fg, strict=True))
+        s = movement_stats(pairs)
+        assert s["movement_spearman"] == pytest.approx(1.0)
+        assert s["movement_agreement_pct"] == pytest.approx(100.0)
+        assert s["centered_directional_agreement_pct"] == pytest.approx(100.0)
+
+    def test_too_few_for_movement_spearman(self):
+        # < 6 paires → < 5 deltas → Spearman mouvement None, mais accord calculé
+        pairs = [(60.0, 20.0), (63.0, 22.0), (65.0, 25.0)]
+        s = movement_stats(pairs)
+        assert s["movement_spearman"] is None
+        assert s["movement_agreement_pct"] is not None
+
+
+class TestPrimarySpearman:
+    def test_prefers_movement(self):
+        value, basis = primary_spearman(0.2, 0.9)
+        assert value == pytest.approx(0.9)
+        assert "mouvement" in basis
+
+    def test_falls_back_to_level(self):
+        value, basis = primary_spearman(0.5, None)
+        assert value == pytest.approx(0.5)
+        assert "niveau" in basis
+
+    def test_none_when_both_none(self):
+        value, basis = primary_spearman(None, None)
+        assert value is None
+        assert basis == "aucune"

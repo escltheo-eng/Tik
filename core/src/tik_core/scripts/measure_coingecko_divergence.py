@@ -23,11 +23,20 @@ Méthode
   en moyenne quotidienne (FG est quotidien).
 - Fear & Greed : `value ∈ [0,100]` (↑ = greed = sentiment haussier). Même sens
   d'échelle que up_pct → on peut comparer les niveaux directement.
-- Appariement par jour, puis : Spearman(up_pct_jour, fg_jour), divergence absolue
-  moyenne normalisée, et accord directionnel (les deux du même côté de 50 ?).
+- Appariement par jour, puis DEUX lectures :
+  1. NIVEAU (indicatif) : Spearman(up_pct_jour, fg_jour), divergence absolue
+     moyenne normalisée, accord directionnel vs 50. **Biaisé** : CoinGecko vote
+     structurellement haut (~65-75%, détenteurs optimistes), FG est bas en bear
+     (~20) → « toujours à l'opposé de 50 » est en partie mécanique.
+  2. MOUVEMENT (référence, robuste au biais de base) : Spearman des variations
+     jour-à-jour (Δup%, ΔFG), % d'accord des variations, et accord directionnel
+     recentré sur la médiane propre de chaque série. Mesure si les deux BOUGENT
+     ensemble — le vrai test d'indépendance d'information.
 
 Lecture du verdict (seuils pifomètre raisonné, à affiner)
 ---------------------------------------------------------
+Le verdict se base sur le Spearman de MOUVEMENT s'il est calculable (≥ 6 jours
+appariés), sinon sur le niveau (à interpréter avec prudence) :
 - |Spearman| ≥ 0.70 → forte corrélation → CoinGecko ≈ FG → **probablement
   redondant** (n'enrôler que s'il apporte un gain prédictif PROPRE démontré).
 - 0.40 ≤ |Spearman| < 0.70 → corrélation modérée → apport partiel.
@@ -149,6 +158,89 @@ def divergence_stats(pairs: list[tuple[float, float]]) -> dict[str, float | None
     }
 
 
+# --- Métriques robustes au biais de base (mouvement) --------------------------
+# CoinGecko vote structurellement haut (~65-75%, détenteurs optimistes), Fear &
+# Greed est bas en marché bear (~20). Comparer les NIVEAUX (Spearman, accord vs
+# 50) est donc biaisé : « toujours à l'opposé de 50 » est en partie mécanique.
+# Ces métriques regardent si les deux séries BOUGENT ensemble, indépendamment de
+# leur niveau de base — c'est le vrai test d'indépendance d'information.
+
+
+def _median(xs: list[float]) -> float:
+    """Médiane d'une liste non vide."""
+    s = sorted(xs)
+    n = len(s)
+    mid = n // 2
+    return s[mid] if n % 2 else (s[mid - 1] + s[mid]) / 2.0
+
+
+def movement_deltas(pairs: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    """Variations jour-à-jour (Δup%, Δfg) depuis des paires ordonnées par jour.
+
+    `pair_by_day` retourne déjà les paires triées chronologiquement, donc les
+    deltas successifs sont des variations jour-à-jour. Vide si < 2 paires.
+    """
+    return [
+        (pairs[i][0] - pairs[i - 1][0], pairs[i][1] - pairs[i - 1][1]) for i in range(1, len(pairs))
+    ]
+
+
+def movement_agreement(deltas: list[tuple[float, float]]) -> float | None:
+    """% de jours où up% et FG varient dans le MÊME sens (les deux ↑ ou ↓).
+
+    Jours sans variation (delta nul de part ou d'autre) exclus. None si aucun
+    jour exploitable.
+    """
+    usable = [(a, b) for a, b in deltas if a != 0 and b != 0]
+    if not usable:
+        return None
+    agree = sum(1 for a, b in usable if (a > 0) == (b > 0))
+    return agree / len(usable) * 100.0
+
+
+def centered_directional_agreement(pairs: list[tuple[float, float]]) -> float | None:
+    """Accord directionnel en comparant chaque série à SA PROPRE médiane.
+
+    Corrige le biais de base : recentrer sur la médiane mesure si les deux sont
+    « au-dessus/en-dessous de leur propre normale » en même temps, au lieu de
+    comparer à un 50 fixe que CoinGecko dépasse presque toujours. None si < 2
+    paires ou aucune paire exploitable (toutes à la médiane).
+    """
+    if len(pairs) < 2:
+        return None
+    cg = [p[0] for p in pairs]
+    fg = [p[1] for p in pairs]
+    mcg = _median(cg)
+    mfg = _median(fg)
+    usable = [(a, b) for a, b in pairs if a != mcg and b != mfg]
+    if not usable:
+        return None
+    agree = sum(1 for a, b in usable if (a > mcg) == (b > mfg))
+    return agree / len(usable) * 100.0
+
+
+def movement_stats(pairs: list[tuple[float, float]]) -> dict[str, float | None]:
+    """Corrélation et accord des MOUVEMENTS (robustes au biais de base)."""
+    deltas = movement_deltas(pairs)
+    cg_d = [d[0] for d in deltas]
+    fg_d = [d[1] for d in deltas]
+    return {
+        "movement_spearman": spearman_correlation(cg_d, fg_d),
+        "movement_agreement_pct": movement_agreement(deltas),
+        "centered_directional_agreement_pct": centered_directional_agreement(pairs),
+    }
+
+
+def primary_spearman(level: float | None, movement: float | None) -> tuple[float | None, str]:
+    """Corrélation à utiliser pour le verdict : le MOUVEMENT s'il est calculable
+    (plus robuste au biais de base), sinon le niveau quotidien, sinon aucune."""
+    if movement is not None:
+        return movement, "mouvement (Δ jour-à-jour)"
+    if level is not None:
+        return level, "niveau quotidien"
+    return None, "aucune"
+
+
 def verdict_label(spearman: float | None) -> str:
     """Étiquette redondant / partiel / complémentaire depuis |Spearman|."""
     if spearman is None:
@@ -217,7 +309,7 @@ def main() -> int:
                 print(f"  {d.isoformat()} : up%={cg_daily[d]:5.1f}  FG={fg_daily[d]:5.1f}")
 
     stats = divergence_stats(pairs)
-    print("\n--- Divergence (PRÉLIMINAIRE) ---")
+    print("\n--- Niveau quotidien (biaisé par la base, indicatif) ---")
     sp = stats["spearman"]
     print(f"  Spearman(up%, FG)            : {'n/a' if sp is None else round(sp, 3)}")
     mad = stats["mean_abs_norm_diff"]
@@ -225,11 +317,27 @@ def main() -> int:
     ag = stats["directional_agreement_pct"]
     print(f"  accord directionnel (vs 50)  : {'n/a' if ag is None else f'{ag:.0f}%'}")
 
+    mstats = movement_stats(pairs)
+    print("\n--- Mouvement (robuste au biais de base — métrique de référence) ---")
+    msp = mstats["movement_spearman"]
+    print(f"  Spearman(Δup%, ΔFG)          : {'n/a' if msp is None else round(msp, 3)}")
+    mag = mstats["movement_agreement_pct"]
+    print(f"  accord des variations        : {'n/a' if mag is None else f'{mag:.0f}%'}")
+    cag = mstats["centered_directional_agreement_pct"]
+    print(f"  accord recentré (vs médiane) : {'n/a' if cag is None else f'{cag:.0f}%'}")
+
+    chosen_sp, basis = primary_spearman(sp, msp)
     print("\n--- VERDICT ---")
-    print(f"  → {verdict_label(sp)}")
+    print(f"  base de corrélation utilisée : {basis}")
+    print(f"  → {verdict_label(chosen_sp)}")
     if len(pairs) < args.min_days:
         print(
             f"  ⚠ N={len(pairs)} jours < {args.min_days} → NON CONCLUANT (échantillon trop faible)."
+        )
+    if msp is None and len(pairs) >= args.min_days:
+        print(
+            "  ⚠ Corrélation de mouvement non calculable (< 6 jours appariés) → verdict "
+            "basé sur le niveau, à interpréter avec prudence."
         )
     print("  ⚠ Divergence ≠ valeur prédictive (si non redondant : mesurer le pouvoir")
     print("    prédictif propre ensuite). NO-GO directionnel inchangé → aucun enrôlement.")
