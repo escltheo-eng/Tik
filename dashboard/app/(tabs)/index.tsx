@@ -6,8 +6,6 @@ import { HitRateByVeracityCard } from '@/components/dashboard/hit-rate-by-veraci
 import { HitRateCard } from '@/components/dashboard/hit-rate-card';
 import { KpiCard } from '@/components/dashboard/kpi-card';
 import { MacroEventsCard } from '@/components/dashboard/macro-events-card';
-import { MacroLiveCard } from '@/components/dashboard/macro-live-card';
-import { MacroReadingCard } from '@/components/dashboard/macro-reading-card';
 import { PolymarketCard } from '@/components/dashboard/polymarket-card';
 import { MiniSparkline } from '@/components/dashboard/mini-sparkline';
 import { SignalFreshnessBanner } from '@/components/dashboard/signal-freshness-banner';
@@ -230,18 +228,8 @@ export default function HomeScreen() {
         loading={macroEventsState.loading}
         error={macroEventsState.error}
         displayLimit={4}
-      />
-
-      <MacroLiveCard
-        live={macroLiveState.live}
-        loading={macroLiveState.loading}
-        error={macroLiveState.error}
-      />
-
-      <MacroReadingCard
         readings={macroReadingState.readings}
-        loading={macroReadingState.loading}
-        error={macroReadingState.error}
+        live={macroLiveState.live}
       />
 
       <PolymarketCard
