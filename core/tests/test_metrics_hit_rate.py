@@ -18,6 +18,8 @@ from tik_core.metrics.hit_rate import (
     HORIZON_DEFAULT_THRESHOLD_PCT,
     HORIZON_MEASURE_HOURS,
     VERACITY_BUCKETS,
+    assess_baseline_edge,
+    compute_constant_baselines,
     compute_hit_rate,
     compute_hit_rate_by_veracity,
     filter_signals_for_horizon,
@@ -718,3 +720,64 @@ def test_make_cache_key_by_veracity_distinct_from_hit_rate():
     assert k_hr != k_vy
     assert "hit_rate_by_veracity" in k_vy
     assert "hit_rate_by_veracity" not in k_hr
+
+
+# ----- Baseline constante "robot bête" (anti-surconfiance) -----
+
+
+def test_constant_baselines_rising_market_favours_long():
+    ts0 = NOW
+    start_ms = int((ts0 - timedelta(hours=2)).timestamp() * 1000)
+    history = _build_history(start_ms, 24, 100.0, step_pct=0.5)  # +0.5%/h
+    sigs = [_make_signal(horizon="flash", direction="long", timestamp=ts0, sig_id="s1")]
+    res = compute_constant_baselines(
+        sigs, horizon="flash", threshold_pct=0.3, btc_history=history, gold_history=[]
+    )
+    assert res["n_evaluated"] == 1
+    # +0.5% sur 1h > 0.3% → always long réussit, short échoue, neutral échoue
+    assert res["hit_rates"]["long"] == 1.0
+    assert res["hit_rates"]["short"] == 0.0
+    assert res["hit_rates"]["neutral"] == 0.0
+
+
+def test_constant_baselines_match_compute_hit_rate_evaluated_set():
+    """Garde anti-divergence : la baseline doit évaluer le MÊME ensemble que Tik."""
+    ts0 = NOW
+    start_ms = int((ts0 - timedelta(hours=2)).timestamp() * 1000)
+    history = _build_history(start_ms, 24, 100.0, step_pct=0.5)
+    sigs = [
+        _make_signal(horizon="flash", direction="long", timestamp=ts0, sig_id=f"s{i}")
+        for i in range(3)
+    ]
+    hr = compute_hit_rate(
+        sigs, horizon="flash", threshold_pct=0.3, btc_history=history, gold_history=[]
+    )
+    bl = compute_constant_baselines(
+        sigs, horizon="flash", threshold_pct=0.3, btc_history=history, gold_history=[]
+    )
+    assert hr["n_evaluated"] == bl["n_evaluated"] == 3
+
+
+def test_assess_baseline_edge_not_enough_sample():
+    e = assess_baseline_edge(0.90, 10, {"long": 0.5, "short": 0.5, "neutral": 0.1})
+    assert e["best_hit_rate"] == 0.5
+    assert e["beats"] is False  # n_evaluated < 30
+
+
+def test_assess_baseline_edge_margin_too_small():
+    e = assess_baseline_edge(0.52, 50, {"long": 0.5, "short": 0.3, "neutral": 0.1})
+    assert e["best_label"] == "long"
+    assert e["beats"] is False  # 0.52 < 0.50 + 0.05
+
+
+def test_assess_baseline_edge_real_edge():
+    e = assess_baseline_edge(0.60, 50, {"long": 0.5, "short": 0.3, "neutral": 0.1})
+    assert e["best_label"] == "long"
+    assert e["beats"] is True  # 0.60 ≥ 0.50 + 0.05 et n ≥ 30
+
+
+def test_assess_baseline_edge_empty():
+    e = assess_baseline_edge(0.9, 100, {})
+    assert e["best_label"] is None
+    assert e["best_hit_rate"] is None
+    assert e["beats"] is False

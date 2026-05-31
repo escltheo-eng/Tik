@@ -159,6 +159,96 @@ def compute_hit_rate(
     }
 
 
+# ----- Baseline constante "robot bête" (anti-surconfiance, ADR-018 / colinéarité) -----
+#
+# En marché fortement tendanciel, un hit rate élevé peut n'être QUE l'effet de la
+# tendance : un pari constant ("toujours short" dans une baisse) fait aussi bien
+# sans aucune intelligence. On compare donc Tik à la meilleure baseline constante
+# sur les MÊMES signaux. Si Tik ne la bat pas franchement, son hit rate n'est pas
+# un edge (il suit la pente). Cf. analyze_colinearity.py + go/no-go 2026-05-27.
+
+# Tik doit battre la meilleure baseline constante d'au moins ce delta (5 pts) pour
+# qu'on considère son hit rate comme un avantage réel (et que le dashboard masque
+# l'avertissement). Volontairement conservateur.
+BASELINE_EDGE_MARGIN = 0.05
+# Sous ce nombre de signaux évalués, on ne tranche pas (échantillon trop faible).
+BASELINE_MIN_SAMPLE = 30
+
+
+def compute_constant_baselines(
+    signals: list[Signal],
+    *,
+    horizon: str,
+    threshold_pct: float,
+    btc_history: list[tuple[int, float]],
+    gold_history: list[tuple[int, float]],
+) -> dict:
+    """Hit rate des stratégies constantes (toujours long / short / neutral).
+
+    Évalué sur le MÊME ensemble de signaux que `compute_hit_rate` (même boucle de
+    delta prix, mêmes skips) pour une comparaison apples-to-apples. Sert à savoir
+    si le hit rate de Tik est un edge ou un simple suivi de tendance.
+
+    Retourne ``{"n_evaluated": int, "hit_rates": {"long": .., "short": .., "neutral": ..}}``.
+    """
+    if horizon not in HORIZON_MEASURE_HOURS:
+        raise ValueError(f"Unknown horizon: {horizon}")
+    measure_hours = HORIZON_MEASURE_HOURS[horizon]
+
+    counts = {"long": 0, "short": 0, "neutral": 0}
+    n_evaluated = 0
+
+    for sig in signals:
+        if sig.entity_id == "BTC":
+            history = btc_history
+        elif sig.entity_id == "GOLD":
+            history = gold_history
+        else:
+            continue
+
+        ts0 = sig.timestamp
+        ts1 = ts0 + timedelta(hours=measure_hours)
+        p0 = find_closest_price(history, ts0)
+        p1 = find_closest_price(history, ts1)
+        if p0 is None or p1 is None or p0 == 0:
+            continue
+
+        delta_pct = (p1 - p0) / p0 * 100
+        n_evaluated += 1
+        for direction in ("long", "short", "neutral"):
+            if _success_for(direction, delta_pct, threshold_pct):
+                counts[direction] += 1
+
+    hit_rates = {d: (counts[d] / n_evaluated if n_evaluated > 0 else 0.0) for d in counts}
+    return {"n_evaluated": n_evaluated, "hit_rates": hit_rates}
+
+
+def assess_baseline_edge(
+    tik_hit_rate: float,
+    tik_n_evaluated: int,
+    baseline_hit_rates: dict,
+) -> dict:
+    """Meilleure baseline constante + Tik la bat-il franchement ?
+
+    ``beats=True`` (edge crédible) requiert : assez de signaux (≥ BASELINE_MIN_SAMPLE)
+    ET Tik au-dessus de la meilleure baseline d'au moins BASELINE_EDGE_MARGIN.
+    Quand ``beats`` devient True, le dashboard masque l'avertissement
+    « ce taux suit la tendance » → l'avertissement disparaît automatiquement
+    dès que Tik a un avantage démontré (auto-suppression demandée).
+
+    Retourne ``{"best_label": str|None, "best_hit_rate": float|None, "beats": bool}``.
+    """
+    if not baseline_hit_rates:
+        return {"best_label": None, "best_hit_rate": None, "beats": False}
+    best_label = max(baseline_hit_rates, key=lambda d: baseline_hit_rates[d])
+    best_hit_rate = baseline_hit_rates[best_label]
+    beats = (
+        tik_n_evaluated >= BASELINE_MIN_SAMPLE
+        and tik_hit_rate >= best_hit_rate + BASELINE_EDGE_MARGIN
+    )
+    return {"best_label": best_label, "best_hit_rate": best_hit_rate, "beats": beats}
+
+
 def make_cache_key(
     *,
     entity_id: str,

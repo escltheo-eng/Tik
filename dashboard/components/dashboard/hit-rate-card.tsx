@@ -11,6 +11,10 @@
  * - Sous-titre : `n_success / n_evaluated · gain moy ±%`
  * - Toggle « Inclure flagués » pour audit (default OFF)
  * - Badge échantillon faible (n < 30) en gris
+ * - Bandeau anti-surconfiance : si Tik ne bat pas le pari constant ("robot
+ *   bête" : toujours long/short/neutral) sur les mêmes signaux, affiche un
+ *   avertissement honnête. Disparaît automatiquement (data.beats_baseline)
+ *   quand Tik a un avantage démontré (≥ 5 pts, ≥ 30 signaux).
  *
  * Limites assumées (cf. backend) :
  * - Coûts de transaction non comptés (spread, fees, slippage)
@@ -67,6 +71,14 @@ function hitRateColor(rate: number, isLowSample: boolean): string {
   if (rate < 0.6) return '#e67e22';
   if (rate < 0.75) return '#27ae60';
   return '#16a085';
+}
+
+/** Libellé FR du pari constant ("robot bête") pour le bandeau anti-surconfiance. */
+function baselineLabelFr(label?: string | null): string {
+  if (label === 'long') return 'toujours miser à la hausse';
+  if (label === 'short') return 'toujours miser à la baisse';
+  if (label === 'neutral') return 'toujours rester à l’écart';
+  return 'toujours parier pareil';
 }
 
 export function HitRateCard({
@@ -186,6 +198,20 @@ export function HitRateCard({
             </ThemedView>
           </ThemedView>
 
+          {/* Bandeau anti-surconfiance : visible tant que Tik ne bat pas le pari
+              constant ("robot bête"). Disparaît automatiquement quand beats_baseline
+              devient vrai (Tik a alors un avantage démontré). */}
+          {!hasNoData && data.best_baseline_hit_rate != null && !data.beats_baseline ? (
+            <ThemedView style={styles.honestyBanner}>
+              <ThemedText style={styles.honestyText}>
+                ⚠ Ce taux suit surtout la tendance. Sur les mêmes signaux,{' '}
+                {baselineLabelFr(data.best_baseline_label)} aurait fait{' '}
+                {(data.best_baseline_hit_rate * 100).toFixed(0)}%. Tik n’a pas (encore)
+                d’avantage démontré — ne te fie pas au % seul.
+              </ThemedText>
+            </ThemedView>
+          ) : null}
+
           {data.sample_warning ? (
             <ThemedText style={styles.warningLabel}>⚠ {data.sample_warning}</ThemedText>
           ) : null}
@@ -303,6 +329,19 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#7f8c8d',
     marginTop: 4,
+  },
+  honestyBanner: {
+    borderWidth: 1,
+    borderColor: '#e67e22',
+    backgroundColor: 'rgba(230, 126, 34, 0.08)',
+    borderRadius: 8,
+    padding: 10,
+    marginTop: 4,
+  },
+  honestyText: {
+    fontSize: 12,
+    lineHeight: 17,
+    color: '#b06a1a',
   },
   metaInfo: {
     fontSize: 11,

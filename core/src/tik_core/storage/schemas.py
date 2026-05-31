@@ -256,6 +256,14 @@ class HitRateOut(BaseModel):
     include_flagged: bool
     hit_rate: float = Field(ge=0, le=1)
     avg_gain_pct: float
+    # Baseline constante "robot bête" sur les mêmes signaux (anti-surconfiance).
+    # best_baseline_* = meilleur pari constant (long/short/neutral) et son hit rate.
+    # beats_baseline = Tik bat-il cette baseline franchement (edge crédible) ? Quand
+    # True, le dashboard masque l'avertissement "ce taux suit la tendance".
+    # Défauts → les entrées de cache Redis antérieures parsent sans erreur.
+    best_baseline_label: str | None = None  # "long" | "short" | "neutral" | None
+    best_baseline_hit_rate: float | None = Field(default=None, ge=0, le=1)
+    beats_baseline: bool = False
     sample_warning: str | None = None  # ex: "Échantillon faible (12 signaux, 30 mini recommandé)"
     computed_at: datetime
     cache_hit: bool = False  # diagnostic : valeur servie depuis le cache Redis

@@ -38,6 +38,8 @@ from tik_core.metrics.freshness import (
 from tik_core.metrics.hit_rate import (
     HORIZON_DEFAULT_THRESHOLD_PCT,
     HORIZON_MEASURE_HOURS,
+    assess_baseline_edge,
+    compute_constant_baselines,
     compute_hit_rate,
     compute_hit_rate_by_veracity,
     filter_signals_for_horizon,
@@ -271,6 +273,21 @@ async def get_hit_rate(
             gold_history=gold_history,
         )
 
+        # Baseline constante "robot bête" sur les mêmes signaux : permet de dire
+        # si le hit rate de Tik est un edge ou un simple suivi de tendance.
+        baselines = compute_constant_baselines(
+            eligible,
+            horizon=horizon,
+            threshold_pct=effective_threshold,
+            btc_history=btc_history,
+            gold_history=gold_history,
+        )
+        edge = assess_baseline_edge(
+            stats["hit_rate"],
+            stats["n_evaluated"],
+            baselines["hit_rates"] if baselines["n_evaluated"] > 0 else {},
+        )
+
         sample_warning: str | None = None
         if stats["n_evaluated"] == 0:
             sample_warning = "Aucun signal éligible — fenêtre trop courte ou prix indisponibles."
@@ -293,6 +310,9 @@ async def get_hit_rate(
             include_flagged=include_flagged,
             hit_rate=stats["hit_rate"],
             avg_gain_pct=stats["avg_gain_pct"],
+            best_baseline_label=edge["best_label"],
+            best_baseline_hit_rate=edge["best_hit_rate"],
+            beats_baseline=edge["beats"],
             sample_warning=sample_warning,
             computed_at=now_utc(),
             cache_hit=False,

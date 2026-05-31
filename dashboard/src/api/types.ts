@@ -148,6 +148,12 @@ export interface HitRate {
   include_flagged: boolean;
   hit_rate: number;
   avg_gain_pct: number;
+  // Baseline constante "robot bête" sur les mêmes signaux (anti-surconfiance).
+  // beats_baseline=true → Tik bat franchement le pari constant = avantage crédible
+  // → le bandeau d'avertissement disparaît automatiquement.
+  best_baseline_label?: 'long' | 'short' | 'neutral' | null;
+  best_baseline_hit_rate?: number | null;
+  beats_baseline?: boolean;
   sample_warning: string | null;
   computed_at: string;
   cache_hit: boolean;
