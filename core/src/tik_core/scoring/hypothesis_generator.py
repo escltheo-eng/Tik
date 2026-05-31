@@ -31,6 +31,14 @@ import structlog
 log = structlog.get_logger()
 
 
+# keep_alive Ollama : garde le modèle résident entre les cycles pour éviter
+# le reload à froid (crucial sur le VPS CPU sans GPU). Fix A1 (audit
+# 2026-05-31) : ~50 % des hypothèses retombaient en template à cause des
+# timeouts de contention/reload. Le modèle est déjà quasi-résident en prod
+# (signaux fréquents) → "24h" maintient ce profil sans nouveau coût RAM.
+OLLAMA_KEEP_ALIVE = "24h"
+
+
 # === Render template (utilisé en fallback ET en mode disabled) ===
 
 
@@ -300,6 +308,8 @@ class OllamaHypothesisGenerator(HypothesisGenerator):
                 "model": self.model,
                 "prompt": prompt,
                 "stream": False,
+                # Garde le modèle chaud → évite le reload à froid (fix A1).
+                "keep_alive": OLLAMA_KEEP_ALIVE,
                 "options": {
                     "temperature": 0.0,
                     "num_predict": self.num_predict,

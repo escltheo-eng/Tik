@@ -466,6 +466,9 @@ class OllamaClassifier(NewsClassifier):
                 "model": self.model,
                 "prompt": prompt,
                 "stream": False,
+                # Garde le modèle Ollama chaud entre cycles (fix A1, audit
+                # 2026-05-31) — évite le reload à froid sur le VPS CPU.
+                "keep_alive": "24h",
                 "options": {"temperature": 0.0, "num_predict": 10},
             },
         )

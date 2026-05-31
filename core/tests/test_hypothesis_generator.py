@@ -261,6 +261,33 @@ async def test_ollama_generate_success(monkeypatch):
     assert gen._consecutive_failures == 0
 
 
+async def test_ollama_call_includes_keep_alive():
+    """Le payload /api/generate doit porter keep_alive='24h' pour garder le
+    modèle Ollama chaud (fix A1, audit 2026-05-31 — évite le reload à froid
+    sur le VPS CPU qui causait ~50 % de fallback template)."""
+    gen = OllamaHypothesisGenerator(url="http://x", model="llama3.2:3b")
+    captured: dict = {}
+
+    class _Resp:
+        def raise_for_status(self) -> None:
+            pass
+
+        def json(self) -> dict:
+            return {"response": "ok"}
+
+    class _Client:
+        async def post(self, url, json):
+            captured["url"] = url
+            captured["json"] = json
+            return _Resp()
+
+    gen._client = _Client()
+    await gen._call_ollama(_rich_decision(), "swing")
+
+    assert captured["url"].endswith("/api/generate")
+    assert captured["json"]["keep_alive"] == "24h"
+
+
 async def test_ollama_generate_falls_back_on_http_error(monkeypatch):
     gen = OllamaHypothesisGenerator(url="http://x", model="llama3.2:3b")
     monkeypatch.setattr(

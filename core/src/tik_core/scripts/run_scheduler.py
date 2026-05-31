@@ -117,12 +117,15 @@ async def main() -> None:
     # llm_hypothesis="template" ou Ollama indisponible, fallback sur
     # TemplateHypothesisGenerator — l'appel reste cheap et inoffensif.
     #
-    # Lock partagé entre les 3 jobs scheduler (swing BTC + GOLD + flash
-    # BTC) pour sérialiser les appels HTTP Ollama. Sans ce Lock, les 3
-    # jobs peuvent tomber sur le même tick (xx:00, xx:30) et saturer
-    # Ollama même avec NUM_PARALLEL=2 → 1 timeout assuré sur le 3e job.
-    # Avec Lock : 13s × 3 = 40s cumulé, sous l'interval flash 5 min.
-    # Mesuré ratio 66% → 90%+ post-Lock.
+    # Lock partagé pour sérialiser les appels HTTP Ollama entre jobs.
+    # Fix A1 (audit 2026-05-31) : le LLM est désormais réservé au SWING
+    # (flash exclu, cf. add_job flash_btc) → seuls swing BTC (15 min) et
+    # swing GOLD (30 min) utilisent Ollama, collision uniquement à xx:00.
+    # Couplé à keep_alive=24h (hypothesis_generator), le modèle reste
+    # chaud → plus de reload à froid ni de saturation du 3e job (VPS = 4
+    # cœurs CPU, pas de GPU). Avant le fix : ~50 % de fallback template
+    # mesuré en DB malgré le Lock (budget wait_for 60 s consommé par
+    # l'attente du lock quand les 3 jobs collisionnaient à xx:00/xx:30).
     ollama_lock = asyncio.Lock()
     hypothesis_generator = await build_hypothesis_generator(
         generator_type=settings.llm_hypothesis,
@@ -164,7 +167,10 @@ async def main() -> None:
         _run_flash_btc,
         "interval",
         minutes=5,
-        args=[session_maker, redis, hypothesis_generator],
+        # Fix A1 : flash exclu du LLM (None) → hypothèse template instantanée.
+        # Le flash (5 min) est du bruit sans edge (Paquet 43) et était la
+        # principale source de contention Ollama. LLM réservé au swing.
+        args=[session_maker, redis, None],
         id="flash_btc",
         max_instances=1,
         coalesce=True,
@@ -192,7 +198,7 @@ async def main() -> None:
     # Premier run immédiat
     await _run_swing_btc(session_maker, redis, hypothesis_generator)
     await _run_swing_gold(session_maker, redis, settings.fred_api_key, hypothesis_generator)
-    await _run_flash_btc(session_maker, redis, hypothesis_generator)
+    await _run_flash_btc(session_maker, redis, None)  # flash = template (fix A1)
     # Recalibration au boot : garantit qu'au moins 1× / déploiement, les
     # scores sont rafraîchis. Idempotent (ré-écrit les mêmes scores si
     # tourné le même jour). Combiné au misfire_grace_time, couvre tous
