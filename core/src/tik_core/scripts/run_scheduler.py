@@ -117,15 +117,17 @@ async def main() -> None:
     # llm_hypothesis="template" ou Ollama indisponible, fallback sur
     # TemplateHypothesisGenerator — l'appel reste cheap et inoffensif.
     #
-    # Lock partagé pour sérialiser les appels HTTP Ollama entre jobs.
-    # Fix A1 (audit 2026-05-31) : le LLM est désormais réservé au SWING
-    # (flash exclu, cf. add_job flash_btc) → seuls swing BTC (15 min) et
-    # swing GOLD (30 min) utilisent Ollama, collision uniquement à xx:00.
-    # Couplé à keep_alive=24h (hypothesis_generator), le modèle reste
-    # chaud → plus de reload à froid ni de saturation du 3e job (VPS = 4
-    # cœurs CPU, pas de GPU). Avant le fix : ~50 % de fallback template
-    # mesuré en DB malgré le Lock (budget wait_for 60 s consommé par
-    # l'attente du lock quand les 3 jobs collisionnaient à xx:00/xx:30).
+    # Lock partagé : filet de sécurité pour sérialiser les appels HTTP Ollama
+    # entre jobs (au cas où). Fix A1 (audit 2026-05-31) en 3 temps :
+    #   1. LLM réservé au SWING (flash exclu, cf. add_job flash_btc).
+    #   2. keep_alive=24h (hypothesis_generator) → modèle reste chaud.
+    #   3. swing_btc (:00/:15/:30/:45) et swing_gold (:10/:40) sur des minutes
+    #      cron DISJOINTES → ils ne collisionnent JAMAIS, donc le Lock n'est en
+    #      pratique plus contesté (chaque swing tourne seul, modèle chaud, sur
+    #      4 cœurs CPU sans GPU). Mesure post-(1)+(2) : ollama_error 95/24h→1,
+    #      mais 36 % de swings encore en template à cause de la collision
+    #      swing↔swing (budget wait_for 60 s mangé par l'attente du Lock) →
+    #      résolu par le décalage cron (3).
     ollama_lock = asyncio.Lock()
     hypothesis_generator = await build_hypothesis_generator(
         generator_type=settings.llm_hypothesis,
@@ -142,21 +144,26 @@ async def main() -> None:
 
     scheduler = AsyncIOScheduler()
 
-    # Swing BTC : toutes les 15 min
+    # Swing BTC : toutes les 15 min, minutes FIXES :00/:15/:30/:45 (cron).
+    # Fix A1 complétion (2026-05-31) : minutes DISJOINTES de swing_gold (:10/:40)
+    # pour éliminer la collision Ollama qui faisait timeout ~1 swing sur 2 aux
+    # ticks partagés (:23/:53 en interval). Chaque swing tourne désormais seul
+    # avec le modèle chaud → swing ≈100 % LLM au lieu de 64 %.
     scheduler.add_job(
         _run_swing_btc,
-        "interval",
-        minutes=15,
+        "cron",
+        minute="0,15,30,45",
         args=[session_maker, redis, hypothesis_generator],
         id="swing_btc",
         max_instances=1,
         coalesce=True,
     )
-    # Swing Gold : toutes les 30 min (Yahoo est plus lent, moins besoin)
+    # Swing Gold : toutes les 30 min aux minutes :10/:40 (cron) — décalé de
+    # swing_btc (fix A1 complétion : évite la collision Ollama, cf. ci-dessus).
     scheduler.add_job(
         _run_swing_gold,
-        "interval",
-        minutes=30,
+        "cron",
+        minute="10,40",
         args=[session_maker, redis, settings.fred_api_key, hypothesis_generator],
         id="swing_gold",
         max_instances=1,
