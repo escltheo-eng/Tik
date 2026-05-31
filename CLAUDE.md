@@ -3258,9 +3258,14 @@ runtime** : 0 `ollama_error`, flash=template (90c), swing=LLM (676c).
 décision (ADR-018). Garde-fous 1/2-bis, ADR-003/004/011/018 **inchangés**.
 
 **Limites / reste à faire** :
-1. **Confirmation statistique pendante** : le mécanisme est prouvé (3 cycles),
-   mais le ratio sur 30-60 min (1re collision des 2 swing ~00:53 UTC) reste à
-   mesurer — non affirmé « parfait » tant que non mesuré.
+1. **Confirmation statistique — MESURÉE le 2026-05-31 ~19h UTC (≈18,5 h post-fix)** :
+   `ollama_error` **95/24h → 1** ; flash **100 % template** (voulu) ; swing **64 %
+   LLM** (72/112). Résiduel : **36 % de swings en template** dû à la collision
+   swing_btc (15 min) + swing_gold (30 min) à :23/:53 (le lock les sérialise → le
+   1er prend ~50 s = ReadTimeout httpx, le 2e épuise son `wait_for(60 s)`). **Bénin**
+   (template = fallback valide, le trader a quand même une hypothèse). Fix de
+   complétion possible (non appliqué, à arbitrer) : **décaler les 2 swings** sur des
+   minutes disjointes (cron) pour éliminer la collision → swing ≈100 % LLM.
 2. Doc CLAUDE.md = ce Paquet 44 ; mémoire `ollama-llm-timeout-fix` créée.
 3. Anomalie mineure non diagnostiquée : 3 RETAIL_SALES en juin (01/08/15) dans
    le calendrier macro (artefact FRED probable, MEDIUM, sans impact discipline).
