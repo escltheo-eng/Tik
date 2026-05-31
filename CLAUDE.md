@@ -3264,8 +3264,12 @@ décision (ADR-018). Garde-fous 1/2-bis, ADR-003/004/011/018 **inchangés**.
    swing_btc (15 min) + swing_gold (30 min) à :23/:53 (le lock les sérialise → le
    1er prend ~50 s = ReadTimeout httpx, le 2e épuise son `wait_for(60 s)`). **Bénin**
    (template = fallback valide, le trader a quand même une hypothèse). Fix de
-   complétion possible (non appliqué, à arbitrer) : **décaler les 2 swings** sur des
-   minutes disjointes (cron) pour éliminer la collision → swing ≈100 % LLM.
+   complétion **APPLIQUÉ le 2026-05-31 (commit e0aa0b4)** : swing_btc → cron
+   `:00/:15/:30/:45`, swing_gold → cron `:10/:40` (minutes **disjointes**) → plus
+   aucune collision swing↔swing. Restart vérifié : 2 swings de boot = LLM (715c/
+   582c), **0 ollama_error / 0 timeout**. Ratio ≈100 % LLM attendu sur les cycles
+   suivants (à confirmer sur ~1 h de runtime, mais collision éliminée par
+   construction).
 2. Doc CLAUDE.md = ce Paquet 44 ; mémoire `ollama-llm-timeout-fix` créée.
 3. Anomalie mineure non diagnostiquée : 3 RETAIL_SALES en juin (01/08/15) dans
    le calendrier macro (artefact FRED probable, MEDIUM, sans impact discipline).
