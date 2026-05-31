@@ -3,7 +3,7 @@
 Cf. ADR-017 — Calendrier macro/géopolitique (Phase B1 J+10).
 Cf. ADR-020 — Multi-banques centrales (Phase B2) : FOMC + ECB + BoJ +
 BoE sont désormais gérés par `MacroStaticIngester` séparément. Ce
-ingester ne s'occupe plus que des 7 release FRED dynamiques.
+ingester ne s'occupe plus que des 6 release FRED dynamiques.
 
 Pour chaque release_id de la whitelist `macro_calendar_data.FRED_RELEASES` :
 

@@ -195,7 +195,9 @@ def build_event_from_static(spec: StaticEventSpec) -> dict[str, Any]:
 
 
 # =============================================================================
-# FRED whitelist — 7 releases stables (Phase B1)
+# FRED whitelist — 6 releases stables (Phase B1 ; INITIAL_CLAIMS retiré 2026-05-31 :
+# release_id 14 pointait à tort sur G.19 Consumer Credit, et le vrai claims hebdo
+# 180 = bruit LOW peu utile pour la discipline ±4h. RETAIL_SALES corrigé 17→9.)
 # =============================================================================
 #
 # Les release_id sont vérifiables via :
@@ -239,7 +241,7 @@ FRED_RELEASES: tuple[FredReleaseSpec, ...] = (
         assets_impacted=("BTC", "GOLD"),
     ),
     FredReleaseSpec(
-        release_id=17,
+        release_id=9,
         event_code="RETAIL_SALES",
         event_name="Advance Monthly Sales for Retail and Food Services",
         importance="MEDIUM",
@@ -254,15 +256,6 @@ FRED_RELEASES: tuple[FredReleaseSpec, ...] = (
         importance="LOW",
         release_hour_et=9,
         release_minute_et=15,
-        assets_impacted=("BTC", "GOLD"),
-    ),
-    FredReleaseSpec(
-        release_id=14,
-        event_code="INITIAL_CLAIMS",
-        event_name="Unemployment Insurance Weekly Claims",
-        importance="LOW",
-        release_hour_et=8,
-        release_minute_et=30,
         assets_impacted=("BTC", "GOLD"),
     ),
 )
