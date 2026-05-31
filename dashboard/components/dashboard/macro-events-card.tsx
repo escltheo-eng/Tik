@@ -70,8 +70,6 @@ function eventLabel(event: MacroEvent): string {
       return 'Retail Sales';
     case 'INDUSTRIAL_PRODUCTION':
       return 'Industrial Prod.';
-    case 'INITIAL_CLAIMS':
-      return 'Initial Claims';
     default:
       return event.event_name;
   }

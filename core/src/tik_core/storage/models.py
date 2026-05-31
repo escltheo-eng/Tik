@@ -220,7 +220,7 @@ class MacroEvent(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     event_code: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     # ex: "FOMC_MEETING", "NFP", "CPI", "PPI", "GDP", "RETAIL_SALES",
-    # "INDUSTRIAL_PRODUCTION", "INITIAL_CLAIMS"
+    # "INDUSTRIAL_PRODUCTION", "ECB_GOVERNING_COUNCIL", "BOJ_MPM", "BOE_MPC"
     event_name: Mapped[str] = mapped_column(String(128), nullable=False)
     # ex: "FOMC Statement & Press Conference", "Employment Situation (NFP)"
     scheduled_for: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
