@@ -3570,7 +3570,31 @@ filtre `assets_impacted` JSON Postgres, fenêtre SQL + choix du plus proche. Sui
 le pattern `_db.py` (cf. `test_publisher_timezone_db.py`, garde anti-prod
 `_is_test_database` du conftest).
 
-**Vérifications** : suite complète **1329 → 1335 verts** (tik_test, jamais la
+**Bug latent trouvé + corrigé (drift modèle↔migration `MacroEvent`)** : en
+écrivant un 2e garde DB pour `macro_events_repo` (nouveau
+`core/tests/test_macro_events_repo_db.py`, +6 tests), le test a échoué avec
+`asyncpg InvalidColumnReferenceError: no unique constraint matching the ON
+CONFLICT` → le modèle SQLAlchemy `MacroEvent` ne déclarait **pas** la contrainte
+UNIQUE `(event_code, scheduled_for)` que la migration 0005 ET la prod ont
+(`uq_macro_events_code_when`, vérifié via `pg_constraint`). Conséquence du drift :
+(1) tout environnement `create_all` (tests, CI, dev frais) n'avait pas la
+contrainte → l'upsert `ON CONFLICT` du calendrier macro y échouait
+**silencieusement** (best-effort → 0, log warning) ; (2) un futur `alembic
+--autogenerate` aurait voulu la **DROP** (le modèle ne la déclarant pas). **Fix**
+(`storage/models.py`) : `UniqueConstraint(..., name="uq_macro_events_code_when")`
+ajoutée au modèle, **nom identique à la migration** → modèle aligné sur prod,
+aucun nouveau migration nécessaire, **zéro risque prod** (prod a déjà la
+contrainte ; seul `tik_test` a été droppé+recréé par `create_all`, prod `tik`
+intacte = 98 events vérifiés). Les 6 tests guardent l'idempotence (2 upserts =
+1 row), l'update on-conflict, le strip aware (Bug 9), et les filtres
+importance/asset JSON Postgres. **Tracé non corrigé** (chemin prod qui marche,
+non déclenchable avec les specs statiques bien formées) : dans `upsert_many`, un
+event en erreur SQL n'est pas rollback → transaction Postgres « aborted » → les
+events suivants + le `commit()` échouent → batch entier perdu (best-effort → 0).
+À reconsidérer (savepoint par event) si une spec malformée le déclenche un jour.
+
+**Vérifications** : suite complète **1329 → 1341 verts** (+12 : 6
+`test_macro_proximity_db` + 6 `test_macro_events_repo_db`, tik_test, jamais la
 prod), 0 régression ; ruff check + format propres (vraie config dépôt, pas celle
 périmée du conteneur cf. [[container-stale-pyproject-ruff]]).
 
@@ -3582,9 +3606,10 @@ fermer sans chemin Tailscale iPhone confirmé) ; revue exhaustive des 14k lignes
 non faite (focalisée sur les diffs récents = plus haut risque de régression).
 
 **Garde-fous** : Garde-fou 1 / 2-bis, ADR-003 / 004 / 005 / 011 / 012 / 017 /
-018 **inchangés**. Aucune modif des engines / pipeline scoring — purement audit
-lecture seule + 1 fichier de test additif (zéro risque de régression). Verdict
-go/no-go directionnel **inchangé : NO-GO**.
+018 **inchangés**. Aucune modif des engines / pipeline scoring — audit lecture
+seule + 2 fichiers de test additifs + 1 fix modèle (déclaration de contrainte
+`MacroEvent` alignée sur migration/prod, zéro risque de régression : prod déjà
+à jour). Verdict go/no-go directionnel **inchangé : NO-GO**.
 
 ---
 

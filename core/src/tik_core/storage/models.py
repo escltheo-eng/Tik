@@ -17,6 +17,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -216,6 +217,16 @@ class MacroEvent(Base):
     """
 
     __tablename__ = "macro_events"
+    # Idempotence de l'upsert (cf. macro_events_repo.upsert_macro_event qui fait
+    # ON CONFLICT (event_code, scheduled_for)). Cette contrainte EXISTE en prod
+    # via la migration Alembic 0005 (nom identique). On la déclare aussi dans le
+    # modèle pour que les environnements `create_all` (tests tik_test, CI, dev
+    # frais) la créent — sinon l'ON CONFLICT échoue
+    # (InvalidColumnReferenceError) — et pour éviter qu'un futur
+    # `alembic --autogenerate` veuille la DROP (drift modèle↔migration).
+    __table_args__ = (
+        UniqueConstraint("event_code", "scheduled_for", name="uq_macro_events_code_when"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     event_code: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
