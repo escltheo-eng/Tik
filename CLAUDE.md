@@ -3749,6 +3749,47 @@ pas un edge** — ne jamais le présenter comme un signal directionnel.
 
 ---
 
+### Polish dashboard — fiabilité du flux signaux temps réel Expo Go (2026-06-01)
+
+Friction rapportée par l'utilisatrice : « les signaux ont du mal à se charger
+automatiquement quand ils arrivent, je dois souvent reload Expo Go ».
+
+**Cause** (lue dans le code, pas supposée) : `useSignalStream` ne faisait le
+fetch REST des derniers signaux qu'**une seule fois au mount**. La WebSocket
+(`TikStream`) se reconnecte seule (backoff jusqu'à 60 s) mais **sans re-fetch**
+→ tout signal émis pendant une coupure WS est **perdu jusqu'à un reload complet**.
+Sur iPhone, iOS gèle la WS dès que l'écran s'éteint / l'app passe en arrière-plan
+(socket « zombie » ou backoff long au réveil) → exactement le symptôme observé.
+
+**Fix (100 % dashboard, zéro backend, dashboard 0.5.48 → 0.5.49)** :
+- `src/api/stream.ts` : nouvelle méthode `TikStream.forceReconnect()` — ferme
+  proprement le vieux socket (handlers détachés pour qu'aucun `onclose` ne
+  reprogramme un reconnect concurrent), reset backoff, rouvre tout de suite.
+- `src/hooks/useSignalStream.ts` : helper `resync()` (fetch REST + **merge** par
+  id, re-tri du plus récent au plus ancien, cap `maxSignals`, **sans écraser**
+  les signaux live déjà reçus) appelé (a) à chaque **reconnexion** WS (garde
+  `everConnected` pour ne pas doubler le preload initial), (b) au **retour au
+  premier plan** via `AppState` (+ `forceReconnect()` si la WS n'est pas saine).
+  Expose un `refresh()` stable (via `resyncRef`).
+- `app/(tabs)/signals.tsx` : `RefreshControl` (**pull-to-refresh**) → rattrapage
+  manuel léger d'un geste, au lieu d'un reload complet de l'app.
+
+**Validation** : `tsc --noEmit` exit 0 + `eslint` exit 0 sur les 3 fichiers.
+Metro/Expo tourne **sur le VPS** (`npx expo start --tunnel`, ngrok) → le fix est
+servi par Fast Refresh ; reload Expo Go une fois pour charger le nouveau code,
+ensuite l'auto-chargement doit fonctionner. Bundle Metro vérifié sans erreur.
+
+**Limite honnête** : si la staleness vient en réalité de l'**instabilité du
+tunnel Expo Go dev** (cf. Paquet 16 « Expo Go dev tunnel inviable »), le vrai
+remède est EAS Build (vraie app), pas ce fix. Mon correctif règle le cas
+data-freshness WS (le plus probable). À confirmer sur device par l'utilisatrice.
+
+**Garde-fous** : Garde-fou 1 / 2-bis, ADR-003 / 004 / 005 / 011 / 018 inchangés.
+**Aucune modif du moteur / pipeline scoring / cross-validation** — purement la
+couche de transport temps réel du dashboard. `work-from-hp` non touchée.
+
+---
+
 ## 9. Bugs connus et résolus
 
 13 bugs identifiés depuis le démarrage du projet — 12 résolus + 1 actuel mitigé en attente d'un fix asynchrone (les 3 premiers pendant le déploiement initial du Paquet 1, les 3 suivants pendant les évolutions post-livraison du 2026-04-28, le 7e découvert le 2026-05-03 lors de la mise en service du dashboard sur iPhone, le 8e découvert le 2026-05-04 lors de la livraison Stats LLM card et résolu en deux temps : fix dashboard `parseUtcIso` le matin puis fix backend ADR-013 / Paquet 7 l'après-midi ; le 9e régression asyncpg DB du Paquet 7 fixé runtime le 2026-05-04 ; le 10e WebSocket coroutine zombie identifié et fixé le 2026-05-17 soir lors de l'audit santé runtime pré-trading Paquet 26 ; le 11e Reddit IP-ban full sur IP HP découvert lors de l'audit pré-J+14 Paquet 27 du 2026-05-18, mitigé par Option A doc-only en attente unban Reddit asynchrone ; le 12e cache track record qui figeait l'affichage des favoris flash en « tout sablier », découvert et fixé le 2026-05-26 via les questions de l'utilisatrice, Paquet 38 ; le 13e mapping FRED release_id faux (RETAIL_SALES=H.10 FX Rates, INITIAL_CLAIMS=G.19 Consumer Credit) découvert et fixé le 2026-05-31 lors de l'audit A3, Paquet 45) :

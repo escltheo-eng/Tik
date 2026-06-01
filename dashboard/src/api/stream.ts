@@ -101,6 +101,40 @@ export class TikStream {
     }
   }
 
+  /**
+   * Force une reconnexion immédiate, backoff réinitialisé.
+   *
+   * Cas d'usage : retour au premier plan sur mobile. iOS gèle la WebSocket en
+   * arrière-plan ; au réveil le socket peut être "zombie" (paraît ouvert mais
+   * ne reçoit plus rien) ou bloqué sur un long backoff (jusqu'à 60 s). On ferme
+   * proprement l'ancien socket — en détachant ses handlers pour que son onclose
+   * ne reprogramme PAS un reconnect concurrent — puis on rouvre tout de suite.
+   * La reconnexion réussie repasse l'état à 'connected' (le consumer peut alors
+   * déclencher un rattrapage REST des signaux manqués).
+   */
+  forceReconnect(): void {
+    if (this.stopped) return;
+    if (this.reconnectTimer !== null) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    this.backoff = INITIAL_BACKOFF_S;
+    const old = this.ws;
+    this.ws = null;
+    if (old !== null) {
+      old.onopen = null;
+      old.onmessage = null;
+      old.onerror = null;
+      old.onclose = null;
+      try {
+        old.close(1000, 'force reconnect');
+      } catch {
+        // ignore
+      }
+    }
+    this.connect();
+  }
+
   private connect(): void {
     if (this.stopped) return;
     this.setState(this.backoff === INITIAL_BACKOFF_S ? 'connecting' : 'reconnecting');

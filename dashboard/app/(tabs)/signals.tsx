@@ -5,6 +5,7 @@ import {
   Alert,
   FlatList,
   Pressable,
+  RefreshControl,
   StyleSheet,
   View,
   type ListRenderItem,
@@ -102,13 +103,25 @@ export default function SignalsScreen() {
 
   const duration = DURATION_FILTERS[durationIdx];
 
-  const { signals, connectionState, error, preloadLoading, preloadError } = useSignalStream({
+  const { signals, connectionState, error, preloadLoading, preloadError, refresh } = useSignalStream({
     entity,
     horizon,
     sinceHours: duration.sinceHours,
     preloadLimit: duration.preloadLimit,
     maxSignals: duration.preloadLimit,
   });
+
+  // Pull-to-refresh : rattrapage manuel léger (un geste vs reload complet de
+  // l'app). Complète le rattrapage auto du hook (reconnexion + retour 1er plan).
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await refresh();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refresh]);
   // Force re-render des items FlatList toutes les 30 s pour rafraîchir les
   // libellés "il y a X" (la FlatList mémoïse ses rows par défaut).
   const tick = useTick();
@@ -327,6 +340,13 @@ export default function SignalsScreen() {
           renderItem={renderItem}
           contentContainerStyle={styles.listContent}
           ItemSeparatorComponent={() => <View style={styles.separator} />}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={palette.tint}
+            />
+          }
         />
       )}
     </ThemedView>
