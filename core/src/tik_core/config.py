@@ -94,6 +94,14 @@ class Settings(BaseSettings):
     # vs Fear & Greed (apport indépendant ?). Toggle env : TIK_COINGECKO_OVERLAY_ENABLED.
     coingecko_overlay_enabled: bool = False
 
+    # --- Notifications Telegram (briefing du matin + alertes) ---
+    # Bot créé par l'utilisatrice via @BotFather. Le token + chat_id sont des
+    # secrets → définis dans core/.env (TIK_TELEGRAM_BOT_TOKEN /
+    # TIK_TELEGRAM_CHAT_ID), jamais commités. Si vides, le job briefing log un
+    # warning et skip proprement (aucun crash, cohérent best-effort projet).
+    telegram_bot_token: str = ""
+    telegram_chat_id: str = ""
+
     # --- CORS ---
     cors_origins: str = "http://localhost:3000"
 

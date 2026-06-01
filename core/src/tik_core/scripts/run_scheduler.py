@@ -16,6 +16,8 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from tik_core.config import get_settings
+from tik_core.notify.alerts import check_and_alert
+from tik_core.notify.briefing import send_briefing
 from tik_core.scoring.flash_engine import (
     analyze_flash_btc,
     read_last_emission,
@@ -116,6 +118,31 @@ async def _run_flash_btc(
         log.error("scheduler.flash_btc.error", error=str(exc))
 
 
+async def _run_briefing(session_maker, redis) -> None:
+    """Briefing du matin/midi/soir via Telegram (best-effort, ne lève jamais).
+
+    `send_briefing` est déjà best-effort (skip propre si token/chat_id absents
+    dans .env) ; le try ici est une ceinture+bretelles cohérente avec les
+    autres jobs.
+    """
+    try:
+        await send_briefing(session_maker, redis)
+    except Exception as exc:  # noqa: BLE001
+        log.error("scheduler.briefing.error", error=str(exc))
+
+
+async def _run_alerts(session_maker, redis) -> None:
+    """Alertes événements (choc prix BTC + macro imminent) — best-effort.
+
+    `check_and_alert` ne lève jamais et gère son propre anti-spam Redis ; le try
+    ici est une ceinture+bretelles cohérente avec les autres jobs.
+    """
+    try:
+        await check_and_alert(session_maker, redis)
+    except Exception as exc:  # noqa: BLE001
+        log.error("scheduler.alerts.error", error=str(exc))
+
+
 async def main() -> None:
     settings = get_settings()
     engine = create_async_engine(settings.database_url, echo=False)
@@ -206,6 +233,37 @@ async def main() -> None:
         max_instances=1,
         coalesce=True,
         misfire_grace_time=86400,
+    )
+
+    # Briefing Telegram : 3×/jour aux heures UTC les plus utiles pour suivre BTC.
+    #   06:00 UTC ≈ 08h Paris  → matin Europe (résume la nuit asiatique)
+    #   13:00 UTC ≈ 09h New York → matin/ouverture US (la session qui bouge le +)
+    #   20:00 UTC ≈ 22h Paris / clôture actions US → bilan de journée
+    # Best-effort : skip propre si TIK_TELEGRAM_* absents du .env. PAS de run au
+    # boot (sinon spam à chaque redéploiement du scheduler).
+    scheduler.add_job(
+        _run_briefing,
+        "cron",
+        hour="6,13,20",
+        minute=0,
+        args=[session_maker, redis],
+        id="briefing",
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=3600,
+    )
+
+    # Alertes événements : toutes les 15 min (choc prix BTC + macro imminent).
+    # Anti-spam géré dans check_and_alert (ancre Redis + set events). PAS de run
+    # au boot (évite une alerte à chaque redéploiement du scheduler).
+    scheduler.add_job(
+        _run_alerts,
+        "interval",
+        minutes=15,
+        args=[session_maker, redis],
+        id="alerts",
+        max_instances=1,
+        coalesce=True,
     )
 
     scheduler.start()
