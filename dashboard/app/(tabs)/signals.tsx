@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -21,7 +21,7 @@ import { Signal } from '@/src/api/types';
 import { computeFlashStability } from '@/src/flash/stability';
 import { useSignalStream } from '@/src/hooks/useSignalStream';
 import { useTick } from '@/src/hooks/use-tick';
-import { timeAgo } from '@/src/utils/time';
+import { parseUtcIso, timeAgo } from '@/src/utils/time';
 
 const ENTITY_FILTERS: { label: string; value: string | undefined }[] = [
   { label: 'Tous', value: undefined },
@@ -114,15 +114,71 @@ export default function SignalsScreen() {
   const tick = useTick();
 
   // Stabilité flash BTC (Paquet 42, logique pure réutilisée) : le flash flippe
-  // long↔short sans edge (~7 min). On garde la direction visible mais on ajoute
-  // un repère "court terme indécis" sur les lignes flash BTC quand c'est haché.
-  // Calculé sur les signaux bruts (indépendant des filtres actifs) ; `tick` le
-  // rafraîchit avec la fenêtre glissante. Re-render FlatList via extraData.
-  const flashChoppy = useMemo(
-    () => computeFlashStability(signals, { entityId: 'BTC' }).state === 'choppy',
+  // long↔short sans edge (~7 min). On garde la direction visible mais on signale
+  // quand le court terme est haché. Calculé sur les signaux bruts (indépendant
+  // des filtres actifs) ; `tick` rafraîchit la fenêtre glissante. Re-render
+  // FlatList via extraData.
+  const flashStability = useMemo(
+    () => computeFlashStability(signals, { entityId: 'BTC' }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [signals, tick],
   );
+  const flashChoppy = flashStability.state === 'choppy';
+
+  // (B) Le badge par-ligne ne s'affiche que sur les flash BTC RÉCENTS : un flash
+  // > 1h n'est plus tradable (TTL signal ≈ 1h, ADR-005), inutile d'y coller un
+  // repère "court terme". Borne = fenêtre de stabilité (45 min).
+  const flashRecentCutoffMs = flashStability.windowMinutes * 60_000;
+  const isRecentFlashBtc = useCallback(
+    (s: Signal) =>
+      s.horizon === 'flash' &&
+      s.entity_id === 'BTC' &&
+      Date.now() - parseUtcIso(s.timestamp).getTime() <= flashRecentCutoffMs,
+    [flashRecentCutoffMs],
+  );
+
+  // Explication partagée (bandeau d'état + badge par-ligne).
+  const openChoppyExplain = useCallback(() => {
+    Alert.alert(
+      'Court terme indécis (flash BTC)',
+      'Le flash a changé plusieurs fois de direction (long↔short) sur les ' +
+        'dernières ~45 min. Le très court terme est haché : la direction affichée ' +
+        'sert au timing, pas à suivre telle quelle.\n\n' +
+        'À ne pas confondre avec le badge anti-fake-news (AFN, orange) : l’AFN ' +
+        'signale un désaccord entre sources SUR UN signal ; ce repère signale que ' +
+        'la direction CHANGE souvent DANS LE TEMPS.',
+      [{ text: 'OK', style: 'default' }],
+    );
+  }, []);
+
+  // Bandeau d'état "court terme BTC" : synthèse haché / calme / pas de données.
+  // Visible seulement quand BTC est dans le filtre (sur GOLD seul ça n'a aucun
+  // sens — pas de flash GOLD, ADR-005).
+  const showFlashBanner = entity === undefined || entity === 'BTC';
+  const flashBanner = useMemo(() => {
+    if (flashStability.state === 'choppy') {
+      return {
+        icon: '🔀',
+        color: '#5b54c9',
+        label: 'haché',
+        hint: 'la direction flip souvent — mauvais moment pour entrer sur du court terme',
+      };
+    }
+    if (flashStability.state === 'no_data') {
+      return {
+        icon: '•',
+        color: '#7f8c8d',
+        label: 'pas assez de données',
+        hint: 'peu de signaux flash récents sur la fenêtre',
+      };
+    }
+    return {
+      icon: '✓',
+      color: '#27ae60',
+      label: 'calme',
+      hint: 'direction du court terme lisible sur les ~45 dernières min',
+    };
+  }, [flashStability.state]);
 
   const renderItem: ListRenderItem<Signal> = useMemo(() => {
     const SignalRow: ListRenderItem<Signal> = ({ item }) => (
@@ -149,20 +205,9 @@ export default function SignalsScreen() {
           {item.advisory?.near_macro_event ? (
             <NearMacroBadge data={item.advisory.near_macro_event} compact />
           ) : null}
-          {item.horizon === 'flash' && item.entity_id === 'BTC' && flashChoppy ? (
+          {flashChoppy && isRecentFlashBtc(item) ? (
             <Pressable
-              onPress={() =>
-                Alert.alert(
-                  'Court terme indécis',
-                  'Le flash a changé plusieurs fois de direction (long↔short) sur ' +
-                    'les dernières ~45 min. Le très court terme est haché : la direction ' +
-                    'affichée sert au timing, pas à suivre telle quelle.\n\n' +
-                    'À ne pas confondre avec le badge anti-fake-news (AFN, orange) : ' +
-                    'l’AFN signale un désaccord entre sources SUR UN signal ; ce repère ' +
-                    'signale que la direction CHANGE souvent DANS LE TEMPS.',
-                  [{ text: 'OK', style: 'default' }],
-                )
-              }
+              onPress={openChoppyExplain}
               hitSlop={6}
               accessibilityRole="button"
               accessibilityLabel="Court terme indécis — appuyer pour en savoir plus">
@@ -185,7 +230,7 @@ export default function SignalsScreen() {
       </Pressable>
     );
     return SignalRow;
-  }, [router, palette.icon, colorScheme, flashChoppy]);
+  }, [router, palette.icon, colorScheme, flashChoppy, isRecentFlashBtc, openChoppyExplain]);
 
   const filterPill = (label: string, active: boolean, onPress: () => void) => (
     <Pressable
@@ -242,6 +287,24 @@ export default function SignalsScreen() {
               {error ?? preloadError}
             </ThemedText>
           </ThemedView>
+        ) : null}
+
+        {/* Bandeau d'état "court terme BTC" — visible quand BTC est dans le filtre.
+            Synthèse maintenant : haché (à éviter) / calme / pas assez de données.
+            Permet de voir l'état d'un coup d'œil sans scanner la liste, SANS
+            polluer l'onglet Alertes (le flash est haché ~76% du temps). */}
+        {showFlashBanner ? (
+          <Pressable
+            onPress={openChoppyExplain}
+            hitSlop={4}
+            accessibilityRole="button"
+            accessibilityLabel={`Court terme BTC : ${flashBanner.label}. Appuyer pour en savoir plus.`}
+            style={[styles.flashBanner, { borderColor: flashBanner.color }]}>
+            <ThemedText style={[styles.flashBannerText, { color: flashBanner.color }]}>
+              {flashBanner.icon} Court terme BTC : {flashBanner.label}
+            </ThemedText>
+            <ThemedText style={styles.flashBannerHint}>{flashBanner.hint}</ThemedText>
+          </Pressable>
         ) : null}
       </ThemedView>
 
@@ -382,6 +445,21 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: 4,
     overflow: 'hidden',
+  },
+  flashBanner: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    gap: 2,
+  },
+  flashBannerText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  flashBannerHint: {
+    fontSize: 11,
+    opacity: 0.7,
   },
   alertBadge: {
     paddingHorizontal: 6,
