@@ -187,7 +187,7 @@ class OllamaHypothesisGenerator(HypothesisGenerator):
         url: str,
         model: str,
         fallback: HypothesisGenerator | None = None,
-        timeout_s: float = 50.0,
+        timeout_s: float = 120.0,
         num_predict: int = 350,
         lock: asyncio.Lock | None = None,
     ) -> None:
@@ -197,13 +197,16 @@ class OllamaHypothesisGenerator(HypothesisGenerator):
         self.timeout_s = timeout_s
         self.num_predict = num_predict
         # Lock optionnel partagé entre instances pour sérialiser les
-        # appels HTTP Ollama. Indispensable côté scheduler où 3 jobs
-        # (swing BTC + swing GOLD + flash BTC) peuvent tomber sur le
-        # même tick (xx:00, xx:30) et saturer Ollama même avec
-        # OLLAMA_NUM_PARALLEL=2 → 1 timeout assuré sur le 3e job. Un
-        # Lock partagé dans le scheduler force la sérialisation
-        # coût-side Tik. Cumulé : 13s × 3 = 40s, sous l'interval
-        # min 5 min flash. Pas de Lock dans les tests/CI ou en mode
+        # appels HTTP Ollama côté scheduler (évite que swing BTC et
+        # swing GOLD tapent Ollama en même temps ; le flash n'utilise
+        # plus le LLM depuis le fix A1). Mesure VPS 2026-06-01 (CPU,
+        # pas de GPU) : un seul appel chaud num_predict=350 prend ~33s
+        # et grimpe au-delà de 50s dès qu'un batch de classification
+        # news des ingesters (process SÉPARÉ, MÊME Ollama, hors de ce
+        # lock) occupe Ollama en parallèle. D'où le timeout_s relevé à
+        # 120s : le lock ne couvre que le scheduler ; la contention
+        # cross-process avec les ingesters est absorbée par le timeout,
+        # pas par le lock. Pas de Lock dans les tests/CI ou en mode
         # standalone : appels parallèles libres.
         self._lock = lock
         self._consecutive_failures = 0
@@ -422,7 +425,7 @@ async def apply_llm_hypothesis(
     horizon: str,
     generator: HypothesisGenerator | None,
     mode: str,
-    timeout_s: float = 60.0,
+    timeout_s: float = 130.0,
 ) -> None:
     """Applique le generator à la decision en place selon le mode.
 
@@ -436,14 +439,17 @@ async def apply_llm_hypothesis(
                    l'ancienne pour audit
 
     Le timeout `timeout_s` enveloppe l'appel `generator.generate()` —
-    fixé à 60s par défaut, légèrement supérieur au timeout HTTP interne
-    du generator (50s) pour laisser une marge sans déclencher deux
-    erreurs en cascade. Calibré sur la latence mesurée de llama3.2:3b
-    sur Mac M1 (~13s/cycle pour ~250 mots) avec marge pour les
-    prompts swing plus lourds (~30-40s observés en pic) et la
-    sérialisation Lock côté scheduler (3 jobs séquentiels = 40s cumulé).
-    Ne lève jamais : tout échec est loggué et la decision reste
-    inchangée (= conserve son hypothèse template).
+    fixé à 130s par défaut, légèrement supérieur au timeout HTTP interne
+    du generator (120s) pour ne pas déclencher deux erreurs en cascade.
+    Calibré sur la latence mesurée de llama3.2:3b sur le VPS (CPU sans
+    GPU, 2026-06-01) : ~33s pour un seul appel chaud, jusqu'à ~80-100s
+    sous contention quand un batch de classification news des ingesters
+    occupe Ollama en parallèle. L'ancien réglage 50s/60s (calibré sur
+    Mac M1 ~13s) faisait timeout ~64% des swings sur le VPS. Reste très
+    en dessous de l'interval swing (15 min BTC, 30 min GOLD) → pas de
+    pileup (max_instances=1, coalesce). Ne lève jamais : tout échec est
+    loggué et la decision reste inchangée (= conserve son hypothèse
+    template).
     """
     if generator is None or mode == "disabled":
         return
