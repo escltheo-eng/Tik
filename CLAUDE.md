@@ -3530,6 +3530,64 @@ Si les timeouts reviennent : `curl localhost:11434/api/ps` (modèle chaud ?) + `
 
 ---
 
+### Paquet 49 — Audit méthodique P46/47/48 + durcissement test DB `near_macro_event` (2026-06-01)
+
+Session de doute méthodique (« vérifie ce que tu devais faire et ce que tu as
+fait, triangule, zéro complaisance ») exécutée sur le VPS prod, **lecture seule
+sur le pipeline** sauf 1 ajout de test. Prod jamais touchée (6376 signaux).
+`work-from-hp` non touchée. Branche `main`, `origin` en sync.
+
+**Triangulation doc ↔ code ↔ runtime des 3 derniers paquets — tous VERTS** :
+- **Paquet 48 (timeout LLM)** : déployé (`timeout_s=120`, apply `130`,
+  `keep_alive=24h` confirmés en source), scheduler `RestartCount=0` (pas de
+  crash, redéploiement volontaire 12:35), code review du diff propre (ordre
+  `wait_for 130 > httpx 120` correct → fallback template propre). **Open
+  question « ~100% LLM à confirmer » CLOSE** : mesuré DB depuis 12:35 = **5
+  swing LLM / 0 template / 0 `ollama_error`** (les 5 derniers swings = 600-820
+  chars = 6 sections). Confirmé positivement.
+- **Paquet 47 (`near_macro_event`)** : vérifié **bout en bout** — code lit les
+  vraies colonnes du modèle (`event_name`/`assets_impacted`, pas
+  `title`/`affected_entities` comme l'affirmait à tort la doc Paquet 11 = drift
+  doc, pas un bug), schéma `NearMacroEvent` déclare les 5 clés du dict (REST ne
+  drop rien), câblé aux 3 jobs scheduler, **donnée prod correcte** (NFP 05/06
+  12:30 HIGH `["BTC","GOLD"]`, CPI 10/06, ECB 11/06) → la discipline se
+  déclenchera bien sur le NFP. Premier déclenchement réel = 2026-06-05.
+- **Paquet 46 (`hit_rate.py` baselines)** : `compute_constant_baselines` /
+  `assess_baseline_edge` — edge cases gardés (p0==0, prix None, n_evaluated==0,
+  dict vide → pas de `max()` sur vide), mêmes skips que `compute_hit_rate`
+  (apples-to-apples). Aucun bug.
+
+**Durcissement livré (nouveau `core/tests/test_macro_proximity_db.py`, +6 tests)** :
+les tests existants de `near_macro_event` n'utilisent que des **mocks**
+(`FakeEvent` + `_mock_session`) → un renommage de colonne du vrai modèle
+`MacroEvent` passerait inaperçu, et le `except Exception` best-effort de
+`annotate_near_macro_event` l'avalerait **silencieusement** → discipline NFP
+muette au pire moment. Le nouveau fichier insère de **vraies rows `MacroEvent`**
+dans `tik_test` (Postgres réel, isolation par `flush()` sans commit →
+`rollback()` de teardown discard, anchor 2030 = zéro collision) et couvre les 4
+chemins que les mocks ne voient pas : colonnes réelles, filtre importance SQL,
+filtre `assets_impacted` JSON Postgres, fenêtre SQL + choix du plus proche. Suit
+le pattern `_db.py` (cf. `test_publisher_timezone_db.py`, garde anti-prod
+`_is_test_database` du conftest).
+
+**Vérifications** : suite complète **1329 → 1335 verts** (tik_test, jamais la
+prod), 0 régression ; ruff check + format propres (vraie config dépôt, pas celle
+périmée du conteneur cf. [[container-stale-pyproject-ruff]]).
+
+**Reste / non vérifié cette session (transparence)** : dashboard non testé sur
+device (Paquets 46/47 = repères UI flash/macro validés seulement par bundle/tsc,
+pas device réel) ; mesures shadow CoinGecko ~11/06 + Polymarket ~10/06 non dues ;
+Reddit ban (Bug 11) asynchrone ; tik-core 0.0.0.0:8200 (hygiène différée, ne PAS
+fermer sans chemin Tailscale iPhone confirmé) ; revue exhaustive des 14k lignes
+non faite (focalisée sur les diffs récents = plus haut risque de régression).
+
+**Garde-fous** : Garde-fou 1 / 2-bis, ADR-003 / 004 / 005 / 011 / 012 / 017 /
+018 **inchangés**. Aucune modif des engines / pipeline scoring — purement audit
+lecture seule + 1 fichier de test additif (zéro risque de régression). Verdict
+go/no-go directionnel **inchangé : NO-GO**.
+
+---
+
 ## 9. Bugs connus et résolus
 
 13 bugs identifiés depuis le démarrage du projet — 12 résolus + 1 actuel mitigé en attente d'un fix asynchrone (les 3 premiers pendant le déploiement initial du Paquet 1, les 3 suivants pendant les évolutions post-livraison du 2026-04-28, le 7e découvert le 2026-05-03 lors de la mise en service du dashboard sur iPhone, le 8e découvert le 2026-05-04 lors de la livraison Stats LLM card et résolu en deux temps : fix dashboard `parseUtcIso` le matin puis fix backend ADR-013 / Paquet 7 l'après-midi ; le 9e régression asyncpg DB du Paquet 7 fixé runtime le 2026-05-04 ; le 10e WebSocket coroutine zombie identifié et fixé le 2026-05-17 soir lors de l'audit santé runtime pré-trading Paquet 26 ; le 11e Reddit IP-ban full sur IP HP découvert lors de l'audit pré-J+14 Paquet 27 du 2026-05-18, mitigé par Option A doc-only en attente unban Reddit asynchrone ; le 12e cache track record qui figeait l'affichage des favoris flash en « tout sablier », découvert et fixé le 2026-05-26 via les questions de l'utilisatrice, Paquet 38 ; le 13e mapping FRED release_id faux (RETAIL_SALES=H.10 FX Rates, INITIAL_CLAIMS=G.19 Consumer Credit) découvert et fixé le 2026-05-31 lors de l'audit A3, Paquet 45) :
