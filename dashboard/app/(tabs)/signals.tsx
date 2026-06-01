@@ -16,6 +16,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Signal } from '@/src/api/types';
+import { computeFlashStability } from '@/src/flash/stability';
 import { useSignalStream } from '@/src/hooks/useSignalStream';
 import { useTick } from '@/src/hooks/use-tick';
 import { timeAgo } from '@/src/utils/time';
@@ -110,6 +111,17 @@ export default function SignalsScreen() {
   // libellés "il y a X" (la FlatList mémoïse ses rows par défaut).
   const tick = useTick();
 
+  // Stabilité flash BTC (Paquet 42, logique pure réutilisée) : le flash flippe
+  // long↔short sans edge (~7 min). On garde la direction visible mais on ajoute
+  // un repère "court terme indécis" sur les lignes flash BTC quand c'est haché.
+  // Calculé sur les signaux bruts (indépendant des filtres actifs) ; `tick` le
+  // rafraîchit avec la fenêtre glissante. Re-render FlatList via extraData.
+  const flashChoppy = useMemo(
+    () => computeFlashStability(signals, { entityId: 'BTC' }).state === 'choppy',
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [signals, tick],
+  );
+
   const renderItem: ListRenderItem<Signal> = useMemo(() => {
     const SignalRow: ListRenderItem<Signal> = ({ item }) => (
       <Pressable
@@ -132,7 +144,9 @@ export default function SignalsScreen() {
           </View>
           <ThemedText style={styles.horizonLabel}>{item.horizon}</ThemedText>
           <AntiFakeNewsBadge status={item.circuit_breaker_status} compact />
-
+          {item.horizon === 'flash' && item.entity_id === 'BTC' && flashChoppy ? (
+            <ThemedText style={styles.choppyTag}>⚠ court terme indécis</ThemedText>
+          ) : null}
         </ThemedView>
 
         <ThemedView style={[styles.rowFooter, { backgroundColor: 'transparent' }]}>
@@ -149,7 +163,7 @@ export default function SignalsScreen() {
       </Pressable>
     );
     return SignalRow;
-  }, [router, palette.icon, colorScheme]);
+  }, [router, palette.icon, colorScheme, flashChoppy]);
 
   const filterPill = (label: string, active: boolean, onPress: () => void) => (
     <Pressable
@@ -223,7 +237,7 @@ export default function SignalsScreen() {
       ) : (
         <FlatList
           data={signals}
-          extraData={tick}
+          extraData={`${tick}-${flashChoppy}`}
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
           contentContainerStyle={styles.listContent}
@@ -334,6 +348,16 @@ const styles = StyleSheet.create({
     fontSize: 12,
     opacity: 0.7,
     textTransform: 'uppercase',
+  },
+  choppyTag: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#b06a1a',
+    backgroundColor: 'rgba(230, 126, 34, 0.12)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    overflow: 'hidden',
   },
   alertBadge: {
     paddingHorizontal: 6,
