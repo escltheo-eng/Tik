@@ -3622,10 +3622,25 @@ tables applicatives (entities, sources, feedbacks, api_keys [client_id+key_hash
 `unique=True` ✓], backtest_runs, source_credibility_history, headlines) :
 **modèle = prod, aucun drift**.
 
-**Vérifications** : suite complète **1329 → 1343 verts** (+14 : 6
+**Outillage de mesure Polymarket durci (prêt pour le run ~2026-06-10)** : audit +
+hardening de `core/src/tik_core/scripts/measure_polymarket.py` (shadow lecture
+seule, CLI manuel non importé par l'app, cf. memory `polymarket-shadow-live`).
+2 problèmes critiques corrigés pour que le run du 10/06 soit honnête : **(1)
+fenêtre klines** `5m×1000` (~3,5 j) → `1h×1000` (~41 j) — l'ancienne ne couvrait
+que les 3,5 derniers jours d'une fenêtre de 8 j → paires anciennes
+silencieusement perdues (mesuré : signaux dérivés **85 → 200** après fix) ;
+**(2) N indépendant** — des snapshots horaires pointent les mêmes events → paires
+autocorrélées (cf. memory `measurement-overlapping-returns`) ; la mesure-titre
+devient « 1 paire par **event résolu** » (mesuré : 178 paires brutes = **8 events
+indépendants** → NON CONCLUANT, attendu sur 8 j), le brut restant affiché en
+« indicatif, ne pas conclure dessus ». Doc « May bug » mise à jour (corrigé
+Paquet 39). +21 tests purs (`test_measure_polymarket.py`). **Aucun enrôlement**
+(NO-GO directionnel inchangé) — le run réel du 10/06 aura ~17 j de données.
+
+**Vérifications** : suite complète **1329 → 1364 verts** (+35 : 6
 `test_macro_proximity_db` + 6 `test_macro_events_repo_db` + 2
-`test_signal_pk_contract`, tik_test, jamais la prod), 0 régression ; ruff check +
-format propres (vraie config dépôt, pas celle
+`test_signal_pk_contract` + 21 `test_measure_polymarket`, tik_test, jamais la
+prod), 0 régression ; ruff check + format propres (vraie config dépôt, pas celle
 périmée du conteneur cf. [[container-stale-pyproject-ruff]]).
 
 **Reste / non vérifié cette session (transparence)** : dashboard non testé sur
@@ -3637,8 +3652,9 @@ non faite (focalisée sur les diffs récents = plus haut risque de régression).
 
 **Garde-fous** : Garde-fou 1 / 2-bis, ADR-003 / 004 / 005 / 011 / 012 / 017 /
 018 **inchangés**. Aucune modif des engines / pipeline scoring / endpoints —
-audit lecture seule + 3 fichiers de test additifs + 1 fix modèle (contrainte
-`MacroEvent` alignée sur migration/prod). Drift PK `Signal` analysé en
+audit lecture seule + 4 fichiers de test additifs + 1 fix modèle (contrainte
+`MacroEvent` alignée sur migration/prod) + durcissement de l'outil de mesure
+Polymarket (script CLI shadow, hors runtime). Drift PK `Signal` analysé en
 profondeur → **CONSERVÉ** (design Timescale intentionnel, refactor net-négatif
 sur trading live) + garde-fou de non-régression. Zéro modif d'un chemin runtime,
 zéro risque. Verdict go/no-go directionnel **inchangé : NO-GO**.
