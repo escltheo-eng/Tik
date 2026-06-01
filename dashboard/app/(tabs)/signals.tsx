@@ -12,6 +12,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AntiFakeNewsBadge } from '@/components/dashboard/anti-fake-news-badge';
+import { NearMacroBadge } from '@/components/dashboard/near-macro-badge';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Colors } from '@/constants/theme';
@@ -145,6 +146,9 @@ export default function SignalsScreen() {
           </View>
           <ThemedText style={styles.horizonLabel}>{item.horizon}</ThemedText>
           <AntiFakeNewsBadge status={item.circuit_breaker_status} compact />
+          {item.advisory?.near_macro_event ? (
+            <NearMacroBadge data={item.advisory.near_macro_event} compact />
+          ) : null}
           {item.horizon === 'flash' && item.entity_id === 'BTC' && flashChoppy ? (
             <Pressable
               onPress={() =>

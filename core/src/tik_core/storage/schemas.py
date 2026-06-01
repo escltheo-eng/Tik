@@ -65,6 +65,21 @@ class CounterScenario(BaseModel):
     mitigation: str
 
 
+class NearMacroEvent(BaseModel):
+    """Proximité d'un événement macro HIGH au moment de l'émission du signal.
+
+    Posé par `scoring/macro_proximity.py` quand le signal est émis dans la
+    fenêtre ±4h d'un event HIGH impactant l'entité (discipline Garde-fou 2-bis).
+    Métadonnée d'affichage — n'influence PAS la décision (ADR-017).
+    """
+
+    event_code: str
+    title: str
+    scheduled_for: str  # ISO-8601 UTC (suffixe Z), déjà formaté à l'émission
+    importance: str
+    hours_until: float  # signé : > 0 = event à venir, < 0 = event passé
+
+
 class Advisory(BaseModel):
     bias_on_existing_positions: str | None = None
     macro_crash_warning: bool = False
@@ -75,6 +90,8 @@ class Advisory(BaseModel):
     #   active → template_hypothesis (ancien template conservé pour audit)
     llm_hypothesis_candidate: str | None = None
     template_hypothesis: str | None = None
+    # Discipline macro (Phase B1.5) — posé par scoring/macro_proximity.py.
+    near_macro_event: NearMacroEvent | None = None
 
 
 class SignalOut(BaseModel):

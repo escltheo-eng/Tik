@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { AntiFakeNewsBadge } from '@/components/dashboard/anti-fake-news-badge';
+import { NearMacroBadge } from '@/components/dashboard/near-macro-badge';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Collapsible } from '@/components/ui/collapsible';
@@ -443,6 +444,9 @@ export default function SignalDetailScreen() {
           </ThemedText>
         ) : null}
         <AntiFakeNewsBadge status={signal.circuit_breaker_status} />
+        {signal.advisory?.near_macro_event ? (
+          <NearMacroBadge data={signal.advisory.near_macro_event} />
+        ) : null}
 
         <Pressable
           onPress={toggleWatch}

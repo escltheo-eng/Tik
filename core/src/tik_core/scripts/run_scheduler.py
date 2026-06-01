@@ -26,6 +26,7 @@ from tik_core.scoring.hypothesis_generator import (
     HypothesisGenerator,
     build_hypothesis_generator,
 )
+from tik_core.scoring.macro_proximity import annotate_near_macro_event
 from tik_core.scoring.publisher import publish_flash_signal, publish_swing_signal
 from tik_core.scoring.source_credibility import recalibrate_sources
 from tik_core.scoring.swing_engine import analyze_swing_btc, analyze_swing_gold
@@ -42,6 +43,9 @@ async def _run_swing_btc(
             hypothesis_generator.reset_batch()
         decision = await analyze_swing_btc(redis=redis, hypothesis_generator=hypothesis_generator)
         async with session_maker() as session:
+            # Flag discipline ±4h autour d'un event macro HIGH (best-effort,
+            # ne touche pas direction/conviction/veracity — cf. macro_proximity).
+            await annotate_near_macro_event(session, decision)
             await publish_swing_signal(session, redis, decision)
             await session.commit()
     except Exception as exc:  # noqa: BLE001
@@ -63,6 +67,9 @@ async def _run_swing_gold(
             hypothesis_generator=hypothesis_generator,
         )
         async with session_maker() as session:
+            # Flag discipline ±4h autour d'un event macro HIGH (best-effort,
+            # ne touche pas direction/conviction/veracity — cf. macro_proximity).
+            await annotate_near_macro_event(session, decision)
             await publish_swing_signal(session, redis, decision)
             await session.commit()
     except Exception as exc:  # noqa: BLE001
@@ -100,6 +107,8 @@ async def _run_flash_btc(
             return
 
         async with session_maker() as session:
+            # Flag discipline ±4h autour d'un event macro HIGH (best-effort).
+            await annotate_near_macro_event(session, decision)
             await publish_flash_signal(session, redis, decision)
             await session.commit()
         await record_emission(redis, decision.entity_id, decision)

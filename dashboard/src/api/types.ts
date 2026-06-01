@@ -44,6 +44,14 @@ export interface CounterScenario {
   mitigation: string;
 }
 
+export interface NearMacroEvent {
+  event_code: string;
+  title: string;
+  scheduled_for: string; // ISO-8601 UTC (suffixe Z)
+  importance: string;
+  hours_until: number; // signé : > 0 = event à venir, < 0 = event passé
+}
+
 export interface Advisory {
   bias_on_existing_positions: string | null;
   macro_crash_warning: boolean;
@@ -54,6 +62,9 @@ export interface Advisory {
   //   active → template_hypothesis (ancien template conservé pour audit)
   llm_hypothesis_candidate?: string;
   template_hypothesis?: string;
+  // Discipline macro (Phase B1.5) — posé par scoring/macro_proximity.py quand
+  // le signal est émis dans la fenêtre ±4h d'un event HIGH impactant l'entité.
+  near_macro_event?: NearMacroEvent;
 }
 
 export type Direction = 'long' | 'short' | 'neutral';
