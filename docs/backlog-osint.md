@@ -442,6 +442,86 @@ directionnel reste NO-GO.
 
 ---
 
+### V1.7 (candidat) — Dérivés BTC : funding rate + open interest (Binance Futures gratuit)
+
+**Statut** : candidat **identifié et vérifié 2026-06-01** (curl VPS read-only),
+**aucun code écrit**, **non collecté**. Origine : analyse d'une liste « edge OSINT »
+proposée par ChatGPT à l'utilisatrice (points « contrarian score », « douleur
+maximale / short squeeze », « dérivés CoinGlass/Coinalyze »). C'est le **seul
+candidat de cette liste à la fois neuf, gratuit, pertinent BTC et “argent
+réellement engagé”** (comme Polymarket — pas du sentiment éditorial).
+
+**Vérification empirique 2026-06-01 (curl VPS, read-only) — la prémisse
+« dérivés = payant » (CoinGlass V1.4, Coinalyze) ne tient PAS pour funding + OI** :
+
+| Source | Accès sans clé ? | Données | Verdict |
+|---|---|---|---|
+| **Binance Futures** `fapi/v1/premiumIndex` | ✅ **HTTP 200, aucune clé** | `lastFundingRate` (funding actuel) + mark/index price | **funding gratuit** |
+| **Binance Futures** `fapi/v1/openInterest` | ✅ **HTTP 200, aucune clé** | open interest BTCUSDT perp | **OI gratuit** |
+| **Binance Futures** `fapi/v1/fundingRate` (historique) | ✅ public documenté | historique funding (backtest IC sur 6-12 mois possible) | **calibration possible** |
+| Coinalyze `v1/funding-rate` | 🔴 **HTTP 401** « Invalid/Missing API key » | n/a | clé obligatoire → exclu anonyme |
+| CoinGlass | 🔴 aucun free tier (cf. V1.4) | n/a | gelé payant |
+
+> **Note importante** : Binance Futures donne **funding + OI** gratuitement, mais
+> **PAS** les liquidations agrégées multi-exchange (heatmaps de liquidité), qui
+> restent payantes (CoinGlass). Le `forceOrders` Binance exige une clé et ne
+> couvre qu'un exchange. Donc V1.7 = funding + OI seulement, pas le module complet
+> « market structure / liquidation heatmap » de la liste ChatGPT.
+
+**Justification structurelle** : (a) **même fournisseur déjà intégré** (Tik utilise
+déjà Binance spot pour klines/orderbook/aggTrades) → coût d'intégration faible ;
+(b) signal de **positionnement réel des traders à effet de levier**, indépendant de
+nos overlays news/sentiment → vraie diversification d'angle (pas un doublon
+éditorial) ; (c) angle **contrarian crédible** : funding fortement positif + OI
+euphorique = excès de longs à effet de levier = risque de squeeze baissier (et
+inversement). C'est le mécanisme « douleur maximale » de la liste ChatGPT.
+
+**Stack technique attendu** :
+- Ingester `binance_derivatives_ingester.py` : polling court (funding évolue en
+  continu, OI bouge intra-day — à calibrer, ~5-15 min). Stocke funding + OI dans
+  Redis (clé explicite, NON ramassée par les engines tant qu'aucun
+  `_enrich_with_*` n'est câblé — cohérent règle SHADOW).
+- Overlay futur (si enrôlé) : `_enrich_with_derivatives` dans `analyze_swing_btc`
+  (contrarian sur extrêmes : funding/OI extrêmes → bias inverse au positionnement
+  de la foule). **Mapping à calibrer empiriquement** sur historique `fundingRate`
+  6-12 mois (méthodo Paquet 19 P2 : IC Spearman + hit rate par palier).
+- Pas de version GOLD (Binance Futures = crypto uniquement ; Gold n'a pas de
+  funding/OI équivalent gratuit).
+
+**Effort estimé** : ~3-5 h backend (ingester + Redis + tests), + ~1-2 h
+calibration historique avant tout enrôlement directionnel.
+
+**Hypothèses causales à valider** (avant enrôlement) :
+1. Le funding extrême (top/bottom décile sur 6-12 mois) anticipe-t-il un
+   retournement BTC sur 5-30 j (IC Spearman significatif, signe contrarian) ?
+2. L'OI en euphorie (pic vs baseline) combiné à un funding extrême améliore-t-il
+   le tri vs funding seul ?
+3. Le signal dérivés est-il **indépendant** de nos overlays existants (FG, news)
+   ou redondant ? (corrélation des bias — si redondant avec FG contrarian, faible
+   apport, cf. risque mesuré pour CoinGecko shadow).
+
+**Marqueurs de réussite à 2 semaines** : IC Spearman ≥ 0.10 sur 6-12 mois
+historique, hit rate des cas extrêmes (|bias|=1.0) > 50 %, coverage raisonnable
+(funding extrême est rare par nature → couche d'alerte, pas signal permanent).
+
+**File d'attente (discipline “une source à la fois”)** : V1.7 vient **après** la
+mesure des 3 shadows déjà en cours — Polymarket (~2026-06-10), CoinGecko
+(~2026-06-11), surprise macro ForexFactory. **Aucune collecte ne démarre tant
+qu'un shadow en cours n'est pas mesuré.** Et comme toujours : SHADOW d'abord,
+ENRÔLEMENT directionnel **seulement après** mesure ≥ 2 sem (IC / hit / gain) +
+régime mixte + ADR, et **jamais** tant que le go/no-go directionnel reste NO-GO
+(dans ce cas → carte de contexte dashboard, pas overlay du bias).
+
+**Limites connues** :
+1. **BTC uniquement** (rien pour Gold) → n'aide pas le trou directionnel GOLD.
+2. **Funding extrême ≠ timing** : signale un risque de squeeze, pas le moment exact.
+3. **Liquidations agrégées non couvertes** (payant CoinGlass) → pas le module
+   « heatmap de liquidité » complet de la liste ChatGPT, seulement funding + OI.
+4. **Risque de redondance avec Fear & Greed** (les deux captent l'excès de la
+   foule) → à mesurer (corrélation des bias) avant d'enrôler, sinon volume sans edge.
+
+---
+
 ## VAGUE 2 — POST-J+44 (uniquement si manques mesurés)
 
 Date d'activation : pas avant 2026-06-30 (J+44 du trading manuel
@@ -657,3 +737,19 @@ Vague 2 — décision conditionnelle :
   publie avril (Core PCE fin mai/début juin) ; mesure ≥ 2 sem avant tout verdict.
   **Zéro impact pipeline / signaux / `combined_bias`** (lecture seule, SHADOW).
   Aucun enrôlement (NO-GO inchangé).
+- **2026-06-01 (candidat V1.7 — dérivés Binance funding + OI)** : ajout entrée
+  V1.7 suite à analyse d'une liste « edge OSINT » proposée par ChatGPT à
+  l'utilisatrice. Tri complet de la liste fait (cf. réponse Claude) : la plupart
+  des points sont soit **déjà dans Tik** (OBI/CVD flash, contrarian score =
+  cross-validation ADR-004/011), soit **payants/refusés** (Glassnode/Nansen/
+  Arkham/CoinGlass/Coinalyze, Twitter), soit **hors-scope BTC-Gold** (GitHub/
+  recrutements/projets = pertinent altcoins seulement). **2 points retenus** :
+  (1) **dérivés funding + OI** → V1.7, vérifié gratuit chez Binance Futures
+  (`premiumIndex` + `openInterest`, HTTP 200 sans clé ; Coinalyze 401, CoinGlass
+  payant) → seul candidat neuf/gratuit/BTC/« argent engagé » ; (2) **régimes de
+  marché** (savoir QUAND ignorer un signal) → déjà en Vague 2, c'est l'idée qui
+  vise notre vraie faiblesse (colinéarité au trend, NO-GO 27/05) plutôt que
+  d'empiler du volume. **Aucun code écrit.** V1.7 en file après les 3 shadows en
+  cours (Polymarket/CoinGecko/ForexFactory), une source à la fois. Rappel
+  transversal : « + de sources ≠ + d'edge » — V1.7 ne corrige PAS l'absence
+  d'edge directionnel, il faut le mesurer (IC/hit/gain) avant tout enrôlement.
