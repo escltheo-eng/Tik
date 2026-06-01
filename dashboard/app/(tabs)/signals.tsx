@@ -2,6 +2,7 @@ import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Pressable,
   StyleSheet,
@@ -145,7 +146,24 @@ export default function SignalsScreen() {
           <ThemedText style={styles.horizonLabel}>{item.horizon}</ThemedText>
           <AntiFakeNewsBadge status={item.circuit_breaker_status} compact />
           {item.horizon === 'flash' && item.entity_id === 'BTC' && flashChoppy ? (
-            <ThemedText style={styles.choppyTag}>⚠ court terme indécis</ThemedText>
+            <Pressable
+              onPress={() =>
+                Alert.alert(
+                  'Court terme indécis',
+                  'Le flash a changé plusieurs fois de direction (long↔short) sur ' +
+                    'les dernières ~45 min. Le très court terme est haché : la direction ' +
+                    'affichée sert au timing, pas à suivre telle quelle.\n\n' +
+                    'À ne pas confondre avec le badge anti-fake-news (AFN, orange) : ' +
+                    'l’AFN signale un désaccord entre sources SUR UN signal ; ce repère ' +
+                    'signale que la direction CHANGE souvent DANS LE TEMPS.',
+                  [{ text: 'OK', style: 'default' }],
+                )
+              }
+              hitSlop={6}
+              accessibilityRole="button"
+              accessibilityLabel="Court terme indécis — appuyer pour en savoir plus">
+              <ThemedText style={styles.choppyTag}>🔀 court terme indécis</ThemedText>
+            </Pressable>
           ) : null}
         </ThemedView>
 
@@ -350,10 +368,12 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   choppyTag: {
+    // Indigo — volontairement DISTINCT de l'orange AFN (#e67e22) pour ne pas
+    // confondre "court terme haché" (temporel) avec "anti-fake-news" (1 signal).
     fontSize: 10,
     fontWeight: '700',
-    color: '#b06a1a',
-    backgroundColor: 'rgba(230, 126, 34, 0.12)',
+    color: '#5b54c9',
+    backgroundColor: 'rgba(91, 84, 201, 0.14)',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
