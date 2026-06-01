@@ -3601,18 +3601,31 @@ PK composite `(id, timestamp)` (requis par l'hypertable Timescale, posé en
 migration, cf. Bug 1/2). Contrairement à `macro_events`, ce drift **ne casse
 rien** : aucun chemin app ne fait d'`ON CONFLICT` sur `signals`, l'identité ORM
 par `id` (UUID unique) suffit, les inserts/queries marchent en prod ET en
-`create_all`. C'est une **conséquence inhérente à Timescale**, **NON corrigée**
-(déclarer le PK composite dans le modèle casserait `session.get(Signal, id)` et
-l'identité ORM → risque élevé sur le modèle central). **⚠ Pour instances futures :
-NE PAS appliquer un `alembic --autogenerate` qui voudrait changer le PK de
-`signals` — c'est ce drift connu, pas une vraie migration.** Toutes les autres
+`create_all`. C'est une **conséquence inhérente à Timescale**, **NON corrigée**.
+**Analyse approfondie 2026-06-01 (option A choisie par l'utilisatrice)** : 3
+endpoints prod font `session.get(Signal, id)` avec un id SIMPLE
+(`GET /signals/{id}`, `POST /feedback`, `GET /metrics/signal_track_record/{id}`)
+→ déclarer le PK composite au modèle les casserait toutes (`session.get` exige le
+PK complet). L'autogenerate s'avère **moins dangereux que craint** : la config
+`env.py` par défaut ne reflète QUE le schéma `public` → les internals Timescale
+(`_timescaledb_*`, chunks `_hyper_*`) sont **déjà ignorés** sans guard ; le seul
+diff résiduel serait le PK `signals` (faux positif à ignorer ; les 5 migrations
+sont toutes écrites à la main, jamais autogénérées). **Verdict : refactor du
+modèle = risque > bénéfice sur serveur de trading live → design intentionnel
+CONSERVÉ.** Garde-fou ajouté `core/tests/test_signal_pk_contract.py` (2 tests :
+PK modèle = `[id]` + `session.get(Signal, id)` fonctionne) qui **plante si une
+future session ajoute le PK composite** au modèle — protège les 3 endpoints
+contre une « correction » naïve (j'ai failli la faire moi-même). ⚠ NE PAS
+appliquer un `alembic --autogenerate` qui voudrait changer le PK `signals`.
+Toutes les autres
 tables applicatives (entities, sources, feedbacks, api_keys [client_id+key_hash
 `unique=True` ✓], backtest_runs, source_credibility_history, headlines) :
 **modèle = prod, aucun drift**.
 
-**Vérifications** : suite complète **1329 → 1341 verts** (+12 : 6
-`test_macro_proximity_db` + 6 `test_macro_events_repo_db`, tik_test, jamais la
-prod), 0 régression ; ruff check + format propres (vraie config dépôt, pas celle
+**Vérifications** : suite complète **1329 → 1343 verts** (+14 : 6
+`test_macro_proximity_db` + 6 `test_macro_events_repo_db` + 2
+`test_signal_pk_contract`, tik_test, jamais la prod), 0 régression ; ruff check +
+format propres (vraie config dépôt, pas celle
 périmée du conteneur cf. [[container-stale-pyproject-ruff]]).
 
 **Reste / non vérifié cette session (transparence)** : dashboard non testé sur
@@ -3623,10 +3636,12 @@ fermer sans chemin Tailscale iPhone confirmé) ; revue exhaustive des 14k lignes
 non faite (focalisée sur les diffs récents = plus haut risque de régression).
 
 **Garde-fous** : Garde-fou 1 / 2-bis, ADR-003 / 004 / 005 / 011 / 012 / 017 /
-018 **inchangés**. Aucune modif des engines / pipeline scoring — audit lecture
-seule + 2 fichiers de test additifs + 1 fix modèle (déclaration de contrainte
-`MacroEvent` alignée sur migration/prod, zéro risque de régression : prod déjà
-à jour). Verdict go/no-go directionnel **inchangé : NO-GO**.
+018 **inchangés**. Aucune modif des engines / pipeline scoring / endpoints —
+audit lecture seule + 3 fichiers de test additifs + 1 fix modèle (contrainte
+`MacroEvent` alignée sur migration/prod). Drift PK `Signal` analysé en
+profondeur → **CONSERVÉ** (design Timescale intentionnel, refactor net-négatif
+sur trading live) + garde-fou de non-régression. Zéro modif d'un chemin runtime,
+zéro risque. Verdict go/no-go directionnel **inchangé : NO-GO**.
 
 ---
 
