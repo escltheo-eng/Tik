@@ -3,8 +3,16 @@
 Client Python pour consommer les signaux du **core Tik** — destiné aux bots
 clients (Zeta aujourd'hui, Totem demain).
 
+> ## 🧊 COUCHE GELÉE (depuis le 2026-06-01 — cf. [ADR-022](../docs/adr/022-gel-couche-zeta-sdk.md))
+>
+> **On ne code plus rien dans ce dossier.** Le trading est 100 % manuel, Zeta
+> n'est pas câblé, et aucun plan daté ne l'exige. Le code est conservé intact
+> (gel **réversible à coût nul**). Toute instance Claude : **ne pas modifier
+> `sdk/` ni proposer de l'améliorer**, sauf demande explicite liée à un câblage
+> Zeta réel. Critère de dégel dans l'ADR-022.
+
 > **Statut Paquet 2 : ✅ COMPLET** — Sessions 1 à 5 livrées le 2026-04-30.
-> Version 0.5.0. Le SDK sera bumpé à 1.0.0 quand il sera wiré dans Zeta
+> Version 0.6.0 (gelée). Le SDK sera bumpé à 1.0.0 quand il sera wiré dans Zeta
 > en production et aura passé les 3 mois de mode shadow.
 
 ## Liens utiles
