@@ -21,8 +21,11 @@ os.environ.setdefault("TIK_DB_USER", "tik")
 os.environ.setdefault("TIK_DB_PASSWORD", "tik_dev")
 os.environ.setdefault("TIK_REDIS_HOST", "localhost")
 
+from tik_core.auth.dependencies import get_auth_context  # noqa: E402
+from tik_core.auth.provider import AuthContext  # noqa: E402
 from tik_core.config import get_settings  # noqa: E402
 from tik_core.main import app  # noqa: E402
+from tik_core.storage.database import get_session  # noqa: E402
 from tik_core.storage.models import Base  # noqa: E402
 
 
@@ -90,3 +93,39 @@ async def api_client() -> AsyncGenerator[AsyncClient, None]:
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         yield client
+
+
+@pytest_asyncio.fixture
+async def auth_client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
+    """Client HTTP authentifié, branché sur la session DB de test.
+
+    Permet de tester les endpoints protégés (signals, feedback, veracity) au
+    niveau HTTP réel — ce que `api_client` ne permet pas (pas de lifespan donc
+    `get_session` lèverait « DB engine not initialized », et pas d'auth). On
+    override les deux dépendances FastAPI le temps du test :
+
+    - `get_session` → la session de test `db_session` (mêmes données visibles
+      côté test et côté endpoint ; rollback en teardown via la fixture
+      `db_session`, donc aucune écriture persistée)
+    - `get_auth_context` → contexte `admin` (tous scopes), pas de vraie clé API
+      à créer (l'objectif est de couvrir la logique métier des endpoints, pas
+      le provider d'auth qui a ses propres tests)
+
+    Skippe proprement hors base de test (héritage `db_session`/`db_engine`).
+    """
+
+    async def _override_session() -> AsyncGenerator[AsyncSession, None]:
+        yield db_session
+
+    def _override_ctx() -> AuthContext:
+        return AuthContext(client_id="test-client", scopes=["admin"])
+
+    app.dependency_overrides[get_session] = _override_session
+    app.dependency_overrides[get_auth_context] = _override_ctx
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            yield client
+    finally:
+        app.dependency_overrides.pop(get_session, None)
+        app.dependency_overrides.pop(get_auth_context, None)

@@ -31,6 +31,12 @@ async def submit_feedback(
 
     fb = Feedback(
         signal_id=payload.signal_id,
+        # `signals.timestamp` fait partie de la PK composite côté hypertable
+        # Timescale (Bug 1/2) et `feedbacks.signal_timestamp` est NOT NULL.
+        # On le reprend du signal qu'on vient de charger — sans ça l'INSERT
+        # lève NotNullViolation (endpoint jamais exercé jusqu'ici, SDK gelé →
+        # bug latent capté par test_feedback_api le 2026-06-01).
+        signal_timestamp=signal.timestamp,
         client_id=ctx.client_id,
         trade_id=payload.trade_id,
         outcome=payload.outcome,
