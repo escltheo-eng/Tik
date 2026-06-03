@@ -118,6 +118,14 @@ SOURCE_SPECS: tuple[SourceSpec, ...] = (
         "shadow (non enrôlé) — contexte marché OR pour le trader",
     ),
     SourceSpec(
+        "binance_derivatives_btc",
+        "tik.deriv.binance.btc",
+        "fetched_at",
+        3 * _H,
+        False,
+        "shadow (ADR-023, aucun overlay) — dérivés funding/OI/long-short pour mesure",
+    ),
+    SourceSpec(
         "price_btc",
         "tik.last_price.BTC",
         "timestamp",

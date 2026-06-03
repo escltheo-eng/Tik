@@ -13,6 +13,7 @@ from fastapi.openapi.utils import get_openapi
 
 from tik_core import __version__
 from tik_core.api import (
+    derivatives,
     entities,
     feedback,
     headlines,
@@ -101,6 +102,7 @@ def create_app() -> FastAPI:
     app.include_router(macro_events.router, prefix=prefix, tags=["macro_events"])
     app.include_router(metrics.router, prefix=prefix, tags=["metrics"])
     app.include_router(polymarket.router, prefix=prefix, tags=["polymarket"])
+    app.include_router(derivatives.router, prefix=prefix, tags=["derivatives"])
     app.include_router(ws.router, prefix=prefix, tags=["websocket"])
 
     def custom_openapi() -> dict:

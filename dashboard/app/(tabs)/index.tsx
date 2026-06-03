@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, StyleSheet } from 'react-native';
 
 import { HitRateByVeracityCard } from '@/components/dashboard/hit-rate-by-veracity-card';
+import { DerivativesCard } from '@/components/dashboard/derivatives-card';
 import { FlashStabilityCard } from '@/components/dashboard/flash-stability-card';
 import { HitRateCard } from '@/components/dashboard/hit-rate-card';
 import { KpiCard } from '@/components/dashboard/kpi-card';
@@ -28,6 +29,7 @@ import { useDashboardKpis } from '@/src/hooks/useDashboardKpis';
 import { useHitRate } from '@/src/hooks/useHitRate';
 import { useHitRateByVeracity } from '@/src/hooks/useHitRateByVeracity';
 import { useTick } from '@/src/hooks/use-tick';
+import { useDerivatives } from '@/src/hooks/useDerivatives';
 import { usePolymarket } from '@/src/hooks/usePolymarket';
 import { useTopHeadlines } from '@/src/hooks/useTopHeadlines';
 import { useUpcomingMacroEvents } from '@/src/hooks/useUpcomingMacroEvents';
@@ -120,6 +122,8 @@ export default function HomeScreen() {
   // côté signaux Tik, c'est là que ce contexte apporte le plus.
   const [polymarketEntity, setPolymarketEntity] = useState<string>('GOLD');
   const polymarketState = usePolymarket(polymarketEntity, { limit: 4 });
+  // Positionnement dérivés BTC (shadow ADR-023) — contexte, pas un signal.
+  const derivativesState = useDerivatives('BTC');
   // Lacune B Phase B1 — calendrier macro/géopolitique 7 j à venir.
   // Cap 4 events sur Home (1 mis en avant + 3 suivants), poll 5 min
   // (cohérent TTL cache Redis 5 min).
@@ -239,6 +243,12 @@ export default function HomeScreen() {
         marketsPerEvent={4}
         loading={polymarketState.loading}
         error={polymarketState.error}
+      />
+
+      <DerivativesCard
+        snapshot={derivativesState.snapshot}
+        loading={derivativesState.loading}
+        error={derivativesState.error}
       />
 
       <ThemedView style={styles.section}>

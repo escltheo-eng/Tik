@@ -311,5 +311,25 @@ export interface PolymarketSnapshot {
   events: PolymarketEvent[];
 }
 
+// ----- Dérivés Binance (positionnement, SHADOW — contexte, ADR-023) -----
+
+export interface DerivativesSnapshot {
+  source: string;
+  entity: string;
+  mode: string;
+  fetched_at: string | null;
+  funding_rate: number | null;
+  mark_price: number | null;
+  next_funding_time: number | null;
+  open_interest_btc: number | null;
+  open_interest_usd: number | null;
+  long_short_ratio_global: number | null;
+  long_account_global: number | null;
+  short_account_global: number | null;
+  long_short_ratio_top: number | null;
+  long_account_top: number | null;
+  short_account_top: number | null;
+}
+
 // Couche éducative « Lecture macro » supprimée 2026-05-30 (cf. memory
 // macro-reading-removed-2026-05-30 pour rebuild guide en Option C / liens externes).

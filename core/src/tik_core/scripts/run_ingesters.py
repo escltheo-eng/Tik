@@ -10,6 +10,7 @@ import redis.asyncio as aioredis
 import structlog
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from tik_core.aggregator.binance_derivatives_ingester import BinanceDerivativesIngester
 from tik_core.aggregator.binance_ingester import BinanceTradesIngester
 from tik_core.aggregator.cftc_cot_ingester import CftcCotIngester
 from tik_core.aggregator.coingecko_sentiment_ingester import CoinGeckoSentimentIngester
@@ -168,6 +169,15 @@ async def main() -> None:
         # divergence vs Fear & Greed avant enrôlement. Retrait = retirer cette
         # ligne. Candidat 4e overlay BTC suite ban IP Reddit (Bug 11).
         CoinGeckoSentimentIngester(redis, interval_s=3600),
+        # Dérivés Binance (funding rate / open interest / ratio long-short retail
+        # ET top traders) — MODE SHADOW (ADR-023). Collecte le POSITIONNEMENT
+        # dérivés BTC dans Redis SANS toucher le combined_bias : il n'existe
+        # AUCUN _enrich_with_binance_derivatives ni toggle (zéro ligne touchée
+        # dans les moteurs). But : famille de données DIFFÉRENTE du sentiment
+        # retardé, à mesurer (measure_btc_derivatives.py) avant tout enrôlement
+        # ≥ 2 semaines. Retrait = retirer cette ligne. Connectivité futures
+        # vérifiée depuis le VPS le 2026-06-03 (HTTP 200 sur tous les endpoints).
+        BinanceDerivativesIngester(redis, entity="BTC", interval_s=3600),
     ]
 
     for ing in ingesters:

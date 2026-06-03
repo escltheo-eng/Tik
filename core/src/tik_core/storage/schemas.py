@@ -467,6 +467,36 @@ class PolymarketSnapshotOut(BaseModel):
     events: list[PolymarketEventOut] = Field(default_factory=list)
 
 
+# ----- Dérivés Binance (positionnement, SHADOW — contexte, ADR-023) -----
+
+
+class DerivativesSnapshotOut(BaseModel):
+    """Snapshot positionnement dérivés Binance par entité (contexte, mode shadow).
+
+    Reflète tel quel le snapshot Redis publié par `BinanceDerivativesIngester`
+    (`tik.deriv.binance.{entity}`) : funding rate, open interest, ratios
+    long/short retail + top traders. `fetched_at` est une chaîne ISO produite
+    par l'ingester (déjà UTC `+00:00`). C'est du CONTEXTE de marché (argent +
+    levier engagés), PAS un signal Tik — aucun overlay branché (ADR-023).
+    """
+
+    source: str = "binance_derivatives"
+    entity: str = "BTC"
+    mode: str = "shadow"
+    fetched_at: str | None = None
+    funding_rate: float | None = None
+    mark_price: float | None = None
+    next_funding_time: int | None = None
+    open_interest_btc: float | None = None
+    open_interest_usd: float | None = None
+    long_short_ratio_global: float | None = None
+    long_account_global: float | None = None
+    short_account_global: float | None = None
+    long_short_ratio_top: float | None = None
+    long_account_top: float | None = None
+    short_account_top: float | None = None
+
+
 # Couche éducative « Lecture macro » supprimée 2026-05-30 sur décision trader
 # (cf. memory macro-reading-removed-2026-05-30 pour rebuild guide). Schémas
 # MacroReactionStat / MacroAssetReaction / MacroReadingOut / MacroLiveEvent /

@@ -10,6 +10,7 @@
 
 import { HttpClient } from './client';
 import {
+  DerivativesSnapshot,
   Entity,
   FeedbackPayload,
   FeedbackResponse,
@@ -170,6 +171,15 @@ export async function getPolymarketMarkets(
   return client.get<PolymarketSnapshot>(`/polymarket/${encodeURIComponent(entityId)}`, {
     limit: params.limit ?? 10,
   });
+}
+
+// ----- Dérivés Binance (positionnement, SHADOW — contexte, ADR-023) -----
+
+export async function getDerivatives(
+  client: HttpClient,
+  entityId: string,
+): Promise<DerivativesSnapshot> {
+  return client.get<DerivativesSnapshot>(`/derivatives/${encodeURIComponent(entityId)}`);
 }
 
 // ----- Macro events (Lacune B Phase B1 trading manuel J+10) -----

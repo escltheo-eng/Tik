@@ -54,6 +54,10 @@ log = structlog.get_logger()
 NEAR_LOW_PCT = 0.01
 # Nombre de titres clés inclus dans le briefing.
 N_HEADLINES = 3
+# Positionnement dérivés BTC (shadow ADR-023, observation — pas un signal).
+DERIV_REDIS_KEY = "tik.deriv.binance.btc"
+# Divergence retail vs top traders jugée notable au-delà de 5 points de %.
+DERIV_DIVERGENCE_PCT = 0.05
 
 
 def _dt_from_ms(ms: int) -> datetime:
@@ -147,6 +151,76 @@ def climate_from_headlines(headlines: list[dict]) -> dict:
     return {"bull": bull, "bear": bear, "neutral": neutral, "tilt": tilt}
 
 
+def _funding_label(funding_pct: float) -> str:
+    """Qualifie un funding rate (en %/8h) : neutre / qui paie qui / élevé."""
+    a = abs(funding_pct)
+    if a < 0.01:
+        return "neutre"
+    side = "longs paient" if funding_pct > 0 else "shorts paient"
+    return f"{side}, élevé" if a >= 0.05 else side
+
+
+def summarize_derivatives(snap: dict | None) -> dict | None:
+    """Résume le positionnement dérivés BTC (pur). None si rien d'exploitable.
+
+    Lecture honnête : funding (qui paie qui), positionnement long retail vs top
+    traders, et si les deux divergent (signal contrarian classique). C'est de
+    l'OBSERVATION de marché, pas un signal Tik (shadow ADR-023).
+    """
+    if not isinstance(snap, dict):
+        return None
+    funding = snap.get("funding_rate")
+    oi_usd = snap.get("open_interest_usd")
+    long_g = snap.get("long_account_global")
+    long_t = snap.get("long_account_top")
+    has_funding = isinstance(funding, int | float)
+    has_pos = isinstance(long_g, int | float)
+    if not has_funding and not has_pos:
+        return None
+    funding_pct = funding * 100 if has_funding else None
+    divergent = None
+    if has_pos and isinstance(long_t, int | float):
+        divergent = abs(long_g - long_t) >= DERIV_DIVERGENCE_PCT
+    return {
+        "funding_pct": funding_pct,
+        "funding_label": _funding_label(funding_pct) if funding_pct is not None else None,
+        "oi_usd": oi_usd if isinstance(oi_usd, int | float) else None,
+        "long_pct_retail": long_g * 100 if has_pos else None,
+        "long_pct_top": long_t * 100 if isinstance(long_t, int | float) else None,
+        "divergent": divergent,
+    }
+
+
+def _fmt_derivatives_lines(deriv: dict | None) -> list[str]:
+    """Section briefing « positionnement dérivés » (vide si pas de donnée)."""
+    if not deriv:
+        return []
+    lines = ["⚙️ <b>Positionnement dérivés BTC</b> <i>(observation, pas un signal)</i>"]
+    parts: list[str] = []
+    if deriv.get("funding_pct") is not None:
+        parts.append(f"funding {deriv['funding_pct']:+.3f}%/8h ({deriv['funding_label']})")
+    if deriv.get("oi_usd") is not None:
+        parts.append(f"OI {deriv['oi_usd'] / 1e9:.1f} Mds$")
+    if parts:
+        lines.append("• " + " · ".join(parts))
+    if deriv.get("long_pct_retail") is not None:
+        div = deriv.get("divergent")
+        tail = (
+            " (alignés)"
+            if div is False
+            else " (divergent ⚠)"
+            if div is True
+            else ""
+        )
+        top = (
+            f" / {deriv['long_pct_top']:.0f}% top"
+            if deriv.get("long_pct_top") is not None
+            else ""
+        )
+        lines.append(f"• longs {deriv['long_pct_retail']:.0f}% retail{top}{tail}")
+    return lines
+
+
 def briefing_window_label(now: datetime) -> str:
     """Libellé de la fenêtre horaire selon l'heure UTC courante."""
     h = now.hour
@@ -199,11 +273,13 @@ def format_briefing(
     climate: dict | None,
     events: list[dict],
     headlines: list[dict],
+    deriv: dict | None = None,
 ) -> str:
     """Assemble le texte HTML du briefing (pur, testable sans IO).
 
     `events` : liste de dicts {event_name, hours_until_str, assets, when_utc}.
     `headlines` : liste de dicts {title, publisher, sentiment}.
+    `deriv` : résumé positionnement dérivés BTC (summarize_derivatives) ou None.
     """
     lines: list[str] = []
     lines.append(f"{window} — <b>Briefing Tik</b>")
@@ -248,6 +324,12 @@ def format_briefing(
             emo = _sentiment_emoji(h.get("sentiment", "neutral"))
             pub = h.get("publisher") or "?"
             lines.append(f"{emo} {h['title']} — <i>{pub}</i>")
+        lines.append("")
+
+    # --- Positionnement dérivés BTC (shadow ADR-023, observation) ---
+    deriv_lines = _fmt_derivatives_lines(deriv)
+    if deriv_lines:
+        lines.extend(deriv_lines)
         lines.append("")
 
     # --- Pied de page discipline ---
@@ -322,6 +404,15 @@ async def gather_briefing_data(session: AsyncSession, redis: Redis) -> dict:
 
     headlines, climate = await _fetch_headlines_and_climate(redis)
 
+    # Positionnement dérivés BTC (shadow, observation) — best-effort.
+    deriv = None
+    try:
+        raw_deriv = await redis.get(DERIV_REDIS_KEY)
+        if raw_deriv:
+            deriv = summarize_derivatives(json.loads(raw_deriv))
+    except Exception as exc:  # noqa: BLE001
+        log.warning("briefing.derivatives_error", error=str(exc))
+
     return {
         "window": briefing_window_label(now),
         "now": now,
@@ -331,6 +422,7 @@ async def gather_briefing_data(session: AsyncSession, redis: Redis) -> dict:
         "climate": climate,
         "events": events,
         "headlines": headlines,
+        "deriv": deriv,
     }
 
 
