@@ -126,6 +126,18 @@ SOURCE_SPECS: tuple[SourceSpec, ...] = (
         "shadow (ADR-023, aucun overlay) — dérivés funding/OI/long-short pour mesure",
     ),
     SourceSpec(
+        "btc_etf_flows",
+        "tik.etf.btc",
+        "fetched_at",
+        # Polling 6 h → tolérance 3 cycles = 18 h. `fetched_at` est ré-écrit à
+        # chaque cycle même le week-end (la donnée du jour ne change pas mais
+        # l'ingester re-publie), donc 18 h ne génère pas de faux positif sur les
+        # gaps de marché US ; ça capte la mort de l'ingester en ≤ 3 cycles.
+        6 * _H * 3,
+        False,
+        "shadow (ADR-024, aucun overlay) — flux ETF spot BTC (SoSoValue) pour mesure",
+    ),
+    SourceSpec(
         "price_btc",
         "tik.last_price.BTC",
         "timestamp",

@@ -202,10 +202,13 @@ téléchargeable).
 
 ### V1.3 — Flux ETF spot BTC (arbitrage de source)
 
-**Statut** : couche structurée OSINT, overlay swing BTC. **À coder APRÈS
-V1.2** (mesure 2 semaines V1.2 d'abord), et **après le go/no-go du 27/05**
-(cf. règle SHADOW vs ENRÔLEMENT en tête de Vague 1). Aucun code écrit à
-ce jour.
+**Statut** : ✅ **COLLECTE SHADOW LIVE depuis 2026-06-03 (ADR-024, Paquet 52)**.
+Ingester `btc_etf_flows_ingester.py` + `measure_btc_etf_flows.py` + `SourceSpec`
+santé livrés. **Aucun overlay branché** (shadow strict, comme ADR-023 dérivés) :
+zéro ligne dans les moteurs, signaux inchangés. Source tranchée au codage (cf.
+verdict ci-dessous) = **SoSoValue openapi v2 `us-btc-spot`, sans clé** (Farside
+reste 403, CoinGlass payant). 300 j de backfill immédiat. Mesure ~2026-06-17
+(≥ 2 sem) AVANT tout enrôlement directionnel. NO-GO directionnel inchangé.
 
 **Justification structurelle** : (a) ETF BTC US ont >50 G USD AUM
 post-janvier 2024, dominant institutionnel mesurable ; (b) le détail

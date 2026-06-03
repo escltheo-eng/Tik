@@ -236,6 +236,8 @@ C'est ce qui distingue Tik d'un bot naïf. À respecter dans toute évolution.
 
 - **Polymarket** BTC + GOLD (`tik.sentiment.polymarket.*`) — mesure prévue ~2026-06-10 (`measure_polymarket.py`).
 - **CoinGecko sentiment** (toggle `TIK_COINGECKO_OVERLAY_ENABLED=False`) — candidat 4e overlay BTC suite ban Reddit, à mesurer vs Fear&Greed (risque de redondance).
+- **Dérivés Binance BTC** (`tik.deriv.binance.*`, ADR-023) — funding / OI / long-short retail+top, 1re famille **non-sentiment**, mesure ~2026-06-17 (`measure_btc_derivatives.py`).
+- **Flux ETF spot BTC** (`tik.etf.btc*`, ADR-024) — inflow/outflow net quotidien + détail par fonds via SoSoValue (sans clé), 2e famille **non-sentiment**, 300 j de backfill, mesure ~2026-06-17 (`measure_btc_etf_flows.py`).
 
 ### Dates / état opérationnel
 
@@ -247,7 +249,7 @@ C'est ce qui distingue Tik d'un bot naïf. À respecter dans toute évolution.
 ### Couches non implémentées / backlog
 
 - Engine macro (semaines-mois) ; flash GOLD (bloqué par le délai Yahoo 15 min).
-- **Familles edge non codées** : dérivés Binance, on-chain/ETF (enrôlement après mesure).
+- **Familles edge non-sentiment en shadow** (codées, NON enrôlées) : dérivés Binance (ADR-023), flux ETF spot BTC (ADR-024) — enrôlement seulement après mesure ≥ 2 sem concluante. Restantes non codées : on-chain (Whale Alert V1.5), ETF GOLD (V1.2).
 - Traduction FR des signaux (ADR-014 réservé), refonte UX complète (prévue en fin de dev, sur demande).
 - Roadmap OSINT conditionnelle : [`docs/backlog-osint.md`](docs/backlog-osint.md). Backlog général : [`docs/backlog.md`](docs/backlog.md).
 - Hébergement / distribution de l'app : exposé fait, **décision en attente** ([`docs/hosting-and-app-options.md`](docs/hosting-and-app-options.md) + mémoire `hosting-app-distribution-decision`).

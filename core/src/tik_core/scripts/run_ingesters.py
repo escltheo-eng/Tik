@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from tik_core.aggregator.binance_derivatives_ingester import BinanceDerivativesIngester
 from tik_core.aggregator.binance_ingester import BinanceTradesIngester
+from tik_core.aggregator.btc_etf_flows_ingester import BtcEtfFlowsIngester
 from tik_core.aggregator.cftc_cot_ingester import CftcCotIngester
 from tik_core.aggregator.coingecko_sentiment_ingester import CoinGeckoSentimentIngester
 from tik_core.aggregator.cryptocompare_ingester import CryptoCompareIngester
@@ -178,6 +179,17 @@ async def main() -> None:
         # ≥ 2 semaines. Retrait = retirer cette ligne. Connectivité futures
         # vérifiée depuis le VPS le 2026-06-03 (HTTP 200 sur tous les endpoints).
         BinanceDerivativesIngester(redis, entity="BTC", interval_s=3600),
+        # Flux ETF spot BTC US (inflow/outflow net quotidien, encours, détail par
+        # fonds) — MODE SHADOW (ADR-024). Collecte les flux institutionnels dans
+        # Redis SANS toucher le combined_bias : il n'existe AUCUN
+        # _enrich_with_btc_etf_flows ni toggle (zéro ligne touchée dans les
+        # moteurs). But : famille de données DIFFÉRENTE du sentiment retardé ET
+        # des dérivés, à mesurer (measure_btc_etf_flows.py) avant tout enrôlement
+        # ≥ 2 semaines. Source SoSoValue openapi v2 (us-btc-spot, sans clé),
+        # joignabilité vérifiée depuis le VPS le 2026-06-03 (HTTP 200, code:0).
+        # Polling 6 h (les flux ETF sont quotidiens, pas intra-day). Retrait =
+        # retirer cette ligne.
+        BtcEtfFlowsIngester(redis, entity="BTC", interval_s=6 * 3600),
     ]
 
     for ing in ingesters:
