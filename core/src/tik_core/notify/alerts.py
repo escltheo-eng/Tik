@@ -243,7 +243,10 @@ async def _check_macro(
                 await redis.expire(MACRO_SENT_KEY, MACRO_SENT_TTL_S)
             except Exception as exc:  # noqa: BLE001
                 log.warning("alerts.macro_mark_error", error=str(exc))
-            log.info("alerts.macro_sent", event=e.event_code, minutes=minutes)
+            # `event_code=` et pas `event=` : `event` est le nom positionnel
+            # réservé du bound logger structlog → kwarg `event=` lève « got
+            # multiple values for argument 'event' » (bug 2026-06-05).
+            log.info("alerts.macro_sent", event_code=e.event_code, minutes=minutes)
     return sent_texts
 
 

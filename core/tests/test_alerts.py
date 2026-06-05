@@ -140,3 +140,81 @@ def test_format_macro_alert():
     assert "Non-Farm Employment Change" in text
     assert "30 min" in text
     assert "Garde-fou 2-bis" in text
+
+
+# ---------- garde-fou régression : log de succès _check_macro (bug NFP 2026-06-05) ----------
+
+
+class _StructlogSpy:
+    """Logger espion à la signature `(event, **kw)` du bound logger structlog.
+    Un MagicMock accepterait `event=` sans broncher et masquerait la collision ;
+    ici `info("msg", event=...)` lève bien `TypeError`, comme en prod."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str]] = []
+
+    def info(self, event, **kw):  # noqa: ANN001, ANN003
+        self.calls.append(("info", event))
+
+    def warning(self, event, **kw):  # noqa: ANN001, ANN003
+        self.calls.append(("warning", event))
+
+    def error(self, event, **kw):  # noqa: ANN001, ANN003
+        self.calls.append(("error", event))
+
+
+class _FakeRedis:
+    async def sismember(self, key, member):  # noqa: ANN001
+        return False
+
+    async def sadd(self, key, *members):  # noqa: ANN001
+        return 1
+
+    async def expire(self, key, ttl):  # noqa: ANN001
+        return True
+
+
+class _FakeSessionCtx:
+    async def __aenter__(self):
+        return SimpleNamespace()
+
+    async def __aexit__(self, *exc):  # noqa: ANN002
+        return False
+
+
+def _fake_session_maker():
+    return _FakeSessionCtx()
+
+
+@pytest.mark.asyncio
+async def test_check_macro_success_log_does_not_raise(monkeypatch):
+    """GUARD jumeau de macro_proximity : `_check_macro` envoie le Telegram +
+    marque le dedup, PUIS loggue `alerts.macro_sent`. Si ce log utilise le kwarg
+    réservé structlog `event=`, il lève `TypeError` qui remonte (loggé
+    `alerts.macro_error` par `check_and_alert`) — constaté en prod le 1er NFP
+    2026-06-05. Avec le spy (vraie signature structlog), l'ancien code ferait
+    lever `_check_macro` → ce test échouerait."""
+    from tik_core.notify import alerts as al
+
+    now = datetime(2026, 6, 5, 11, 30)  # naïf UTC
+    ev = _ev("NFP", datetime(2026, 6, 5, 12, 0))  # +30 min → imminent (lead 60)
+
+    async def _fake_fetch_upcoming(session, *args, **kw):  # noqa: ANN001, ANN002
+        return [ev]
+
+    async def _fake_send(token, chat, text):  # noqa: ANN001
+        return True
+
+    spy = _StructlogSpy()
+    monkeypatch.setattr(al, "now_utc_naive", lambda: now)
+    monkeypatch.setattr(al, "fetch_upcoming", _fake_fetch_upcoming)
+    monkeypatch.setattr(al, "send_message", _fake_send)
+    monkeypatch.setattr(al, "log", spy)
+
+    settings = SimpleNamespace(telegram_bot_token="x", telegram_chat_id="y")
+    # Ne lève pas (sinon régression bug NFP) :
+    texts = await al._check_macro(_fake_session_maker, _FakeRedis(), settings, dry_run=False)
+
+    logged = [event for (_level, event) in spy.calls]
+    assert "alerts.macro_sent" in logged, "le log de succès n'a pas été émis proprement"
+    assert len(texts) == 1  # un texte d'alerte composé pour le NFP imminent

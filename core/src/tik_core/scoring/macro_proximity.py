@@ -133,7 +133,12 @@ async def annotate_near_macro_event(
         log.info(
             "macro_proximity.flagged",
             entity=decision.entity_id,
-            event=near["event_code"],
+            # NB: `event` est le nom positionnel réservé du bound logger structlog
+            # (meth(event, **kw)). Passer `event=` en kwarg lève « got multiple
+            # values for argument 'event' », exception avalée par le except
+            # best-effort ci-dessous → log de succès perdu + faux warning. D'où
+            # `event_code=`. Cf. bug découvert le 2026-06-05 (NFP).
+            event_code=near["event_code"],
             hours_until=near["hours_until"],
         )
     except Exception as exc:  # noqa: BLE001

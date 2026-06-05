@@ -123,6 +123,27 @@ def _decision(entity_id: str = "BTC", advisory=None) -> SimpleNamespace:
     )
 
 
+class _StructlogSpy:
+    """Logger espion dont les méthodes ont la MÊME signature `(event, **kw)` que
+    le bound logger structlog. Crucial : un `MagicMock` accepte `event=` sans
+    broncher, donc il MASQUE la collision ; ici `info("msg", event=...)` lève
+    bien `TypeError: got multiple values for argument 'event'`, exactement comme
+    en prod. Sert à attraper en CI la régression du log de succès cassé puis
+    avalé par le `except` best-effort (bug NFP 2026-06-05)."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str]] = []
+
+    def info(self, event, **kw):  # noqa: ANN001, ANN003
+        self.calls.append(("info", event))
+
+    def warning(self, event, **kw):  # noqa: ANN001, ANN003
+        self.calls.append(("warning", event))
+
+    def error(self, event, **kw):  # noqa: ANN001, ANN003
+        self.calls.append(("error", event))
+
+
 @pytest.mark.asyncio
 class TestAnnotate:
     async def test_sets_flag_when_event_in_window(self):
@@ -132,6 +153,31 @@ class TestAnnotate:
         flag = decision.advisory["near_macro_event"]
         assert flag["event_code"] == "NFP"
         assert flag["hours_until"] == 2.0
+
+    async def test_success_log_does_not_hit_error_path(self, monkeypatch):
+        """GUARD régression bug NFP 2026-06-05 : le log de succès ne doit PAS
+        lever (kwarg `event=` réservé par structlog → exception avalée par le
+        except best-effort, qui faisait passer un flag posé pour une `error`).
+
+        Les autres tests n'attrapent pas ça : le flag est posé AVANT le log, donc
+        ils restent verts même quand le log explose silencieusement."""
+        import tik_core.scoring.macro_proximity as mp
+
+        spy = _StructlogSpy()
+        monkeypatch.setattr(mp, "log", spy)
+        session = _mock_session([_evt("NFP", SIG_TS + timedelta(hours=2))])
+        decision = _decision("BTC")
+        await annotate_near_macro_event(session, decision)
+
+        logged = [event for (_level, event) in spy.calls]
+        assert "macro_proximity.error" not in logged, (
+            "Le chemin succès lève une exception avalée : collision du kwarg "
+            "structlog réservé 'event' dans log.info('macro_proximity.flagged', "
+            "event=...). Renommer en event_code= (cf. bug NFP 2026-06-05)."
+        )
+        assert "macro_proximity.flagged" in logged
+        # Régression inverse : le flag doit rester posé.
+        assert decision.advisory["near_macro_event"]["event_code"] == "NFP"
 
     async def test_filters_out_event_not_impacting_entity(self):
         # Event impacte GOLD seulement ; signal BTC → pas de flag.
