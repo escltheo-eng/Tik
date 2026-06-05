@@ -42,6 +42,13 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="journal"
+        options={{
+          title: 'Carnet',
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="book.fill" color={color} />,
+        }}
+      />
+      <Tabs.Screen
         name="alerts"
         options={{
           title: 'Alerts',

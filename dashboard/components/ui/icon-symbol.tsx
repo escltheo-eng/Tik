@@ -20,6 +20,7 @@ const MAPPING = {
   'chevron.right': 'chevron-right',
   'chart.line.uptrend.xyaxis': 'show-chart',
   'star.fill': 'star',
+  'book.fill': 'menu-book',
   'bell.fill': 'notifications',
   cpu: 'memory',
   'gearshape.fill': 'settings',

@@ -19,6 +19,10 @@ import {
   HitRate,
   HitRateByVeracity,
   MacroEvent,
+  ManualTrade,
+  ManualTradeCloseInput,
+  ManualTradeInput,
+  ManualTradeStats,
   PolymarketSnapshot,
   Signal,
   SignalFreshness,
@@ -277,4 +281,55 @@ export async function reportFeedback(
   payload: FeedbackPayload,
 ): Promise<FeedbackResponse> {
   return client.post<FeedbackResponse>('/feedback', payload);
+}
+
+// ----- Carnet de trades manuels (Levier B 2026-06-03) -----
+//
+// Scopes requis : `read:trades` (GET) / `write:trades` (POST/PATCH/DELETE).
+// La clé API du dashboard doit les porter (ajoutés au déploiement).
+
+export interface ListTradesParams {
+  status?: 'open' | 'closed';
+  entityId?: string;
+  limit?: number;
+}
+
+export async function listTrades(
+  client: HttpClient,
+  params: ListTradesParams = {},
+): Promise<ManualTrade[]> {
+  return client.get<ManualTrade[]>('/trades', {
+    status: params.status,
+    entity_id: params.entityId,
+    limit: params.limit ?? 200,
+  });
+}
+
+export async function getTradeStats(
+  client: HttpClient,
+  entityId?: string,
+): Promise<ManualTradeStats> {
+  return client.get<ManualTradeStats>('/trades/stats', { entity_id: entityId });
+}
+
+export async function openTrade(
+  client: HttpClient,
+  payload: ManualTradeInput,
+): Promise<ManualTrade> {
+  return client.post<ManualTrade>('/trades', payload);
+}
+
+export async function closeTrade(
+  client: HttpClient,
+  tradeId: string,
+  payload: ManualTradeCloseInput,
+): Promise<ManualTrade> {
+  return client.patch<ManualTrade>(
+    `/trades/${encodeURIComponent(tradeId)}/close`,
+    payload,
+  );
+}
+
+export async function deleteTrade(client: HttpClient, tradeId: string): Promise<void> {
+  await client.del<void>(`/trades/${encodeURIComponent(tradeId)}`);
 }

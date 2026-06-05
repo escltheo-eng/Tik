@@ -333,3 +333,71 @@ export interface DerivativesSnapshot {
 
 // Couche éducative « Lecture macro » supprimée 2026-05-30 (cf. memory
 // macro-reading-removed-2026-05-30 pour rebuild guide en Option C / liens externes).
+
+// ----- Carnet de trades manuels (Levier B 2026-06-03) -----
+
+export type TradeAlignment = 'with' | 'against' | 'none';
+
+export interface ManualTrade {
+  id: string;
+  entity_id: string;
+  direction: string; // "long" | "short"
+  entry_time: string;
+  entry_price: number;
+  size_lots: number;
+  stop_price: number | null;
+  target_price: number | null;
+  exit_time: string | null;
+  exit_price: number | null;
+  status: string; // "open" | "closed"
+  note: string | null;
+  result_pct: number | null;
+  tik_signal_id: string | null;
+  tik_direction: string | null; // "long" | "short" | "neutral"
+  tik_veracity: number | null;
+  tik_alignment: TradeAlignment | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Payload de création (POST /trades). Les champs `tik_*` = snapshot contexte. */
+export interface ManualTradeInput {
+  entity_id: string;
+  direction: 'long' | 'short';
+  entry_price: number;
+  size_lots: number;
+  entry_time?: string | null;
+  stop_price?: number | null;
+  target_price?: number | null;
+  note?: string | null;
+  tik_signal_id?: string | null;
+  tik_direction?: 'long' | 'short' | 'neutral' | null;
+  tik_veracity?: number | null;
+}
+
+export interface ManualTradeCloseInput {
+  exit_price: number;
+  exit_time?: string | null;
+  note?: string | null;
+}
+
+export interface ManualTradeGroupStats {
+  n: number;
+  win_rate: number | null;
+  avg_result_pct: number | null;
+  total_result_pct: number;
+}
+
+export interface ManualTradeStats {
+  n_total: number;
+  n_open: number;
+  n_closed: number;
+  win_rate: number | null;
+  avg_result_pct: number | null;
+  total_result_pct: number;
+  by_alignment: {
+    with: ManualTradeGroupStats;
+    against: ManualTradeGroupStats;
+    none: ManualTradeGroupStats;
+  };
+}

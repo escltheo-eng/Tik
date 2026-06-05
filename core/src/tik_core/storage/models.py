@@ -300,3 +300,63 @@ class ApiKey(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc_naive)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class ManualTrade(Base):
+    """Trade manuel saisi par la trader — son carnet de trades personnel.
+
+    Levier B du plan « continuer Tik » (2026-06-03) : rendre l'utilité réelle
+    de Tik *mesurable*. Aujourd'hui Tik mesure si ses signaux ont raison
+    (track record) et la watchlist suit des signaux ; rien ne capture les
+    *vrais* trades de la trader. Cette table comble ce manque.
+
+    Le point clé est le **snapshot du contexte Tik au moment de l'entrée**
+    (`tik_direction` / `tik_veracity` / `tik_signal_id`) et l'alignement
+    dérivé (`tik_alignment` = with/against/none). C'est ce qui permettra de
+    répondre, dans quelques semaines : « trader AVEC Tik a-t-il mieux réussi
+    que CONTRE ou SANS ? » — la mesure qui manque (cf. go/no-go 2026-05-27,
+    Tik = contexte sans edge directionnel prouvé, donc on mesure son apport
+    réel plutôt que de le présumer).
+
+    Cohérent ADR-013 / Bug 9 : les colonnes `DateTime` sont en
+    `TIMESTAMP WITHOUT TIME ZONE` (sémantiquement UTC) ; le repo strippe la
+    tzinfo des inputs aware avant l'INSERT, le `field_serializer` Pydantic
+    ré-attache `Z` à la sortie API.
+
+    ADR-003 / Garde-fou 1 inchangés : pur journal humain, Tik reste shadow,
+    aucune influence sur l'exécution.
+    """
+
+    __tablename__ = "manual_trades"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    entity_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    # "BTC" | "GOLD"
+    direction: Mapped[str] = mapped_column(String(16), nullable=False)
+    # "long" | "short"
+    entry_time: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    entry_price: Mapped[float] = mapped_column(Float, nullable=False)
+    size_lots: Mapped[float] = mapped_column(Float, nullable=False)
+    # Taille en lots MT5 (choix trader 2026-06-03). Le P&L en $ exige les
+    # specs contrat broker (cf. memory mt5-points-calibration-todo) → on
+    # mesure le résultat en % (price-based, toujours juste) en attendant.
+    stop_price: Mapped[float | None] = mapped_column(Float)
+    target_price: Mapped[float | None] = mapped_column(Float)
+    exit_time: Mapped[datetime | None] = mapped_column(DateTime)
+    exit_price: Mapped[float | None] = mapped_column(Float)
+    status: Mapped[str] = mapped_column(String(16), default="open", nullable=False, index=True)
+    # "open" | "closed"
+    note: Mapped[str | None] = mapped_column(Text)
+    result_pct: Mapped[float | None] = mapped_column(Float)
+    # Calculé à la clôture : long = (exit-entry)/entry ; short = (entry-exit)/entry.
+    # --- Snapshot contexte Tik au moment de l'entrée (peut être absent) ---
+    tik_signal_id: Mapped[str | None] = mapped_column(String(64))
+    tik_direction: Mapped[str | None] = mapped_column(String(16))
+    # "long" | "short" | "neutral" — ce que Tik disait sur l'entity à l'entrée
+    tik_veracity: Mapped[float | None] = mapped_column(Float)
+    tik_alignment: Mapped[str | None] = mapped_column(String(16))
+    # "with" | "against" | "none" — dérivé de direction vs tik_direction
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc_naive, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=now_utc_naive, onupdate=now_utc_naive, nullable=False
+    )

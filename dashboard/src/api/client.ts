@@ -78,6 +78,40 @@ export class HttpClient {
     return this._parse<T>(response, expectedStatus);
   }
 
+  async patch<T>(
+    path: string,
+    body: unknown,
+    opts?: { authenticated?: boolean; expectedStatus?: number[] },
+  ): Promise<T> {
+    const authenticated = opts?.authenticated ?? true;
+    const expectedStatus = opts?.expectedStatus ?? [200];
+    const url = this._buildUrl(path);
+    const headers = {
+      ...this._buildHeaders(authenticated),
+      'Content-Type': 'application/json',
+    };
+
+    const response = await this._fetchWithTimeout(url, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify(body),
+    });
+    return this._parse<T>(response, expectedStatus);
+  }
+
+  async del<T>(
+    path: string,
+    opts?: { authenticated?: boolean; expectedStatus?: number[] },
+  ): Promise<T> {
+    const authenticated = opts?.authenticated ?? true;
+    const expectedStatus = opts?.expectedStatus ?? [200, 204];
+    const url = this._buildUrl(path);
+    const headers = this._buildHeaders(authenticated);
+
+    const response = await this._fetchWithTimeout(url, { method: 'DELETE', headers });
+    return this._parse<T>(response, expectedStatus);
+  }
+
   private _buildUrl(path: string, params?: QueryParams): string {
     const cleanPath = path.startsWith('/') ? path : `/${path}`;
     const url = new URL(`${this.baseUrl}${API_PREFIX}${cleanPath}`);

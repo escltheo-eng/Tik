@@ -19,6 +19,7 @@ from tik_core.api import (
     headlines,
     health,
     macro_events,
+    manual_trades,
     metrics,
     polymarket,
     signals,
@@ -103,6 +104,7 @@ def create_app() -> FastAPI:
     app.include_router(metrics.router, prefix=prefix, tags=["metrics"])
     app.include_router(polymarket.router, prefix=prefix, tags=["polymarket"])
     app.include_router(derivatives.router, prefix=prefix, tags=["derivatives"])
+    app.include_router(manual_trades.router, prefix=prefix, tags=["manual_trades"])
     app.include_router(ws.router, prefix=prefix, tags=["websocket"])
 
     def custom_openapi() -> dict:

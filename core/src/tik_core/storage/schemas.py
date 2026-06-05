@@ -502,3 +502,98 @@ class DerivativesSnapshotOut(BaseModel):
 # MacroReactionStat / MacroAssetReaction / MacroReadingOut / MacroLiveEvent /
 # MacroLiveRecent / MacroLiveOut retirés en même temps que api/macro_reading.py,
 # aggregator/macro_mechanisms.py et scripts/measure_macro_reaction.py.
+
+
+# ----- Carnet de trades manuels (Levier B 2026-06-03) -----
+
+
+class ManualTradeIn(BaseModel):
+    """Saisie d'un nouveau trade manuel (ouverture).
+
+    `entry_time` optionnel (défaut = maintenant côté serveur). Les champs
+    `tik_*` sont le snapshot du contexte Tik à l'entrée, fournis par le
+    dashboard qui dispose du dernier signal live ; absents → alignement "none".
+    """
+
+    entity_id: str = Field(pattern="^(BTC|GOLD)$")
+    direction: str = Field(pattern="^(long|short)$")
+    entry_price: float = Field(gt=0)
+    size_lots: float = Field(gt=0)
+    entry_time: datetime | None = None
+    stop_price: float | None = Field(default=None, gt=0)
+    target_price: float | None = Field(default=None, gt=0)
+    note: str | None = Field(default=None, max_length=1000)
+    tik_signal_id: str | None = None
+    tik_direction: str | None = Field(default=None, pattern="^(long|short|neutral)$")
+    tik_veracity: float | None = Field(default=None, ge=0, le=1)
+
+
+class ManualTradeCloseIn(BaseModel):
+    """Clôture d'un trade : prix de sortie (+ heure/note optionnelles)."""
+
+    exit_price: float = Field(gt=0)
+    exit_time: datetime | None = None
+    note: str | None = Field(default=None, max_length=1000)
+
+
+class ManualTradeOut(BaseModel):
+    """Trade manuel exposé via l'API (lecture)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    entity_id: str
+    direction: str
+    entry_time: datetime
+    entry_price: float
+    size_lots: float
+    stop_price: float | None = None
+    target_price: float | None = None
+    exit_time: datetime | None = None
+    exit_price: float | None = None
+    status: str
+    note: str | None = None
+    result_pct: float | None = None
+    tik_signal_id: str | None = None
+    tik_direction: str | None = None
+    tik_veracity: float | None = None
+    tik_alignment: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+    @field_serializer(
+        "entry_time", "exit_time", "created_at", "updated_at", when_used="json"
+    )
+    def _ser_dt(self, value: datetime | None) -> str | None:
+        return iso_utc(value)
+
+
+class ManualTradeGroupStats(BaseModel):
+    """Métriques d'un groupe de trades clôturés (global ou par alignement)."""
+
+    n: int
+    win_rate: float | None = None
+    avg_result_pct: float | None = None
+    total_result_pct: float = 0.0
+
+
+class ManualTradeStatsByAlignment(BaseModel):
+    """Décomposition par alignement Tik — le cœur de la mesure « Tik aide ? »."""
+
+    with_tik: ManualTradeGroupStats = Field(alias="with")
+    against: ManualTradeGroupStats
+    none: ManualTradeGroupStats
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class ManualTradeStatsOut(BaseModel):
+    """Bilan global du carnet + décomposition par alignement Tik."""
+
+    n_total: int
+    n_open: int
+    n_closed: int
+    win_rate: float | None = None
+    avg_result_pct: float | None = None
+    total_result_pct: float = 0.0
+    by_alignment: ManualTradeStatsByAlignment
