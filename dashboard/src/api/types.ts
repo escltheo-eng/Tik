@@ -65,6 +65,11 @@ export interface Advisory {
   // Discipline macro (Phase B1.5) — posé par scoring/macro_proximity.py quand
   // le signal est émis dans la fenêtre ±4h d'un event HIGH impactant l'entité.
   near_macro_event?: NearMacroEvent;
+  // Amplitude attendue (ADR-025) — volatilité réalisée typique sur l'horizon,
+  // en % du prix. CONTEXTE de volatilité (« de combien ça bouge »), PAS une
+  // prévision du sens. `ref_price` = prix à l'émission (→ conversion en points).
+  expected_amplitude_pct?: number | null;
+  ref_price?: number | null;
 }
 
 export type Direction = 'long' | 'short' | 'neutral';

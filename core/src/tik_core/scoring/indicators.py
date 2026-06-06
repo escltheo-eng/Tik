@@ -64,3 +64,31 @@ def atr(high: pd.Series, low: pd.Series, close: pd.Series, window: int = 14) -> 
         axis=1,
     ).max(axis=1)
     return tr.ewm(alpha=1 / window, min_periods=window, adjust=False).mean()
+
+
+def median_abs_return_pct(close: pd.Series, n_bars: int) -> float | None:
+    """Amplitude typique : médiane des |variations| sur `n_bars` barres, en %.
+
+    Mesure de VOLATILITÉ réalisée (« de combien le prix bouge typiquement sur
+    cette durée, à la hausse comme à la baisse »), PAS une prévision du sens.
+
+    Pourquoi c'est honnête alors que Tik n'a aucun edge directionnel mesuré
+    (go/no-go 2026-05-27) : le *signe* d'un rendement est ~imprévisible (proche
+    d'une marche aléatoire), mais son *amplitude* est statistiquement
+    persistante (volatility clustering). On peut donc estimer combien ça bouge
+    sans prétendre savoir dans quel sens (cf. ADR-025).
+
+    On prend la médiane (et non la moyenne) pour la robustesse aux outliers /
+    queues épaisses des rendements crypto. Retourne None si pas assez de barres.
+
+    Args:
+        close: série des prix de clôture (chronologique).
+        n_bars: nombre de barres correspondant à l'horizon (ex. swing 4h sur
+            ~5 j = 30 barres ; flash 1m sur ~1 h = 60 barres).
+    """
+    if close is None or len(close) <= n_bars:
+        return None
+    changes = close.pct_change(n_bars).abs().dropna()
+    if changes.empty:
+        return None
+    return round(float(changes.median()) * 100, 2)

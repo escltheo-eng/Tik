@@ -29,7 +29,7 @@ from tik_core.scoring.hypothesis_generator import (
     HypothesisGenerator,
     apply_llm_hypothesis,
 )
-from tik_core.scoring.indicators import ema, macd, rsi
+from tik_core.scoring.indicators import ema, macd, median_abs_return_pct, rsi
 from tik_core.scoring.source_credibility import (
     get_effective_score,
     preload_source_scores,
@@ -808,6 +808,12 @@ async def analyze_swing_btc(
     df.attrs["source"] = "binance_klines"
     decision = _score_indicators(df)
     decision.entity_id = "BTC"
+    # Amplitude attendue (ADR-025) : volatilité réalisée typique sur l'horizon
+    # swing (~5 j). Bougies 4h → 5 j = 30 barres. CONTEXTE de volatilité (de
+    # combien ça bouge), PAS une prévision du sens (poids 0 sur la décision,
+    # comme l'ATR — cf. ADR-018).
+    decision.advisory["expected_amplitude_pct"] = median_abs_return_pct(df["close"], 30)
+    decision.advisory["ref_price"] = round(float(df["close"].iloc[-1]), 2)
 
     settings = get_settings()
 
@@ -1184,6 +1190,11 @@ async def analyze_swing_gold(
     df.attrs["source"] = "yahoo_finance"
     decision = _score_indicators(df)
     decision.entity_id = "GOLD"
+    # Amplitude attendue (ADR-025) : volatilité réalisée typique sur l'horizon
+    # swing (~5 j). Bougies 1h → ~5 j ouvrés ≈ 120 barres. CONTEXTE de
+    # volatilité, PAS une prévision du sens (cf. ADR-018 / ADR-025).
+    decision.advisory["expected_amplitude_pct"] = median_abs_return_pct(df["close"], 120)
+    decision.advisory["ref_price"] = round(float(df["close"].iloc[-1]), 2)
 
     settings = get_settings()
 

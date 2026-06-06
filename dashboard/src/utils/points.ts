@@ -1,20 +1,20 @@
 /**
  * Conversion des mouvements de prix en POINTS (l'unité de MT4/MT5).
  *
- * Un « point » = plus petit incrément de prix coté pour l'instrument. Les
- * valeurs ci-dessous sont les conventions courantes — AJUSTE-les si ton broker
- * cote différemment (c'est l'unique paramètre du calcul, garde-le juste) :
- *   BTC/USD       → 1 point = 1.00 $
- *   GOLD (XAU/USD) → 1 point = 0.01 $
+ * Un « point » = plus petit incrément de prix coté pour l'instrument.
+ *   BTC/USD  → 1 point = 0.01 $  (calibré sur MT5 ActivTrades : Digits 2,
+ *              taille du tick 0.01 — fourni par la trader le 2026-06-06).
+ *   GOLD (XAU/USD) → 1 point = 0.01 $  (convention courante XAUUSD Digits 2 ;
+ *              NON confirmé sur le broker — à valider avec les specs MT5 Or).
  *
- * Sert à afficher, pour chaque signal, le mouvement « montée / baisse » en
- * points (à partir des seuils déjà définis × le prix). Pur affichage —
- * n'entre PAS dans le scoring (cf. ADR-018). Ne dépend d'aucun broker
- * particulier : c'est l'amplitude du marché en points, pas un coût.
+ * ⚠ Conséquence du passage BTC 1.00 → 0.01 : tous les comptages de points BTC
+ * sont multipliés par 100 (un mouvement de 100 $ = 10 000 points, et non 100).
+ * C'est la valeur réelle du broker, pas un bug. Affichage uniquement —
+ * n'entre PAS dans le scoring (cf. ADR-018). Cf. ADR-025 (amplitude attendue).
  */
 
 export const POINT_SIZE: Record<string, number> = {
-  BTC: 1,
+  BTC: 0.01,
   GOLD: 0.01,
 };
 

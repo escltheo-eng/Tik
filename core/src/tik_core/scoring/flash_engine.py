@@ -30,7 +30,7 @@ from tik_core.scoring.hypothesis_generator import (
     HypothesisGenerator,
     apply_llm_hypothesis,
 )
-from tik_core.scoring.indicators import atr, ema, macd, rsi
+from tik_core.scoring.indicators import atr, ema, macd, median_abs_return_pct, rsi
 from tik_core.scoring.source_credibility import (
     get_effective_score,
     preload_source_scores,
@@ -646,6 +646,11 @@ async def analyze_flash_btc(
     df.attrs["source"] = "binance_klines_1m"
     decision = _score_flash_indicators(df)
     decision.entity_id = "BTC"
+    # Amplitude attendue (ADR-025) : volatilité réalisée typique sur l'horizon
+    # flash (~1 h). Bougies 1m → 1 h = 60 barres. CONTEXTE de volatilité, PAS
+    # une prévision du sens (cf. ADR-018 / ADR-025).
+    decision.advisory["expected_amplitude_pct"] = median_abs_return_pct(df["close"], 60)
+    decision.advisory["ref_price"] = round(float(df["close"].iloc[-1]), 2)
 
     settings = get_settings()
 

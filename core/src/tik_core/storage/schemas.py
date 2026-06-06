@@ -92,6 +92,13 @@ class Advisory(BaseModel):
     template_hypothesis: str | None = None
     # Discipline macro (Phase B1.5) — posé par scoring/macro_proximity.py.
     near_macro_event: NearMacroEvent | None = None
+    # Amplitude attendue (ADR-025) — volatilité réalisée typique sur l'horizon,
+    # en % du prix (médiane des |variations| sur N barres). CONTEXTE de
+    # volatilité (« de combien ça bouge »), PAS une prévision du sens : Tik n'a
+    # aucun edge directionnel mesuré (go/no-go 2026-05-27). `ref_price` = prix
+    # de clôture à l'émission, sert à convertir l'amplitude en points MT5.
+    expected_amplitude_pct: float | None = None
+    ref_price: float | None = None
 
 
 class SignalOut(BaseModel):

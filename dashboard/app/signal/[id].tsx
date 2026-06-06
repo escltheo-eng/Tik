@@ -14,6 +14,7 @@ import { getSignal, getSignalTrackRecord } from '@/src/api/endpoints';
 import { TikError } from '@/src/api/errors';
 import { Signal, SignalTrackRecord, TrackRecordRow } from '@/src/api/types';
 import { useAuth } from '@/src/auth/AuthContext';
+import { amplitudeDisplay, horizonLabel } from '@/src/utils/amplitude';
 import { isLlmCandidateValid } from '@/src/utils/llm';
 import { isGoldMarketClosed } from '@/src/utils/markets';
 import { pctToPoints, pointSizeFor, priceDiffToPoints } from '@/src/utils/points';
@@ -390,6 +391,15 @@ export default function SignalDetailScreen() {
     { borderColor: palette.icon },
   ];
 
+  // Amplitude attendue (ADR-025) — volatilité typique sur l'horizon, en %
+  // (+ points calibrés MT5 si dispo). Null pour les signaux pré-ADR-025.
+  const ampl = amplitudeDisplay(
+    signal.entity_id,
+    signal.horizon,
+    signal.advisory?.expected_amplitude_pct,
+    signal.advisory?.ref_price,
+  );
+
   return (
     <ScrollView contentContainerStyle={styles.scroll}>
       <ThemedView style={[cardStyle, styles.heroCard]}>
@@ -403,7 +413,7 @@ export default function SignalDetailScreen() {
 
         <View style={styles.heroSubtitleRow}>
           <ThemedText style={styles.heroSubtitle}>
-            horizon {signal.horizon} • {signal.sources_count} sources
+            horizon {horizonLabel(signal.horizon)} • {signal.sources_count} sources
           </ThemedText>
           <InfoTooltip entryKey="horizon" />
         </View>
@@ -434,6 +444,19 @@ export default function SignalDetailScreen() {
             </ThemedText>
           </ThemedView>
         </ThemedView>
+
+        {ampl ? (
+          <ThemedView style={[styles.amplBlock, { borderColor: palette.icon }]}>
+            <ThemedText style={styles.amplLabel}>Amplitude attendue (volatilité)</ThemedText>
+            <ThemedText style={styles.amplValue}>
+              {ampl.pctLabel}
+              {ampl.pointsLabel ? ` (${ampl.pointsLabel})` : ''} sur {ampl.windowLabel}
+            </ThemedText>
+            <ThemedText style={styles.amplNote}>
+              Volatilité typique sur l'horizon — ce n'est PAS une prévision du sens.
+            </ThemedText>
+          </ThemedView>
+        ) : null}
 
         <ThemedText style={styles.metaLine}>
           Émis le {formatLocal(signal.timestamp)}
@@ -792,6 +815,27 @@ const styles = StyleSheet.create({
   metaLine: {
     fontSize: 12,
     opacity: 0.6,
+  },
+  amplBlock: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginTop: 8,
+    gap: 2,
+  },
+  amplLabel: {
+    fontSize: 12,
+    opacity: 0.6,
+  },
+  amplValue: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  amplNote: {
+    fontSize: 10,
+    opacity: 0.5,
+    fontStyle: 'italic',
   },
   cbWarn: {
     padding: 8,

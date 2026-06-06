@@ -22,6 +22,7 @@ import { Signal } from '@/src/api/types';
 import { computeFlashStability } from '@/src/flash/stability';
 import { useSignalStream } from '@/src/hooks/useSignalStream';
 import { useTick } from '@/src/hooks/use-tick';
+import { formatAmplitudePct, horizonLabel } from '@/src/utils/amplitude';
 import { parseUtcIso, timeAgo } from '@/src/utils/time';
 
 const ENTITY_FILTERS: { label: string; value: string | undefined }[] = [
@@ -213,7 +214,7 @@ export default function SignalsScreen() {
           <View style={[styles.directionBadge, { backgroundColor: directionColor(item.direction) }]}>
             <ThemedText style={styles.directionLabel}>{item.direction.toUpperCase()}</ThemedText>
           </View>
-          <ThemedText style={styles.horizonLabel}>{item.horizon}</ThemedText>
+          <ThemedText style={styles.horizonLabel}>{horizonLabel(item.horizon)}</ThemedText>
           <AntiFakeNewsBadge status={item.circuit_breaker_status} compact />
           {item.advisory?.near_macro_event ? (
             <NearMacroBadge data={item.advisory.near_macro_event} compact />
@@ -239,6 +240,11 @@ export default function SignalsScreen() {
           <ThemedText style={styles.metric}>
             sources {item.sources_count}
           </ThemedText>
+          {item.advisory?.expected_amplitude_pct ? (
+            <ThemedText style={styles.metric}>
+              ampl ±{formatAmplitudePct(item.advisory.expected_amplitude_pct)}%
+            </ThemedText>
+          ) : null}
         </ThemedView>
       </Pressable>
     );
