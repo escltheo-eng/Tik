@@ -18,16 +18,25 @@ Ce module centralise :
 
 3. **ECB / BoJ / BoE meeting dates statiques** — Phase B2 (ADR-020). Les
    banques centrales internationales publient leur calendrier 1 an à
-   l'avance comme la Fed. Dates 2026-2027. Sources :
+   l'avance comme la Fed. Sources :
    - ECB : https://www.ecb.europa.eu/press/calendars/mgcgc/html/index.en.html
    - BoJ : https://www.boj.or.jp/en/mopo/mpmsche_minu/index.htm
    - BoE : https://www.bankofengland.co.uk/monetary-policy/upcoming-mpc-dates
 
-   **À VÉRIFIER avant déploiement runtime** : les dates ci-dessous sont
-   basées sur les patterns publiés. L'UNIQUE constraint `(event_code,
-   scheduled_for)` côté DB protège contre les doublons accidentels mais
-   pas contre une date incorrecte. Si une date est erronée, la corriger
-   ici et re-run l'ingester (idempotent).
+   **VÉRIFIÉ le 2026-06-07** contre les sources officielles (croisé 2x par
+   source). La validation A.4 (backlog entry n°7) a révélé que les dates
+   FOMC d'origine étaient en réalité ~le calendrier BoE (décalage majeur),
+   et que BoE / BoJ comportaient plusieurs erreurs. Toutes corrigées ici.
+   Seul **BoJ 2027** reste à ajouter : non encore publié par la BoJ au
+   2026-06-07 (parution habituelle vers le milieu de l'année N pour N+1).
+
+   On ne garde ici que les dates **présentes et futures**. Les événements
+   passés restent disponibles dans la table `macro_events` (historique
+   d'audit en base) ; inutile de les ré-asserter dans ce fichier. Si une
+   date doit être corrigée, l'éditer ici et re-run l'ingester (idempotent
+   par UNIQUE constraint `(event_code, scheduled_for)`). Attention : changer
+   une date crée une nouvelle ligne ; l'ancienne (mauvaise) doit être
+   supprimée manuellement en base (cf. nettoyage validation A.4 2026-06-07).
 
 4. **Helpers de transformation purs** : `date_to_utc_release`,
    `build_event_from_fred`, `build_event_from_static`, `all_static_events`.
@@ -262,18 +271,19 @@ FRED_RELEASES: tuple[FredReleaseSpec, ...] = (
 
 
 # =============================================================================
-# FOMC dates statiques (Phase B1) — Fed Reserve
+# FOMC dates statiques (Phase B1) — Federal Reserve
 # =============================================================================
 # Source officielle : https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm
-# Statement publié à 14:00 ET le 2e jour de chaque meeting de 2 jours.
+# Statement publié à 14:00 ET le 2e (dernier) jour de chaque meeting de 2 jours.
+# Vérifié 2026-06-07 (croisé page Fed + recherche). Dates à venir uniquement.
 # Mise à jour annuelle nécessaire (Fed publie courant septembre N-1).
 FOMC_STATIC_DATES: tuple[StaticEventSpec, ...] = (
-    # 2026 (passées : Jan, Mar, Apr — gardées pour audit historique 30j)
+    # 2026 (à venir)
     StaticEventSpec(
         event_code="FOMC_MEETING",
         event_name="FOMC Statement & Press Conference",
         importance="HIGH",
-        iso_date="2026-01-29",
+        iso_date="2026-06-17",
         release_hour_et=14,
         release_minute_et=0,
         assets_impacted=("BTC", "GOLD"),
@@ -284,7 +294,7 @@ FOMC_STATIC_DATES: tuple[StaticEventSpec, ...] = (
         event_code="FOMC_MEETING",
         event_name="FOMC Statement & Press Conference",
         importance="HIGH",
-        iso_date="2026-03-19",
+        iso_date="2026-07-29",
         release_hour_et=14,
         release_minute_et=0,
         assets_impacted=("BTC", "GOLD"),
@@ -295,19 +305,7 @@ FOMC_STATIC_DATES: tuple[StaticEventSpec, ...] = (
         event_code="FOMC_MEETING",
         event_name="FOMC Statement & Press Conference",
         importance="HIGH",
-        iso_date="2026-04-30",
-        release_hour_et=14,
-        release_minute_et=0,
-        assets_impacted=("BTC", "GOLD"),
-        source="fed_static",
-        tz_name="America/New_York",
-    ),
-    # 2026 à venir
-    StaticEventSpec(
-        event_code="FOMC_MEETING",
-        event_name="FOMC Statement & Press Conference",
-        importance="HIGH",
-        iso_date="2026-06-18",
+        iso_date="2026-09-16",
         release_hour_et=14,
         release_minute_et=0,
         assets_impacted=("BTC", "GOLD"),
@@ -318,7 +316,7 @@ FOMC_STATIC_DATES: tuple[StaticEventSpec, ...] = (
         event_code="FOMC_MEETING",
         event_name="FOMC Statement & Press Conference",
         importance="HIGH",
-        iso_date="2026-07-30",
+        iso_date="2026-10-28",
         release_hour_et=14,
         release_minute_et=0,
         assets_impacted=("BTC", "GOLD"),
@@ -329,7 +327,19 @@ FOMC_STATIC_DATES: tuple[StaticEventSpec, ...] = (
         event_code="FOMC_MEETING",
         event_name="FOMC Statement & Press Conference",
         importance="HIGH",
-        iso_date="2026-09-17",
+        iso_date="2026-12-09",
+        release_hour_et=14,
+        release_minute_et=0,
+        assets_impacted=("BTC", "GOLD"),
+        source="fed_static",
+        tz_name="America/New_York",
+    ),
+    # 2027 (calendrier Fed publié, vérifié 2026-06-07)
+    StaticEventSpec(
+        event_code="FOMC_MEETING",
+        event_name="FOMC Statement & Press Conference",
+        importance="HIGH",
+        iso_date="2027-01-27",
         release_hour_et=14,
         release_minute_et=0,
         assets_impacted=("BTC", "GOLD"),
@@ -340,7 +350,7 @@ FOMC_STATIC_DATES: tuple[StaticEventSpec, ...] = (
         event_code="FOMC_MEETING",
         event_name="FOMC Statement & Press Conference",
         importance="HIGH",
-        iso_date="2026-11-05",
+        iso_date="2027-03-17",
         release_hour_et=14,
         release_minute_et=0,
         assets_impacted=("BTC", "GOLD"),
@@ -351,19 +361,7 @@ FOMC_STATIC_DATES: tuple[StaticEventSpec, ...] = (
         event_code="FOMC_MEETING",
         event_name="FOMC Statement & Press Conference",
         importance="HIGH",
-        iso_date="2026-12-17",
-        release_hour_et=14,
-        release_minute_et=0,
-        assets_impacted=("BTC", "GOLD"),
-        source="fed_static",
-        tz_name="America/New_York",
-    ),
-    # 2027 (estimations sur le pattern Fed habituel)
-    StaticEventSpec(
-        event_code="FOMC_MEETING",
-        event_name="FOMC Statement & Press Conference",
-        importance="HIGH",
-        iso_date="2027-01-28",
+        iso_date="2027-04-28",
         release_hour_et=14,
         release_minute_et=0,
         assets_impacted=("BTC", "GOLD"),
@@ -374,7 +372,7 @@ FOMC_STATIC_DATES: tuple[StaticEventSpec, ...] = (
         event_code="FOMC_MEETING",
         event_name="FOMC Statement & Press Conference",
         importance="HIGH",
-        iso_date="2027-03-18",
+        iso_date="2027-06-09",
         release_hour_et=14,
         release_minute_et=0,
         assets_impacted=("BTC", "GOLD"),
@@ -385,7 +383,7 @@ FOMC_STATIC_DATES: tuple[StaticEventSpec, ...] = (
         event_code="FOMC_MEETING",
         event_name="FOMC Statement & Press Conference",
         importance="HIGH",
-        iso_date="2027-04-29",
+        iso_date="2027-07-28",
         release_hour_et=14,
         release_minute_et=0,
         assets_impacted=("BTC", "GOLD"),
@@ -396,7 +394,29 @@ FOMC_STATIC_DATES: tuple[StaticEventSpec, ...] = (
         event_code="FOMC_MEETING",
         event_name="FOMC Statement & Press Conference",
         importance="HIGH",
-        iso_date="2027-06-17",
+        iso_date="2027-09-15",
+        release_hour_et=14,
+        release_minute_et=0,
+        assets_impacted=("BTC", "GOLD"),
+        source="fed_static",
+        tz_name="America/New_York",
+    ),
+    StaticEventSpec(
+        event_code="FOMC_MEETING",
+        event_name="FOMC Statement & Press Conference",
+        importance="HIGH",
+        iso_date="2027-10-27",
+        release_hour_et=14,
+        release_minute_et=0,
+        assets_impacted=("BTC", "GOLD"),
+        source="fed_static",
+        tz_name="America/New_York",
+    ),
+    StaticEventSpec(
+        event_code="FOMC_MEETING",
+        event_name="FOMC Statement & Press Conference",
+        importance="HIGH",
+        iso_date="2027-12-08",
         release_hour_et=14,
         release_minute_et=0,
         assets_impacted=("BTC", "GOLD"),
@@ -412,44 +432,10 @@ FOMC_STATIC_DATES: tuple[StaticEventSpec, ...] = (
 # Source officielle : https://www.ecb.europa.eu/press/calendars/mgcgc/html/index.en.html
 # Statement publié à 14:15 Europe/Paris (Frankfurt). Press conference à 14:45.
 # On cible le statement (mouvement de prix le plus brutal sur EUR/USD/DXY,
-# transmission BTC/GOLD).
-# 8 meetings/an, espacement ~6 semaines, généralement jeudi.
+# transmission BTC/GOLD). 8 meetings/an, espacement ~6 semaines, jeudi.
+# Vérifié 2026-06-07 (page ECB officielle). Dates à venir uniquement.
 ECB_STATIC_DATES: tuple[StaticEventSpec, ...] = (
-    # 2026 passées (gardées pour audit historique 30j)
-    StaticEventSpec(
-        event_code="ECB_GOVERNING_COUNCIL",
-        event_name="ECB Governing Council Monetary Policy",
-        importance="HIGH",
-        iso_date="2026-01-22",
-        release_hour_et=14,
-        release_minute_et=15,
-        assets_impacted=("BTC", "GOLD"),
-        source="ecb_static",
-        tz_name="Europe/Paris",
-    ),
-    StaticEventSpec(
-        event_code="ECB_GOVERNING_COUNCIL",
-        event_name="ECB Governing Council Monetary Policy",
-        importance="HIGH",
-        iso_date="2026-03-05",
-        release_hour_et=14,
-        release_minute_et=15,
-        assets_impacted=("BTC", "GOLD"),
-        source="ecb_static",
-        tz_name="Europe/Paris",
-    ),
-    StaticEventSpec(
-        event_code="ECB_GOVERNING_COUNCIL",
-        event_name="ECB Governing Council Monetary Policy",
-        importance="HIGH",
-        iso_date="2026-04-16",
-        release_hour_et=14,
-        release_minute_et=15,
-        assets_impacted=("BTC", "GOLD"),
-        source="ecb_static",
-        tz_name="Europe/Paris",
-    ),
-    # 2026 à venir
+    # 2026 (à venir)
     StaticEventSpec(
         event_code="ECB_GOVERNING_COUNCIL",
         event_name="ECB Governing Council Monetary Policy",
@@ -505,13 +491,12 @@ ECB_STATIC_DATES: tuple[StaticEventSpec, ...] = (
         source="ecb_static",
         tz_name="Europe/Paris",
     ),
-    # 2027 (estimations sur pattern ECB habituel — à confirmer mi-2026
-    # quand ECB publiera son calendrier 2027 officiel)
+    # 2027 (calendrier ECB publié, vérifié 2026-06-07)
     StaticEventSpec(
         event_code="ECB_GOVERNING_COUNCIL",
         event_name="ECB Governing Council Monetary Policy",
         importance="HIGH",
-        iso_date="2027-01-28",
+        iso_date="2027-02-04",
         release_hour_et=14,
         release_minute_et=15,
         assets_impacted=("BTC", "GOLD"),
@@ -522,7 +507,7 @@ ECB_STATIC_DATES: tuple[StaticEventSpec, ...] = (
         event_code="ECB_GOVERNING_COUNCIL",
         event_name="ECB Governing Council Monetary Policy",
         importance="HIGH",
-        iso_date="2027-03-11",
+        iso_date="2027-03-18",
         release_hour_et=14,
         release_minute_et=15,
         assets_impacted=("BTC", "GOLD"),
@@ -533,7 +518,7 @@ ECB_STATIC_DATES: tuple[StaticEventSpec, ...] = (
         event_code="ECB_GOVERNING_COUNCIL",
         event_name="ECB Governing Council Monetary Policy",
         importance="HIGH",
-        iso_date="2027-04-22",
+        iso_date="2027-04-29",
         release_hour_et=14,
         release_minute_et=15,
         assets_impacted=("BTC", "GOLD"),
@@ -551,6 +536,50 @@ ECB_STATIC_DATES: tuple[StaticEventSpec, ...] = (
         source="ecb_static",
         tz_name="Europe/Paris",
     ),
+    StaticEventSpec(
+        event_code="ECB_GOVERNING_COUNCIL",
+        event_name="ECB Governing Council Monetary Policy",
+        importance="HIGH",
+        iso_date="2027-07-22",
+        release_hour_et=14,
+        release_minute_et=15,
+        assets_impacted=("BTC", "GOLD"),
+        source="ecb_static",
+        tz_name="Europe/Paris",
+    ),
+    StaticEventSpec(
+        event_code="ECB_GOVERNING_COUNCIL",
+        event_name="ECB Governing Council Monetary Policy",
+        importance="HIGH",
+        iso_date="2027-09-09",
+        release_hour_et=14,
+        release_minute_et=15,
+        assets_impacted=("BTC", "GOLD"),
+        source="ecb_static",
+        tz_name="Europe/Paris",
+    ),
+    StaticEventSpec(
+        event_code="ECB_GOVERNING_COUNCIL",
+        event_name="ECB Governing Council Monetary Policy",
+        importance="HIGH",
+        iso_date="2027-10-28",
+        release_hour_et=14,
+        release_minute_et=15,
+        assets_impacted=("BTC", "GOLD"),
+        source="ecb_static",
+        tz_name="Europe/Paris",
+    ),
+    StaticEventSpec(
+        event_code="ECB_GOVERNING_COUNCIL",
+        event_name="ECB Governing Council Monetary Policy",
+        importance="HIGH",
+        iso_date="2027-12-16",
+        release_hour_et=14,
+        release_minute_et=15,
+        assets_impacted=("BTC", "GOLD"),
+        source="ecb_static",
+        tz_name="Europe/Paris",
+    ),
 )
 
 
@@ -559,50 +588,16 @@ ECB_STATIC_DATES: tuple[StaticEventSpec, ...] = (
 # =============================================================================
 # Source officielle : https://www.boj.or.jp/en/mopo/mpmsche_minu/index.htm
 # Statement publié vers 12:00 Asia/Tokyo (JST) le 2e jour du meeting. Le
-# Japon n'a pas de DST → JST = UTC+9 constant.
-# 8 meetings/an, généralement 2 jours, statement du 2e jour pris ci-dessous.
+# Japon n'a pas de DST → JST = UTC+9 constant. 8 meetings/an.
 # Impact violent sur USD/JPY → carry trade → BTC / safe haven flows → GOLD.
+# Vérifié 2026-06-07 (page BoJ officielle). Dates à venir uniquement.
 BOJ_STATIC_DATES: tuple[StaticEventSpec, ...] = (
-    # 2026 passées (audit historique)
+    # 2026 (à venir)
     StaticEventSpec(
         event_code="BOJ_MPM",
         event_name="BoJ Monetary Policy Meeting Statement",
         importance="HIGH",
-        iso_date="2026-01-23",
-        release_hour_et=12,
-        release_minute_et=0,
-        assets_impacted=("BTC", "GOLD"),
-        source="boj_static",
-        tz_name="Asia/Tokyo",
-    ),
-    StaticEventSpec(
-        event_code="BOJ_MPM",
-        event_name="BoJ Monetary Policy Meeting Statement",
-        importance="HIGH",
-        iso_date="2026-03-19",
-        release_hour_et=12,
-        release_minute_et=0,
-        assets_impacted=("BTC", "GOLD"),
-        source="boj_static",
-        tz_name="Asia/Tokyo",
-    ),
-    StaticEventSpec(
-        event_code="BOJ_MPM",
-        event_name="BoJ Monetary Policy Meeting Statement",
-        importance="HIGH",
-        iso_date="2026-05-01",
-        release_hour_et=12,
-        release_minute_et=0,
-        assets_impacted=("BTC", "GOLD"),
-        source="boj_static",
-        tz_name="Asia/Tokyo",
-    ),
-    # 2026 à venir
-    StaticEventSpec(
-        event_code="BOJ_MPM",
-        event_name="BoJ Monetary Policy Meeting Statement",
-        importance="HIGH",
-        iso_date="2026-06-17",
+        iso_date="2026-06-16",
         release_hour_et=12,
         release_minute_et=0,
         assets_impacted=("BTC", "GOLD"),
@@ -624,7 +619,7 @@ BOJ_STATIC_DATES: tuple[StaticEventSpec, ...] = (
         event_code="BOJ_MPM",
         event_name="BoJ Monetary Policy Meeting Statement",
         importance="HIGH",
-        iso_date="2026-09-19",
+        iso_date="2026-09-18",
         release_hour_et=12,
         release_minute_et=0,
         assets_impacted=("BTC", "GOLD"),
@@ -653,51 +648,9 @@ BOJ_STATIC_DATES: tuple[StaticEventSpec, ...] = (
         source="boj_static",
         tz_name="Asia/Tokyo",
     ),
-    # 2027 (estimations — à confirmer fin 2026)
-    StaticEventSpec(
-        event_code="BOJ_MPM",
-        event_name="BoJ Monetary Policy Meeting Statement",
-        importance="HIGH",
-        iso_date="2027-01-22",
-        release_hour_et=12,
-        release_minute_et=0,
-        assets_impacted=("BTC", "GOLD"),
-        source="boj_static",
-        tz_name="Asia/Tokyo",
-    ),
-    StaticEventSpec(
-        event_code="BOJ_MPM",
-        event_name="BoJ Monetary Policy Meeting Statement",
-        importance="HIGH",
-        iso_date="2027-03-18",
-        release_hour_et=12,
-        release_minute_et=0,
-        assets_impacted=("BTC", "GOLD"),
-        source="boj_static",
-        tz_name="Asia/Tokyo",
-    ),
-    StaticEventSpec(
-        event_code="BOJ_MPM",
-        event_name="BoJ Monetary Policy Meeting Statement",
-        importance="HIGH",
-        iso_date="2027-04-30",
-        release_hour_et=12,
-        release_minute_et=0,
-        assets_impacted=("BTC", "GOLD"),
-        source="boj_static",
-        tz_name="Asia/Tokyo",
-    ),
-    StaticEventSpec(
-        event_code="BOJ_MPM",
-        event_name="BoJ Monetary Policy Meeting Statement",
-        importance="HIGH",
-        iso_date="2027-06-18",
-        release_hour_et=12,
-        release_minute_et=0,
-        assets_impacted=("BTC", "GOLD"),
-        source="boj_static",
-        tz_name="Asia/Tokyo",
-    ),
+    # 2027 : NON encore publié par la BoJ au 2026-06-07 (parution habituelle
+    # vers le milieu de l'année N pour N+1). À ajouter dès publication :
+    # https://www.boj.or.jp/en/mopo/mpmsche_minu/index.htm
 )
 
 
@@ -708,13 +661,14 @@ BOJ_STATIC_DATES: tuple[StaticEventSpec, ...] = (
 # Bank Rate decision publiée à 12:00 Europe/London (GMT/BST selon DST).
 # 8 meetings/an. Importance MEDIUM (impact réel mais plus mesuré sur BTC/GOLD
 # que Fed/ECB/BoJ — la GBP est moins influente sur le DXY).
+# Vérifié 2026-06-07 (croisé recherche BoE + communiqué 2027). Dates à venir.
 BOE_STATIC_DATES: tuple[StaticEventSpec, ...] = (
-    # 2026 passées (audit historique)
+    # 2026 (à venir)
     StaticEventSpec(
         event_code="BOE_MPC",
         event_name="BoE MPC Bank Rate Decision",
         importance="MEDIUM",
-        iso_date="2026-02-05",
+        iso_date="2026-06-18",
         release_hour_et=12,
         release_minute_et=0,
         assets_impacted=("BTC", "GOLD"),
@@ -725,7 +679,7 @@ BOE_STATIC_DATES: tuple[StaticEventSpec, ...] = (
         event_code="BOE_MPC",
         event_name="BoE MPC Bank Rate Decision",
         importance="MEDIUM",
-        iso_date="2026-03-20",
+        iso_date="2026-07-30",
         release_hour_et=12,
         release_minute_et=0,
         assets_impacted=("BTC", "GOLD"),
@@ -736,19 +690,7 @@ BOE_STATIC_DATES: tuple[StaticEventSpec, ...] = (
         event_code="BOE_MPC",
         event_name="BoE MPC Bank Rate Decision",
         importance="MEDIUM",
-        iso_date="2026-05-08",
-        release_hour_et=12,
-        release_minute_et=0,
-        assets_impacted=("BTC", "GOLD"),
-        source="boe_static",
-        tz_name="Europe/London",
-    ),
-    # 2026 à venir
-    StaticEventSpec(
-        event_code="BOE_MPC",
-        event_name="BoE MPC Bank Rate Decision",
-        importance="MEDIUM",
-        iso_date="2026-06-19",
+        iso_date="2026-09-17",
         release_hour_et=12,
         release_minute_et=0,
         assets_impacted=("BTC", "GOLD"),
@@ -759,7 +701,7 @@ BOE_STATIC_DATES: tuple[StaticEventSpec, ...] = (
         event_code="BOE_MPC",
         event_name="BoE MPC Bank Rate Decision",
         importance="MEDIUM",
-        iso_date="2026-08-07",
+        iso_date="2026-11-05",
         release_hour_et=12,
         release_minute_et=0,
         assets_impacted=("BTC", "GOLD"),
@@ -770,36 +712,14 @@ BOE_STATIC_DATES: tuple[StaticEventSpec, ...] = (
         event_code="BOE_MPC",
         event_name="BoE MPC Bank Rate Decision",
         importance="MEDIUM",
-        iso_date="2026-09-18",
+        iso_date="2026-12-17",
         release_hour_et=12,
         release_minute_et=0,
         assets_impacted=("BTC", "GOLD"),
         source="boe_static",
         tz_name="Europe/London",
     ),
-    StaticEventSpec(
-        event_code="BOE_MPC",
-        event_name="BoE MPC Bank Rate Decision",
-        importance="MEDIUM",
-        iso_date="2026-11-06",
-        release_hour_et=12,
-        release_minute_et=0,
-        assets_impacted=("BTC", "GOLD"),
-        source="boe_static",
-        tz_name="Europe/London",
-    ),
-    StaticEventSpec(
-        event_code="BOE_MPC",
-        event_name="BoE MPC Bank Rate Decision",
-        importance="MEDIUM",
-        iso_date="2026-12-18",
-        release_hour_et=12,
-        release_minute_et=0,
-        assets_impacted=("BTC", "GOLD"),
-        source="boe_static",
-        tz_name="Europe/London",
-    ),
-    # 2027 (estimations — à confirmer fin 2026)
+    # 2027 (provisoire, communiqué BoE déc. 2025, vérifié 2026-06-07)
     StaticEventSpec(
         event_code="BOE_MPC",
         event_name="BoE MPC Bank Rate Decision",
@@ -815,7 +735,7 @@ BOE_STATIC_DATES: tuple[StaticEventSpec, ...] = (
         event_code="BOE_MPC",
         event_name="BoE MPC Bank Rate Decision",
         importance="MEDIUM",
-        iso_date="2027-03-25",
+        iso_date="2027-03-18",
         release_hour_et=12,
         release_minute_et=0,
         assets_impacted=("BTC", "GOLD"),
@@ -826,7 +746,7 @@ BOE_STATIC_DATES: tuple[StaticEventSpec, ...] = (
         event_code="BOE_MPC",
         event_name="BoE MPC Bank Rate Decision",
         importance="MEDIUM",
-        iso_date="2027-05-13",
+        iso_date="2027-04-29",
         release_hour_et=12,
         release_minute_et=0,
         assets_impacted=("BTC", "GOLD"),
@@ -837,7 +757,51 @@ BOE_STATIC_DATES: tuple[StaticEventSpec, ...] = (
         event_code="BOE_MPC",
         event_name="BoE MPC Bank Rate Decision",
         importance="MEDIUM",
-        iso_date="2027-06-24",
+        iso_date="2027-06-17",
+        release_hour_et=12,
+        release_minute_et=0,
+        assets_impacted=("BTC", "GOLD"),
+        source="boe_static",
+        tz_name="Europe/London",
+    ),
+    StaticEventSpec(
+        event_code="BOE_MPC",
+        event_name="BoE MPC Bank Rate Decision",
+        importance="MEDIUM",
+        iso_date="2027-07-29",
+        release_hour_et=12,
+        release_minute_et=0,
+        assets_impacted=("BTC", "GOLD"),
+        source="boe_static",
+        tz_name="Europe/London",
+    ),
+    StaticEventSpec(
+        event_code="BOE_MPC",
+        event_name="BoE MPC Bank Rate Decision",
+        importance="MEDIUM",
+        iso_date="2027-09-16",
+        release_hour_et=12,
+        release_minute_et=0,
+        assets_impacted=("BTC", "GOLD"),
+        source="boe_static",
+        tz_name="Europe/London",
+    ),
+    StaticEventSpec(
+        event_code="BOE_MPC",
+        event_name="BoE MPC Bank Rate Decision",
+        importance="MEDIUM",
+        iso_date="2027-11-04",
+        release_hour_et=12,
+        release_minute_et=0,
+        assets_impacted=("BTC", "GOLD"),
+        source="boe_static",
+        tz_name="Europe/London",
+    ),
+    StaticEventSpec(
+        event_code="BOE_MPC",
+        event_name="BoE MPC Bank Rate Decision",
+        importance="MEDIUM",
+        iso_date="2027-12-16",
         release_hour_et=12,
         release_minute_et=0,
         assets_impacted=("BTC", "GOLD"),

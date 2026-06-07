@@ -261,7 +261,7 @@ Tant que le trading manuel est la priorité : **toute décision technique se jug
 ---
 ## 9. Bugs connus et résolus
 
-13 bugs identifiés depuis le démarrage du projet — 12 résolus + 1 actuel mitigé en attente d'un fix asynchrone (les 3 premiers pendant le déploiement initial du Paquet 1, les 3 suivants pendant les évolutions post-livraison du 2026-04-28, le 7e découvert le 2026-05-03 lors de la mise en service du dashboard sur iPhone, le 8e découvert le 2026-05-04 lors de la livraison Stats LLM card et résolu en deux temps : fix dashboard `parseUtcIso` le matin puis fix backend ADR-013 / Paquet 7 l'après-midi ; le 9e régression asyncpg DB du Paquet 7 fixé runtime le 2026-05-04 ; le 10e WebSocket coroutine zombie identifié et fixé le 2026-05-17 soir lors de l'audit santé runtime pré-trading Paquet 26 ; le 11e Reddit IP-ban full sur IP HP découvert lors de l'audit pré-J+14 Paquet 27 du 2026-05-18, mitigé par Option A doc-only en attente unban Reddit asynchrone ; le 12e cache track record qui figeait l'affichage des favoris flash en « tout sablier », découvert et fixé le 2026-05-26 via les questions de l'utilisatrice, Paquet 38 ; le 13e mapping FRED release_id faux (RETAIL_SALES=H.10 FX Rates, INITIAL_CLAIMS=G.19 Consumer Credit) découvert et fixé le 2026-05-31 lors de l'audit A3, Paquet 45) :
+14 bugs identifiés depuis le démarrage du projet — 13 résolus + 1 actuel mitigé en attente d'un fix asynchrone (les 3 premiers pendant le déploiement initial du Paquet 1, les 3 suivants pendant les évolutions post-livraison du 2026-04-28, le 7e découvert le 2026-05-03 lors de la mise en service du dashboard sur iPhone, le 8e découvert le 2026-05-04 lors de la livraison Stats LLM card et résolu en deux temps : fix dashboard `parseUtcIso` le matin puis fix backend ADR-013 / Paquet 7 l'après-midi ; le 9e régression asyncpg DB du Paquet 7 fixé runtime le 2026-05-04 ; le 10e WebSocket coroutine zombie identifié et fixé le 2026-05-17 soir lors de l'audit santé runtime pré-trading Paquet 26 ; le 11e Reddit IP-ban full sur IP HP découvert lors de l'audit pré-J+14 Paquet 27 du 2026-05-18, mitigé par Option A doc-only en attente unban Reddit asynchrone ; le 12e cache track record qui figeait l'affichage des favoris flash en « tout sablier », découvert et fixé le 2026-05-26 via les questions de l'utilisatrice, Paquet 38 ; le 13e mapping FRED release_id faux (RETAIL_SALES=H.10 FX Rates, INITIAL_CLAIMS=G.19 Consumer Credit) découvert et fixé le 2026-05-31 lors de l'audit A3, Paquet 45 ; le 14e dates banques centrales fausses (FOMC = ~calendrier BoE, faux FOMC nov, octobre manquant ; BoE/BoJ décalées) découvert et fixé le 2026-06-07 lors de la validation A.4) :
 
 ### Bug 1 — Hypertable TimescaleDB avec primary key incompatible
 
@@ -472,6 +472,20 @@ Si Reddit refuse l'unban ou ne répond jamais, options évaluées dans backlog.m
 
 - Le compteur global passe à **13 bugs identifiés** (12 résolus + 1 actuel Bug 11 Reddit en attente).
 
+### Bug 14 — Dates banques centrales fausses dans le calendrier macro : FOMC/ECB/BoJ/BoE (découvert + fixé 2026-06-07, tâche A.4)
+
+**Symptôme** : lors de l'exécution de la validation A.4 (backlog entry n°7 — « vérifier les dates ECB/BoJ/BoE 2026-2027 contre les sources officielles »), croisement des dates statiques de `macro_calendar_data.py` avec les calendriers officiels (Fed, ECB, BoJ, BoE), chacune vérifiée 2×. La quasi-totalité des dates de banques centrales étaient fausses, y compris des HIGH suivis ±4h en trading manuel.
+
+**Cause** : dates hardcodées (Phase B2, ADR-020) jamais validées contre les sources officielles (le commentaire du fichier le signalait : « À VÉRIFIER avant déploiement runtime »). Détail :
+- **FOMC** : les 13 dates étaient en réalité ~le calendrier **BoE** (jeudis) → toutes décalées, avec un **faux FOMC le 2026-11-05** (n'existe pas) et l'**octobre manquant** (vrai 2026-10-28). Vrais statements 2e jour : 06-17, 07-29, 09-16, 10-28, 12-09 (2026) + 8 dates 2027.
+- **BoE** : 5/5 dates 2026 fausses (ex. code 06-19 → vrai 06-18 ; code 08-07 → vrai 07-30).
+- **BoJ** : 2 dates 2026 fausses (06-17 → vrai **06-16** ; 09-19 → vrai 09-18).
+- **ECB** : 2026 correctes, mais 2027 = fausses estimations (remplacées par les 8 dates officielles).
+
+**Fix (2026-06-07)** : `macro_calendar_data.py` réécrit avec les dates officielles vérifiées, **dates à venir uniquement** (les passées restent dans la table d'audit `macro_events`). 44 events statiques (FOMC 13 + ECB 13 + BoJ 5 + BoE 13). **BoJ 2027 volontairement non inclus** : pas encore publié par la BoJ au 2026-06-07 (parution ~mi-année) → à ajouter dès parution. Application prod (même gotcha que Bug 13 — l'upsert ne supprime jamais) : (1) édition fichier (bind-mount), (2) `DELETE` des 36 lignes futures `source IN ('fed_static','ecb_static','boj_static','boe_static')`, (3) `docker restart tik-ingesters` → réinsertion 44, (4) vidage cache Redis `tik.cache.macro_events.*` (TTL 5 min). Vérifié : 0 faux FOMC nov, 59 tests `test_macro_calendar_data.py` verts (tik_test — tests structurels, n'assertent aucune date précise). Impact trader : les 4 events de mi-juin (BCE 11/06, BoJ 16/06, FOMC 17/06, BoE 18/06) sont enfin exacts pour la discipline ±4h.
+
+- Le compteur global passe à **14 bugs identifiés** (13 résolus + 1 actuel Bug 11 Reddit en attente).
+
 ---
 
 ## 10. Bugs non résolus / améliorations à faire
@@ -665,6 +679,6 @@ cp "$WORKTREE/path2" "$MAIN/path2"
 
 ---
 
-*Dernière mise à jour : 2026-06-01. Journal détaillé des livraisons (Paquets 1→50) déplacé dans [`HISTORIQUE.md`](HISTORIQUE.md) ; cette section ne garde plus que l'état courant (cf. ## 8).*
+*Dernière mise à jour : 2026-06-07. Journal détaillé des livraisons (Paquets 1→50) déplacé dans [`HISTORIQUE.md`](HISTORIQUE.md) ; cette section ne garde plus que l'état courant (cf. ## 8).*
 *Version Tik : Core MVP + multi-overlay swing/flash OSINT pur (ADR-018) + dashboard Expo + SDK gelé (ADR-022) + notifications Telegram. Détail par composant dans HISTORIQUE.md.*
 *Mainteneur : utilisatrice solo + assistant Claude.*

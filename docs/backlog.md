@@ -720,25 +720,37 @@ CLAUDE.md Paquet 22.
 
 | Quand | Action | Effort |
 |---|---|---|
-| Prochaine session Mac/HP | A.1 re-run backtest GDELT + A.2 pytest validation + A.3 restart ingesters + A.4 validation dates BC 2026-2027 (Phase B2) | ~45 min |
+| Prochaine session Mac/HP | A.1 re-run backtest GDELT + A.2 pytest validation + A.3 restart ingesters + ~~A.4 validation dates BC 2026-2027~~ **A.4 ✅ FAIT 2026-06-07 (Bug 14)** | ~45 min |
 | Post-J+30 (mi-juin 2026) | B.1 recalibration seuils P6 selon distributions réelles + B.4 importance BoE selon vol BTC/GOLD observée | ~1h analyse |
 | Post-période bear gold | B.3 re-mesure DXY/COT, possible réactivation overlays | ~30 min mesure |
 | Post-câblage Zeta shadow (mi-août 2026) | B.2 validation `OSINT_MIN_STRENGTH` + C.1 adoption pattern | Conditionnel |
 
-#### A.4 — Validation dates ECB/BoJ/BoE 2026-2027 (Phase B2 livrée 2026-05-16)
+#### A.4 — Validation dates ECB/BoJ/BoE 2026-2027 (Phase B2) — ✅ FAIT 2026-06-07 (cf. Bug 14)
 
-Les 36 dates ECB / BoJ / BoE hardcodées dans
-`core/src/tik_core/aggregator/macro_calendar_data.py` (Paquet 23) sont
-basées sur les patterns publiés mais doivent être **vérifiées contre les
-sources officielles** avant production runtime :
+**Statut** : ✅ exécuté le 2026-06-07. Dates statiques croisées 2× contre les
+sources officielles (Fed + ECB + BoJ + BoE). **Découverte plus large que prévu** :
+pas seulement ECB/BoJ/BoE — les dates **FOMC** étaient aussi fausses (en réalité
+~le calendrier BoE : faux FOMC nov 2026, octobre manquant). BoE 2026 = 5/5 fausses,
+BoJ 2026 = 2 fausses, ECB 2026 OK mais 2027 = fausses estimations. **Toutes corrigées**
+dans `macro_calendar_data.py` (44 events, dates à venir uniquement). Prod nettoyée
+(DELETE 36 lignes futures + restart ingesters + vidage cache Redis macro_events) et
+vérifiée (0 faux FOMC nov, 59 tests verts). Détail complet → CLAUDE.md Bug 14 +
+mémoire `macro-calendar-validated-2026-06-07`.
 
+**Reste à faire** : **BoJ 2027** non encore publié par la BoJ au 2026-06-07
+(parution ~mi-année N pour N+1) → ajouter dès parution
+(https://www.boj.or.jp/en/mopo/mpmsche_minu/index.htm). Maintenance annuelle :
+revérifier chaque calendrier BC à sa publication N+1.
+
+Sources officielles :
 - ECB : https://www.ecb.europa.eu/press/calendars/mgcgc/html/index.en.html
 - BoJ : https://www.boj.or.jp/en/mopo/mpmsche_minu/index.htm
 - BoE : https://www.bankofengland.co.uk/monetary-policy/upcoming-mpc-dates
 
-Si une date est incorrecte, éditer `macro_calendar_data.py` et restart
-le `MacroStaticIngester` (idempotent — UNIQUE constraint DB protège
-contre les doublons).
+**Gotcha confirmé (comme Bug 13)** : éditer `macro_calendar_data.py` ne suffit pas —
+l'upsert du `MacroStaticIngester` n'efface jamais les anciennes lignes. Toute
+correction de date exige : édition fichier → `DELETE` des vieilles lignes futures
+en base → restart ingesters → vidage cache Redis `tik.cache.macro_events.*`.
 
 #### B.4 — Importance BoE (Phase B2 — calibration empirique)
 
