@@ -655,24 +655,39 @@ Puis observer pendant 1-2 cycles (~30 min) que :
 
 ### B. Calibrations empiriques à faire post-J+30 (entre 2026-05-31 et 2026-06-15)
 
-#### B.1 — Recalibration seuils P6 anomalies (Paquet 21)
+#### B.1 — Recalibration seuils P6 anomalies (Paquet 21) — ⏳ PARTIELLEMENT FAIT 2026-06-10
 
-Les seuils suivants sont calibrés au pifomètre raisonné dans
-`anomaly_detector.py` :
+**Statut 2026-06-10** : recalibration menée sur ~16 j de logs prod réels
+(1517 cycles Google News) via le nouveau script
+`core/src/tik_core/scripts/measure_anomaly_thresholds.py`. Sur les 3 familles
+de seuils, **un seul était calibrable faute de données** :
 
-| Constante | Valeur | À recalibrer ? |
-|---|---|---|
-| `BRIGADING_THRESHOLD_HIGH` | 1.0 | Oui — observer 30j de ratios réels Reddit pour calibrer le 99e percentile |
-| `BRIGADING_THRESHOLD_MEDIUM` | 0.5 | Idem (75e percentile) |
-| `BRIGADING_MIN_POSTS` | 3 | Probablement OK |
-| `PUBLISHER_DOMINANCE_THRESHOLD_HIGH` | 0.70 | Oui — observer 30j Google News pour calibrer (Yahoo Finance déjà à 40% sur certains cycles) |
-| `PUBLISHER_DOMINANCE_THRESHOLD_MEDIUM` | 0.50 | Idem |
-| `VOLUME_SPIKE_THRESHOLD_HIGH` | 5.0× | Oui — un vrai event macro peut générer un pic légitime |
-| `VOLUME_SPIKE_THRESHOLD_MEDIUM` | 3.0× | Idem |
+| Constante | Avant | Après | Statut |
+|---|---|---|---|
+| `BRIGADING_THRESHOLD_HIGH/MEDIUM` | 1.0 / 0.5 | inchangé | ❌ **Incalibrable** — Reddit IP-banni (Bug 11) : 0 cycle publié, 1520 erreurs 403. À reprendre au retour de Reddit. |
+| `PUBLISHER_DOMINANCE_THRESHOLD_HIGH` | 0.70 | **0.50** | ✅ Recalibré — l'ancien 0.70 > max possible (~0.56) → le `bias/2` ne s'était JAMAIS appliqué en 16 j. 0.50 = un éditeur en majorité (~0.8 % des cycles BTC). |
+| `PUBLISHER_DOMINANCE_THRESHOLD_MEDIUM` | 0.50 | **0.42** | ✅ Recalibré — = p90 BTC (top décile → ~10 % des cycles BTC ; flag transparence, bias inchangé). |
+| `VOLUME_SPIKE_THRESHOLD_HIGH/MEDIUM` | 5.0 / 3.0 | inchangé | ❌ **Incalibrable** — `detect_volume_spike` dormant (plus câblé à aucun ingester, remplacé par `publisher_diversity_spike` = backlog #8). 0 occurrence. |
 
-Méthodologie suggérée : exporter 30 jours de logs `*.anomaly_detected`
-et `*.published` (avec `anomaly_score`), calculer les distributions
-réelles, ajuster les seuils sur les 90e/99e percentiles.
+Distribution réelle observée du ratio de dominance (1517 cycles, 16 j) :
+`pooled p50=0.20 p90=0.40 p99=0.46 max=0.56` ; `BTC p50=0.34 p90=0.42 p99=0.48
+max=0.56` ; `GOLD p50=0.14 p99=0.21 max=0.24` (presse plus diversifiée → ne
+franchit jamais les seuils, ce qui est correct). Seuil global calibré sur
+l'entité contraignante (BTC, traded).
+
+**Limites assumées** : (1) 16 j < 30 j cible (logs Docker ne remontent qu'à la
+création du conteneur) ; (2) régime bear unique ; (3) aucun event de
+manipulation éditoriale *confirmé* dans la fenêtre → on calibre la queue
+« normale », pas une vérité-terrain ; (4) seuil unique global = compromis
+BTC/GOLD. **À re-mesurer** en régime différent / échantillon ≥ 30 j (re-lancer
+le script), et calibrer `brigading` dès le retour de Reddit.
+
+Méthodologie (script `measure_anomaly_thresholds.py`) : il lit les lignes
+`google_news.published` (dont `anomaly_score` = exactement le ratio comparé au
+seuil en prod, loggué à chaque cycle), calcule les distributions réelles, et
+recommande MEDIUM≈p90 / HIGH≈p99 de l'entité contraignante. Usage :
+`docker logs tik-ingesters 2>&1 | grep google_news.published | docker exec -i
+tik-core python -m tik_core.scripts.measure_anomaly_thresholds`.
 
 #### B.2 — Validation/recalibration `OSINT_MIN_STRENGTH` (Paquet 22)
 
@@ -721,7 +736,7 @@ CLAUDE.md Paquet 22.
 | Quand | Action | Effort |
 |---|---|---|
 | Prochaine session Mac/HP | A.1 re-run backtest GDELT + A.2 pytest validation + A.3 restart ingesters + ~~A.4 validation dates BC 2026-2027~~ **A.4 ✅ FAIT 2026-06-07 (Bug 14)** | ~45 min |
-| Post-J+30 (mi-juin 2026) | B.1 recalibration seuils P6 selon distributions réelles + B.4 importance BoE selon vol BTC/GOLD observée | ~1h analyse |
+| Post-J+30 (mi-juin 2026) | ~~B.1 recalibration seuils P6~~ **B.1 ✅ partiellement fait 2026-06-10** (publisher_dominance recalibré 0.70/0.50→0.50/0.42 ; brigading + volume incalibrables faute de données) + B.4 importance BoE selon vol BTC/GOLD observée | ~1h analyse |
 | Post-période bear gold | B.3 re-mesure DXY/COT, possible réactivation overlays | ~30 min mesure |
 | Post-câblage Zeta shadow (mi-août 2026) | B.2 validation `OSINT_MIN_STRENGTH` + C.1 adoption pattern | Conditionnel |
 

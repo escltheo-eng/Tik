@@ -143,16 +143,18 @@ class TestDetectPublisherDominance:
         assert result["score"] == 0.2
 
     def test_ratio_at_medium_threshold_is_medium(self):
-        # Force ratio == PUBLISHER_DOMINANCE_THRESHOLD_MEDIUM (0.50)
-        count = int(20 * PUBLISHER_DOMINANCE_THRESHOLD_MEDIUM)
+        # Force ratio == PUBLISHER_DOMINANCE_THRESHOLD_MEDIUM (0.42, recal. B.1).
+        # total_titles=50 → le ratio tombe juste (0.42 = 21/50), contrairement
+        # à 20 où int(20*0.42)=8 donnerait 0.40 < seuil.
+        count = round(50 * PUBLISHER_DOMINANCE_THRESHOLD_MEDIUM)
         result = detect_publisher_dominance(
             [{"name": "Yahoo", "count": count}],
-            total_titles=20,
+            total_titles=50,
         )
         assert result["severity"] == "medium"
 
     def test_ratio_at_high_threshold_is_high(self):
-        # Force ratio == PUBLISHER_DOMINANCE_THRESHOLD_HIGH (0.70)
+        # Force ratio == PUBLISHER_DOMINANCE_THRESHOLD_HIGH (0.50, recal. B.1)
         count = int(20 * PUBLISHER_DOMINANCE_THRESHOLD_HIGH)
         result = detect_publisher_dominance(
             [{"name": "Yahoo", "count": count}],
@@ -175,6 +177,29 @@ class TestDetectPublisherDominance:
         )
         assert "Bloomberg" in result["detail"]
         assert "15/20" in result["detail"]
+
+    def test_calibrated_medium_zone_recal_b1(self):
+        # Recalibration B.1 (2026-06-10) : ratio 0.45 est entre MEDIUM=0.42 et
+        # HIGH=0.50. Sous les anciens seuils (0.50/0.70) c'était "ok" ;
+        # désormais "medium" (flag transparence, bias inchangé). Épingle la
+        # nouvelle calibration pour éviter une régression silencieuse.
+        result = detect_publisher_dominance(
+            [{"name": "Reuters", "count": 9}],  # 9/20 = 0.45
+            total_titles=20,
+        )
+        assert result["severity"] == "medium"
+        assert result["score"] == 0.45
+
+    def test_calibrated_high_majority_recal_b1(self):
+        # Recalibration B.1 (2026-06-10) : ratio 0.55 > HIGH=0.50 = un éditeur
+        # en majorité du cycle. Sous l'ancien HIGH=0.70 c'était "medium" ;
+        # désormais "high" → le bias Google News est divisé par 2 en aval.
+        result = detect_publisher_dominance(
+            [{"name": "Reuters", "count": 11}],  # 11/20 = 0.55
+            total_titles=20,
+        )
+        assert result["severity"] == "high"
+        assert result["score"] == 0.55
 
 
 class TestDetectVolumeSpike:

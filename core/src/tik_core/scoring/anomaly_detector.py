@@ -38,8 +38,13 @@ Architecture (cf. CLAUDE.md Paquet 21 P6 décision D-P6-2) :
     severity=medium → bias inchangé + flag dans evidence pour transparence
     severity=ok     → bias normal
 
-Seuils calibrés au pifomètre raisonné (cf. CLAUDE.md décision D-P6-4),
-à recalibrer empiriquement post-J+30 sur dataset réel.
+Seuils initiaux au pifomètre raisonné (cf. CLAUDE.md décision D-P6-4).
+Recalibration B.1 (2026-06-10, cf. backlog 7.B.1) : seul `publisher_dominance`
+a été recalibré, sur 1517 cycles réels (cf. `scripts/measure_anomaly_thresholds.py`).
+`brigading_reddit` et `volume_spike` restent au pifomètre faute de données :
+Reddit est IP-banni (Bug 11 → 0 cycle publié, 1520 erreurs 403) et
+`detect_volume_spike` est dormant (plus câblé à aucun ingester). À reprendre
+quand Reddit revient / si un volume brut est re-câblé.
 """
 
 from __future__ import annotations
@@ -79,10 +84,24 @@ BRIGADING_THRESHOLD_MEDIUM = 0.5
 BRIGADING_MIN_POSTS = 3  # < 3 posts = échantillon trop petit, severity=ok
 
 # Dominance publisher Google News : ratio top_publisher / total titres.
-# Validation Paquet 4 Session 1 a observé Yahoo Finance à 40 % des hits
-# sur certains cycles BTC = déjà élevé. > 50 % = vraiment dominé.
-PUBLISHER_DOMINANCE_THRESHOLD_HIGH = 0.70
-PUBLISHER_DOMINANCE_THRESHOLD_MEDIUM = 0.50
+# RECALIBRÉ 2026-06-10 (B.1) sur 1517 cycles réels (16 j, BTC+GOLD) — cf.
+# scripts/measure_anomaly_thresholds.py. Distribution observée du ratio :
+#   pooled  p50=0.20  p90=0.40  p99=0.46  max=0.56
+#   BTC     p50=0.34  p90=0.42  p99=0.48  max=0.56  (entité tradée = contrainte haute)
+#   GOLD    p50=0.14  p90=0.18  p99=0.21  max=0.24  (presse plus diversifiée)
+# Anciens seuils (HIGH=0.70 / MEDIUM=0.50) quasi inertes : HIGH=0.70 > max
+# possible (~0.56 avec ~25 titres/cycle) → le bias/2 ne s'est JAMAIS appliqué
+# en 16 j ; MEDIUM=0.50 → 0.4 % des cycles. Nouveaux seuils alignés sur la
+# queue réelle de l'entité tradée (BTC, contrainte haute) :
+#   MEDIUM=0.42 = p90 BTC (top décile → ~10 % des cycles BTC, flag transparence,
+#     bias inchangé ; GOLD ne franchit jamais, max 0.24) ;
+#   HIGH=0.50 = un éditeur en majorité (>50 % du cycle = vraiment dominé,
+#     ~0.8 % des cycles BTC → bias/2).
+# Limites assumées : 16 j < 30 j cible, régime bear unique, aucun event de
+# manipulation confirmé dans la fenêtre (on calibre la queue « normale », pas
+# une vérité-terrain). À re-mesurer en régime différent / échantillon ≥ 30 j.
+PUBLISHER_DOMINANCE_THRESHOLD_HIGH = 0.50
+PUBLISHER_DOMINANCE_THRESHOLD_MEDIUM = 0.42
 PUBLISHER_DOMINANCE_MIN_TITLES = 5  # < 5 titres = pas assez pour juger
 
 # Pic volume CryptoCompare : ratio volume_today / mean(baseline_7d).
