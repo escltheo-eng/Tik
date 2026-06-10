@@ -267,7 +267,15 @@ def cross_validate(
         else status_dispersion
     )
 
-    # Dispersion brute (toutes valeurs) — pour audit, pas pour la décision
+    # Dispersion brute sur TOUTES les valeurs (outlier INCLUS). Elle n'entre PAS
+    # dans le `circuit_breaker_status` (qui s'appuie sur la dispersion des
+    # non-outliers, l.256-260) — MAIS elle EST consommée par la veracity via
+    # `_veracity_from_dispersion` (swing/flash_engine). Conséquence assumée mais
+    # incohérente : l'outlier, exclu de `combined_bias` et du statut, pèse quand
+    # même sur la veracity → un signal peut avoir `circuit=ok` ET `veracity=0.70`
+    # (cf. ADR-026, anomalie A1). NB estimateur : `stdev` (échantillon) ici alors
+    # que la branche N=2 (l.221) utilise `pstdev` (population) → incohérence
+    # d'estimateur entre branches, à trancher lors de la recalibration (ADR-026, A5).
     dispersion = statistics.stdev(values) if len(values) >= 2 else 0.0
 
     return CrossValidationResult(
