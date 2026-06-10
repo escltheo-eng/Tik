@@ -40,6 +40,7 @@ Voir docs/adr/011-anti-fake-news.md pour le contexte architectural.
 
 from __future__ import annotations
 
+import json
 import statistics
 from dataclasses import dataclass, field
 from typing import Literal
@@ -332,3 +333,26 @@ def apply_cross_validation_to_decision(
             )
 
     return cv
+
+
+def veracity_shadow_fields(decision, cv: CrossValidationResult, biases: dict[str, float]) -> dict:
+    """Construit le payload d'un log shadow `veracity.shadow` (ADR-026, Lot 2).
+
+    Pur (aucune I/O) : expose dispersion + combined_bias + biais par source +
+    veracity, afin de pouvoir mesurer plus tard la distribution RÉELLE de la
+    dispersion et recalibrer `_veracity_from_dispersion` sur données réelles
+    (même méthode que la recalibration B.1 des seuils d'anomalie). `biases_json`
+    permet de recomputer hors-ligne des variantes (pstdev cohérent, outlier
+    exclu — cf. anomalies A1/A5). N'altère RIEN dans le pipeline : c'est de
+    l'observation pure. À appeler APRÈS que la veracity soit posée sur decision.
+    """
+    return {
+        "entity_id": getattr(decision, "entity_id", None),
+        "veracity": getattr(decision, "veracity", None),
+        "combined_bias": round(cv.combined_bias, 4),
+        "dispersion": round(cv.dispersion, 4),
+        "n_sources": cv.n_sources,
+        "n_outliers": len(cv.outlier_sources),
+        "circuit": cv.circuit_breaker_status,
+        "biases_json": json.dumps({k: round(v, 4) for k, v in biases.items()}, sort_keys=True),
+    }

@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import pytest
 
+import json
+
 from tik_core.scoring.cross_validator import (
     CrossValidationResult,
     _detect_outliers_zero_mad,
@@ -15,6 +17,7 @@ from tik_core.scoring.cross_validator import (
     cross_validate,
     detect_disagreement_n2,
     detect_outliers_modified_zscore,
+    veracity_shadow_fields,
 )
 
 # ----- Fake decision pour les tests apply_cross_validation_to_decision -----
@@ -430,3 +433,38 @@ def test_apply_cross_validation_to_decision_returns_result_type():
     decision = FakeDecision()
     cv = apply_cross_validation_to_decision(decision, {"a": 0.5}, mode="active")
     assert isinstance(cv, CrossValidationResult)
+
+
+# =====================================================================
+# veracity_shadow_fields (ADR-026 Lot 2 — observation pure)
+# =====================================================================
+
+
+def test_veracity_shadow_fields_short_extreme_case():
+    # Cas réel ADR-026 : FG extrême (+1, outlier) vs news strong-bearish (-1,-1).
+    biases = {"alternative_me_fng": 1.0, "cryptocompare_news": -1.0, "google_news_rss": -1.0}
+    cv = cross_validate(biases)
+    decision = FakeDecision()
+    decision.entity_id = "BTC"
+    decision.veracity = 0.70
+    f = veracity_shadow_fields(decision, cv, biases)
+    assert f["entity_id"] == "BTC"
+    assert f["veracity"] == 0.70
+    assert f["combined_bias"] == -1.0  # FG outlier exclu du combined
+    assert f["n_sources"] == 3
+    assert f["n_outliers"] == 1
+    assert f["circuit"] == "ok"  # valides alignés → circuit ok malgré veracity basse
+    assert f["dispersion"] > 0.8  # dispersion max (outlier inclus)
+    # biases_json reparseable et fidèle
+    assert json.loads(f["biases_json"]) == biases
+
+
+def test_veracity_shadow_fields_missing_attrs_safe():
+    # decision sans entity_id/veracity → None, pas d'exception (observation pure).
+    biases = {"a": 0.5, "b": 0.5}
+    cv = cross_validate(biases)
+    f = veracity_shadow_fields(FakeDecision(), cv, biases)
+    assert f["entity_id"] is None
+    assert f["veracity"] is None
+    assert f["dispersion"] == 0.0  # biais identiques → dispersion nulle
+    assert json.loads(f["biases_json"]) == {"a": 0.5, "b": 0.5}

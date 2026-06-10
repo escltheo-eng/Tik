@@ -24,7 +24,10 @@ import structlog
 from redis.asyncio import Redis
 
 from tik_core.config import get_settings
-from tik_core.scoring.cross_validator import apply_cross_validation_to_decision
+from tik_core.scoring.cross_validator import (
+    apply_cross_validation_to_decision,
+    veracity_shadow_fields,
+)
 from tik_core.scoring.hypothesis_generator import (
     HypothesisGenerator,
     apply_llm_hypothesis,
@@ -898,6 +901,13 @@ async def analyze_swing_btc(
             # Veracity dérivée de la dispersion des sources OSINT
             # (résout bug #2 audit Paquet 17 — veracity neutral figée à 0.85).
             decision.veracity = _veracity_from_dispersion(cv.dispersion)
+            # Shadow ADR-026 (Lot 2) : trace dispersion + biais pour recalibrer
+            # plus tard la veracity sur données réelles. Observation pure.
+            log.info(
+                "veracity.shadow",
+                horizon="swing",
+                **veracity_shadow_fields(decision, cv, biases_by_source),
+            )
             if cv.circuit_breaker_status != "ok":
                 log.info(
                     "anti_fake_news.flagged",
@@ -1259,6 +1269,12 @@ async def analyze_swing_gold(
             _derive_osint_decision(decision, cv.combined_bias)
             # Veracity dérivée de la dispersion des sources OSINT.
             decision.veracity = _veracity_from_dispersion(cv.dispersion)
+            # Shadow ADR-026 (Lot 2) : trace dispersion + biais. Observation pure.
+            log.info(
+                "veracity.shadow",
+                horizon="swing",
+                **veracity_shadow_fields(decision, cv, biases_by_source),
+            )
             if cv.circuit_breaker_status != "ok":
                 log.info(
                     "anti_fake_news.flagged",

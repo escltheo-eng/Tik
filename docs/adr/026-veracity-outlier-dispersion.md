@@ -102,11 +102,17 @@ l'excluent), la dispersion est maximale → plancher 0.70.
 2. **Clarifier le commentaire** `cross_validator.py:270` (A1 + A5 documentés à la
    source). ✅ fait.
 3. **Ne PAS changer** la veracity ni le circuit breaker en runtime maintenant.
-4. **Pré-requis avant toute recalibration (Lot futur)** : instrumenter
-   `cv.dispersion` + biais par source par cycle (comme B.1), collecter ~2 semaines,
-   puis trancher A5 (estimateur unique) et la sémantique include/exclude outlier
-   dans un ADR-026-bis, et recalibrer `_veracity_from_dispersion` sur la
-   distribution réelle. **Conditionné** à une utilité edge (Axe #1).
+4. **Instrumentation (Lot 2) — ✅ livrée 2026-06-10** : log shadow `veracity.shadow`
+   à chaque cycle (swing BTC/GOLD + flash) via `cross_validator.veracity_shadow_fields`
+   (pur, observation seule, zéro changement de comportement) → dispersion +
+   combined_bias + biais par source (`biases_json`) + veracity. Script de mesure
+   `scripts/measure_veracity_dispersion.py` (lecture seule) qui compare 3 variantes
+   par signal : V0 actuel (`stdev` all), V1 `pstdev` all (fix A5), V2 `pstdev`
+   hors-outlier (A1). **Collecter ≥ 2 semaines** (idéalement avec un changement de
+   régime FG), puis trancher A5 + la sémantique include/exclude dans un ADR-026-bis
+   et recalibrer `_veracity_from_dispersion` sur la distribution réelle.
+   **Conditionné** à une utilité edge/fiabilité (Axe #1) — le script éclaire, il
+   ne tranche pas.
 
 ## Conséquences
 
