@@ -36,7 +36,10 @@ GDELT_DOC_API_URL = "https://api.gdeltproject.org/api/v2/doc/doc"
 # publiques de recherche tolèrent mieux les UAs identifiables que les UAs
 # génériques type "Mozilla/5.0" qui peuvent déclencher des filtres anti-bot.
 USER_AGENT = "tik-osint-bot/0.1 (research; contact escltheo@gmail.com)"
-REDIS_TTL_S = 2 * 3600  # 2 h, comme les autres sources textuelles
+REDIS_TTL_S = 6 * 3600  # 6 h — garde le dernier tone valide malgré les 429 GDELT
+# fréquents (~75 % d'échec mesuré 2026-06-11). Le tone est un agrégat journalier
+# (timespan=1d) → une staleness ≤ 6 h est sans conséquence sur l'horizon swing 5 j,
+# et réduit fortement les trous GDELT côté GOLD swing (était absent ~37 % du temps).
 REDIS_KEY_TPL = "tik.sentiment.gdelt.{entity}"
 
 

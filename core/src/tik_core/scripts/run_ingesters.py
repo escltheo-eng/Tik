@@ -139,7 +139,10 @@ async def main() -> None:
             query='"gold price"',
             timespan="1d",
             lang="eng",
-            interval_s=1800,
+            # 2h (au lieu de 30 min) — GDELT free rate-limite (429 ~75 %, mesuré
+            # 2026-06-11) ; 2h suffit pour un tone agrégé 1j sur horizon swing 5j
+            # et réduit le matraquage. Couplé au TTL 6h (cf. gdelt_ingester.py).
+            interval_s=2 * 3600,
         ),
         CftcCotIngester(redis, interval_s=24 * 3600),
         # Lacune B Phase B1 J+10 — FRED Releases dynamiques (ADR-017).
