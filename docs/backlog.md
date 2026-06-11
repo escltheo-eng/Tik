@@ -815,6 +815,42 @@ Conforme à « valider empiriquement avant de coder dur ». Runtime confirmé :
    sur high, comme les détecteurs Reddit/Google News).
 4. Si AUCUNE corrélation utile → garder en observation ou retirer (Option D).
 
+### ⏸ Calibration menée 2026-06-11 — résultat : **activation DIFFÉRÉE** (constat type B.1)
+
+Calibration faite à l'échéance prévue, sur **314 cycles** loggués (`n_distinct_publishers`,
+~2 sem d'observation depuis le 2026-05-28). Distribution réelle BTC :
+
+```
+N=314  min=10  max=25  mean=17.98  p50=18  p90=21  p95=23  p99=24
+ratio = valeur / moyenne_baseline (moyenne ≈ 18) :
+  max observé 25 → 1.390   p99 24 → 1.335   p95 23 → 1.279   p90 21 → 1.168
+```
+
+**Constat (même pathologie que B.1 `publisher_dominance`)** : les seuils pifomètre
+**MEDIUM 1.5 (= 27 éditeurs) et HIGH 2.0 (= 36 éditeurs) sont STRUCTURELLEMENT
+INATTEIGNABLES** — le ratio max physiquement observé est **1.39**. Le détecteur n'a
+jamais flaggé et ne pouvait pas, sur cette distribution.
+
+**Décision : NE PAS activer. `PUBLISHER_DIVERSITY_OBSERVATION_MODE` reste `True`.**
+Deux raisons cumulées :
+1. **Condition #1 du backlog non remplie** : aucun pic ↔ événement validable. Le « pic »
+   max (24-25 éditeurs) n'a rien de spectaculaire et **aucun événement confirmé**
+   (approbation ETF / hack / décision réglementaire) n'est tombé dans la fenêtre pour
+   servir de vérité-terrain. Activer reviendrait à diviser le bias /2 sur ~10 % de
+   **journées de presse simplement chargées** (p90), confondues avec des manipulations →
+   on supprimerait du signal légitime. **Activement nuisible.**
+2. **Source actuellement hors-ligne** : CryptoCompare est rate-limité (Bug 15, quota
+   251/100) jusqu'au reset mensuel. Calibrer/activer un détecteur spécifique CryptoCompare
+   pendant que CryptoCompare se tait n'a pas de sens.
+
+**Valeurs recalibrées recommandées POUR LE JOUR de l'activation** (méthodo B.1 :
+MEDIUM ≈ p90, HIGH ≈ p99) : **MEDIUM 1.17, HIGH 1.33**. **NON appliquées maintenant**
+(zéro effet en mode observation ; à poser **en même temps** que le flip d'activation,
+après avoir vu ≥ 1 vrai pic sur une source saine).
+
+**Re-évaluer** : après reset du quota CryptoCompare (~1er du mois) **ET** ≥ 1 pic de
+diversité observé et recoupé à un vrai événement → réalistement **mi-juillet+**.
+
 La suite ci-dessous est l'analyse d'origine (2026-05-18), conservée pour contexte.
 
 ---
