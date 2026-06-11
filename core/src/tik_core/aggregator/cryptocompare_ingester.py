@@ -4,8 +4,11 @@ Le système de votes upvotes/downvotes a été déprécié après le rachat
 de CryptoCompare par CoinDesk en 2022. On classifie donc le sentiment
 des titres via un `NewsClassifier` injecté (keywords ou LLM via Ollama).
 
-API CryptoCompare (rebranded CoinDesk Data) : free tier ~11k req/mois,
-plafond 250k à vie. On polle 1 fois par heure (≈720 req/mois).
+API CryptoCompare (rebranded CoinDesk Data) : free tier = 100 req/MOIS
+(mesuré 2026-06-11 via /stats/rate/limit ; l'ancien "~11k/mois" est périmé
+depuis le rebrand CoinDesk). On polle toutes les 8h (3/jour ≈ 90 req/mois)
+pour rester sous le plafond — cf. bug quota explosé du 2026-06-10 (polling
+horaire = ~720 req/mois = 7× la limite, BTC swing privé de l'overlay).
 
 Champ `headlines` (Phase 1 trading manuel J+10) : liste des titres bruts
 classifiés, persistée dans le payload Redis aux côtés des agrégats. Cap
@@ -30,7 +33,7 @@ from tik_core.storage.headlines_repo import persist_headlines
 log = structlog.get_logger()
 
 NEWS_URL = "https://min-api.cryptocompare.com/data/v2/news/"
-REDIS_TTL_S = 2 * 3600  # 2h, plus court que FG car les news bougent vite
+REDIS_TTL_S = 9 * 3600  # 9h, couvre le polling 8h (free tier 100 req/mois — bug quota 2026-06-10)
 MAX_HEADLINES = 25
 
 # Baseline diversité éditeurs P6 (backlog #8, Option B) — stockée en Redis

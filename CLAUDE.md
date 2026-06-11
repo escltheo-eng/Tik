@@ -261,7 +261,7 @@ Tant que le trading manuel est la priorité : **toute décision technique se jug
 ---
 ## 9. Bugs connus et résolus
 
-14 bugs identifiés depuis le démarrage du projet — 13 résolus + 1 actuel mitigé en attente d'un fix asynchrone (les 3 premiers pendant le déploiement initial du Paquet 1, les 3 suivants pendant les évolutions post-livraison du 2026-04-28, le 7e découvert le 2026-05-03 lors de la mise en service du dashboard sur iPhone, le 8e découvert le 2026-05-04 lors de la livraison Stats LLM card et résolu en deux temps : fix dashboard `parseUtcIso` le matin puis fix backend ADR-013 / Paquet 7 l'après-midi ; le 9e régression asyncpg DB du Paquet 7 fixé runtime le 2026-05-04 ; le 10e WebSocket coroutine zombie identifié et fixé le 2026-05-17 soir lors de l'audit santé runtime pré-trading Paquet 26 ; le 11e Reddit IP-ban full sur IP HP découvert lors de l'audit pré-J+14 Paquet 27 du 2026-05-18, mitigé par Option A doc-only en attente unban Reddit asynchrone ; le 12e cache track record qui figeait l'affichage des favoris flash en « tout sablier », découvert et fixé le 2026-05-26 via les questions de l'utilisatrice, Paquet 38 ; le 13e mapping FRED release_id faux (RETAIL_SALES=H.10 FX Rates, INITIAL_CLAIMS=G.19 Consumer Credit) découvert et fixé le 2026-05-31 lors de l'audit A3, Paquet 45 ; le 14e dates banques centrales fausses (FOMC = ~calendrier BoE, faux FOMC nov, octobre manquant ; BoE/BoJ décalées) découvert et fixé le 2026-06-07 lors de la validation A.4) :
+15 bugs identifiés depuis le démarrage du projet — 14 résolus + 1 actuel mitigé en attente d'un fix asynchrone (les 3 premiers pendant le déploiement initial du Paquet 1, les 3 suivants pendant les évolutions post-livraison du 2026-04-28, le 7e découvert le 2026-05-03 lors de la mise en service du dashboard sur iPhone, le 8e découvert le 2026-05-04 lors de la livraison Stats LLM card et résolu en deux temps : fix dashboard `parseUtcIso` le matin puis fix backend ADR-013 / Paquet 7 l'après-midi ; le 9e régression asyncpg DB du Paquet 7 fixé runtime le 2026-05-04 ; le 10e WebSocket coroutine zombie identifié et fixé le 2026-05-17 soir lors de l'audit santé runtime pré-trading Paquet 26 ; le 11e Reddit IP-ban full sur IP HP découvert lors de l'audit pré-J+14 Paquet 27 du 2026-05-18, mitigé par Option A doc-only en attente unban Reddit asynchrone ; le 12e cache track record qui figeait l'affichage des favoris flash en « tout sablier », découvert et fixé le 2026-05-26 via les questions de l'utilisatrice, Paquet 38 ; le 13e mapping FRED release_id faux (RETAIL_SALES=H.10 FX Rates, INITIAL_CLAIMS=G.19 Consumer Credit) découvert et fixé le 2026-05-31 lors de l'audit A3, Paquet 45 ; le 14e dates banques centrales fausses (FOMC = ~calendrier BoE, faux FOMC nov, octobre manquant ; BoE/BoJ décalées) découvert et fixé le 2026-06-07 lors de la validation A.4 ; le 15e CryptoCompare free tier tombé à 100 req/mois (rebrand CoinDesk) faisant exploser le quota par polling horaire — BTC swing privé de son 3e overlay → souvent neutral, découvert + fixé le 2026-06-11 en investiguant l'observation trader « BTC beaucoup de neutral depuis hier ») :
 
 ### Bug 1 — Hypertable TimescaleDB avec primary key incompatible
 
@@ -486,6 +486,16 @@ Si Reddit refuse l'unban ou ne répond jamais, options évaluées dans backlog.m
 
 - Le compteur global passe à **14 bugs identifiés** (13 résolus + 1 actuel Bug 11 Reddit en attente).
 
+### Bug 15 — CryptoCompare free tier 100 req/mois : le polling horaire faisait exploser le quota (découvert + fixé 2026-06-11)
+
+**Symptôme** : la trader observe « GOLD toujours short et BTC beaucoup de neutral depuis hier ». En investiguant, BTC swing s'avère privé de son **3e overlay sentiment** (CryptoCompare) → il ne reste que Fear&Greed (peur extrême → contrarian +1,0) et Google News (baissier −1,0) qui **s'annulent** → direction `neutral` quasi systématique + veracity plancher 0,70. Logs ingester : `cryptocompare.api.error message='You are over your rate limit please upgrade your account!'` toutes les heures depuis 2026-06-10 10:56 UTC (dernier succès 09:56). Clé Redis `tik.sentiment.cryptocompare.BTC` absente ; seulement 61/145 signaux BTC swing 36h contenaient CryptoCompare.
+
+**Cause (mesurée)** : via `GET min-api.cryptocompare.com/stats/rate/limit?api_key=` → `max_calls.month=100`, `calls_made.month=251`. Le **free tier est tombé à 100 req/mois** après le rebrand CoinDesk Data ; le commentaire du code (« ~11k req/mois ») était **périmé**. L'ingester pollait **toutes les heures** (`interval_s=3600`) = ~720 req/mois = **7× la limite**. La clé Redis ayant un TTL de 2h, BTC swing perdait CryptoCompare 2h après le 1er échec. Pas un bug applicatif au sens strict, mais une **hypothèse périmée sur le quota API** baked-in dans le code → condamnait le quota chaque mois.
+
+**Fix (2026-06-11)** : `run_ingesters.py` → `interval_s` 3600 → `8 * 3600` (3/jour ≈ 90 req/mois < 100) ; `cryptocompare_ingester.py` → `REDIS_TTL_S` 2h → 9h (couvre l'intervalle 8h) + docstring corrigée. Bind-mount → `docker restart tik-ingesters`. Vérifié : log `cryptocompare.ingester.started interval_s=28800`, `ingesters.started count=17`, syntaxe OK. **⚠ Ne ramène PAS CryptoCompare ce mois-ci** : on est déjà à 251/100 → reste bloqué jusqu'au **reset du quota** (~1er du mois, date exacte du reset non confirmée). D'ici là BTC swing reste à 2 overlays (neutral), affiché honnêtement (cohérent NO-GO). **Caveat marge** : 8h ≈ 90/mois ne laisse que ~10 appels de marge ; chaque `restart` ingesters déclenche un appel immédiat (+1). Si la marge s'avère trop juste, passer à 12h (≈ 60/mois). Alternative écartée (combler le trou via CoinGecko) : CoinGecko est la **même famille** (vote de foule, comme FG) + non mesuré prédictif → enrôlement prématuré (cf. règle shadow ≥ 2 sem + Axe #1).
+
+- Le compteur global passe à **15 bugs identifiés** (14 résolus + 1 actuel Bug 11 Reddit en attente).
+
 ---
 
 ## 10. Bugs non résolus / améliorations à faire
@@ -499,6 +509,14 @@ Les 2 bugs Alerts identifiés en section 10 le 2026-05-04 matin (Bug A persistan
 - **Bug B — Timestamp figé Alerts (résolu 2026-05-04 après-midi)** : initialement résolu avec un `setInterval(setTick, 30_000)` inline dans `app/(tabs)/alerts.tsx`. Constat post-déploiement que le **même bug existe sur l'écran Signals + Home** (4 fichiers utilisent `timeAgo`). Refacto en hook custom mutualisé `dashboard/src/hooks/use-tick.ts` (~10 lignes, retourne le `tick` pour `FlatList.extraData`). Pattern aligné sur la factorisation `dashboard/src/utils/llm.ts` (helper partagé entre carte détail signal et Stats LLM Home). Refacto de 4 fichiers (alerts, signals, index, stats-llm-card en cascade via parent index).
 
 Pour les évolutions fonctionnelles à venir (carte Top headlines, hit rate live, track record signal, watchlist post-trade — plan trading manuel J+10), voir `docs/backlog.md` entry n°3 et la section 8 — *Couches encore non-implémentées*.
+
+### Observations / tâches en suspens (audit du 2026-06-11)
+
+Surfacées en investiguant le « BTC neutral » (cf. Bug 15). **Non bloquantes, à traiter quand l'occasion se présente** :
+
+- **GDELT (overlay GOLD) rate-limited par intermittence** : `gdelt.fetch.error 429 Too Many Requests` observé au restart du 2026-06-11. Souvent transitoire mais signifie que GOLD peut par moments ne tourner que sur Google News seul. Non investigué (hors périmètre du fix CryptoCompare). À surveiller via `GET /metrics/source_health`.
+- **Re-mesure DXY/COT pour GOLD (critère ADR-018 amendement)** : la précondition « drawdown gold ≥ 5 % » est en cours (or ~−6 % du 06-06 au 06-11). Re-mesure propre à lancer **~2026-06-23** (post-J+30, ≥ 2-3 sem de données bear) via `backtest_numeric_sources.py` : si IC DXY @120h redevient **négatif** + hit cas extrêmes ≥ 50 % → réactiver `gold_dxy_cot_overlays_enabled=True`. **Ne PAS réactiver à l'aveugle** (mesurés inversés en régime bull, signe non revalidé). Indice non concluant : COT actuel extreme-long (net +76,5 %) pile quand l'or chute → la lecture contrarian aurait eu raison cette fois.
+- **CoinGecko** : mesure divergence vs Fear & Greed lancée le 2026-06-11 (N=16 j) → « apport PARTIEL » (Spearman mouvement 0,467, ni redondant ni clairement indépendant). **Prochaine étape avant tout enrôlement** : mesurer son pouvoir **prédictif propre** (Δup% vs rendement BTC), pas seulement la divergence. Toggle reste OFF.
 
 ---
 
@@ -679,6 +697,6 @@ cp "$WORKTREE/path2" "$MAIN/path2"
 
 ---
 
-*Dernière mise à jour : 2026-06-07. Journal détaillé des livraisons (Paquets 1→50) déplacé dans [`HISTORIQUE.md`](HISTORIQUE.md) ; cette section ne garde plus que l'état courant (cf. ## 8).*
+*Dernière mise à jour : 2026-06-11. Journal détaillé des livraisons (Paquets 1→50) déplacé dans [`HISTORIQUE.md`](HISTORIQUE.md) ; cette section ne garde plus que l'état courant (cf. ## 8).*
 *Version Tik : Core MVP + multi-overlay swing/flash OSINT pur (ADR-018) + dashboard Expo + SDK gelé (ADR-022) + notifications Telegram. Détail par composant dans HISTORIQUE.md.*
 *Mainteneur : utilisatrice solo + assistant Claude.*
