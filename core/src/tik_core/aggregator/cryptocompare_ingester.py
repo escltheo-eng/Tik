@@ -33,7 +33,7 @@ from tik_core.storage.headlines_repo import persist_headlines
 log = structlog.get_logger()
 
 NEWS_URL = "https://min-api.cryptocompare.com/data/v2/news/"
-REDIS_TTL_S = 9 * 3600  # 9h, couvre le polling 8h (free tier 100 req/mois — bug quota 2026-06-10)
+REDIS_TTL_S = 13 * 3600  # 13h, couvre le polling 12h (free tier 100 req/mois — bug quota 2026-06-10, marge élargie 2026-06-14)
 MAX_HEADLINES = 25
 
 # Baseline diversité éditeurs P6 (backlog #8, Option B) — stockée en Redis

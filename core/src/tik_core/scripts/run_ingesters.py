@@ -98,9 +98,11 @@ async def main() -> None:
             api_key=settings.cryptocompare_api_key,
             classifier=cc_btc_classifier,
             currency="BTC",
-            # 8h (3/jour ≈ 90 req/mois) < plafond gratuit 100/mois — bug quota
+            # 12h (2/jour ≈ 60 req/mois) < plafond gratuit 100/mois — bug quota
             # 2026-06-10 (l'ancien 1h = ~720/mois faisait exploser le quota).
-            interval_s=8 * 3600,
+            # 8h (≈90/mois) ne laissait que ~10 de marge → re-blocage en fin de
+            # mois après quelques restarts ; 12h donne ~40 de marge (2026-06-14).
+            interval_s=12 * 3600,
             session_maker=session_maker,
         ),
         GoogleNewsIngester(
