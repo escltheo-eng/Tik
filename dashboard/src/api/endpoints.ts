@@ -23,6 +23,7 @@ import {
   MacroCockpit,
   MacroEvent,
   MacroRegime,
+  RateProbabilities,
   ManualTrade,
   ManualTradeCloseInput,
   ManualTradeInput,
@@ -252,6 +253,10 @@ export async function getMacroRegime(client: HttpClient): Promise<MacroRegime> {
 
 export async function getMacroCockpit(client: HttpClient): Promise<MacroCockpit> {
   return client.get<MacroCockpit>('/macro/cockpit');
+}
+
+export async function getRateProbabilities(client: HttpClient): Promise<RateProbabilities> {
+  return client.get<RateProbabilities>('/macro/rate_probabilities');
 }
 
 // ----- Hit rate (Phase A.2 trading manuel J+10) -----

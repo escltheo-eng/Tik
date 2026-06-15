@@ -26,6 +26,7 @@ from tik_core.aggregator.macro_regime_ingester import MacroRegimeIngester
 from tik_core.aggregator.macro_static_ingester import MacroStaticIngester
 from tik_core.aggregator.news_classifier import build_news_classifier
 from tik_core.aggregator.polymarket_ingester import PolymarketIngester
+from tik_core.aggregator.rate_probabilities_ingester import RateProbabilitiesIngester
 from tik_core.aggregator.reddit_ingester import RedditIngester
 from tik_core.aggregator.yahoo_ingester import YahooPoller
 from tik_core.config import get_settings
@@ -103,6 +104,12 @@ async def main() -> None:
         # (pas de scraping). Polling 6h (données hebdo/quotidiennes). Retrait = retirer
         # cette ligne. Skip propre si pas de clé FRED.
         MacroRegimeIngester(redis, api_key=settings.fred_api_key, interval_s=6 * 3600),
+        # Probabilités de taux Fed par réunion FOMC (ADR-029) — maths CME FedWatch
+        # (pyfedwatch) sur futures ZQ Yahoo + range FRED. Le « flagship » de
+        # centralbank.watch, reproduit gratuitement. Publie tik.macro.rate_probabilities
+        # pour le cockpit. CONTEXTE STRICT : anticipation marché, ne touche jamais le
+        # combined_bias/veracity/direction. Polling 6h. Retrait = retirer cette ligne.
+        RateProbabilitiesIngester(redis, api_key=settings.fred_api_key, interval_s=6 * 3600),
         FearGreedIngester(redis, interval_s=3600),
         CryptoCompareIngester(
             redis,

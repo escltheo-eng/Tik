@@ -404,8 +404,30 @@ export interface MacroRegime {
   context_only?: boolean;
 }
 
+export interface RateMeeting {
+  date: string;
+  probabilities: Record<string, number>;
+  hold: number | null;
+  hike: number | null;
+  cut: number | null;
+  most_likely_range: string | null;
+  most_likely_prob: number | null;
+}
+
+export interface RateProbabilities {
+  available: boolean;
+  source?: string;
+  fetched_at: string | null;
+  watch_date: string | null;
+  current_range: string | null;
+  effr: number | null;
+  meetings: RateMeeting[];
+  context_only?: boolean;
+}
+
 export interface MacroCockpit {
   regime: MacroRegime;
+  rate_probabilities?: RateProbabilities | null;
   fear_greed: Record<string, unknown> | null;
   derivatives_btc: Record<string, unknown> | null;
   etf_flows_btc: Record<string, unknown> | null;

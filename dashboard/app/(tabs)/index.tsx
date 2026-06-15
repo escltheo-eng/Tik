@@ -10,6 +10,7 @@ import { HitRateCard } from '@/components/dashboard/hit-rate-card';
 import { KpiCard } from '@/components/dashboard/kpi-card';
 import { MacroEventsCard } from '@/components/dashboard/macro-events-card';
 import { MacroRegimeCard } from '@/components/dashboard/macro-regime-card';
+import { RateProbabilitiesCard } from '@/components/dashboard/rate-probabilities-card';
 import { PolymarketCard } from '@/components/dashboard/polymarket-card';
 import { MiniSparkline } from '@/components/dashboard/mini-sparkline';
 import { SignalFreshnessBanner } from '@/components/dashboard/signal-freshness-banner';
@@ -35,6 +36,7 @@ import { useDerivatives } from '@/src/hooks/useDerivatives';
 import { usePolymarket } from '@/src/hooks/usePolymarket';
 import { useTopHeadlines } from '@/src/hooks/useTopHeadlines';
 import { useMacroRegime } from '@/src/hooks/useMacroRegime';
+import { useRateProbabilities } from '@/src/hooks/useRateProbabilities';
 import { useUpcomingMacroEvents } from '@/src/hooks/useUpcomingMacroEvents';
 import { timeAgo } from '@/src/utils/time';
 
@@ -134,6 +136,8 @@ export default function HomeScreen() {
   // Régime macro objectif (ADR-028) — net liquidity Fed + indicateurs FRED.
   // Contexte non-sentiment, lecture seule (ne touche aucun signal).
   const macroRegimeState = useMacroRegime();
+  // Anticipations de taux Fed par réunion (ADR-029) — contexte, pas un signal.
+  const rateProbState = useRateProbabilities();
   const [hitRateEntity, setHitRateEntity] = useState<string>('BTC');
   const [hitRateHorizon, setHitRateHorizon] = useState<string>('swing');
   const [hitRateIncludeFlagged, setHitRateIncludeFlagged] = useState<boolean>(false);
@@ -247,6 +251,12 @@ export default function HomeScreen() {
         regime={macroRegimeState.regime}
         loading={macroRegimeState.loading}
         error={macroRegimeState.error}
+      />
+
+      <RateProbabilitiesCard
+        rates={rateProbState.rates}
+        loading={rateProbState.loading}
+        error={rateProbState.error}
       />
 
       <PolymarketCard

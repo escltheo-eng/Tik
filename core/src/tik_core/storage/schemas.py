@@ -700,6 +700,40 @@ class MacroRegimeOut(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
 
+class RateMeetingOut(BaseModel):
+    """Probabilités de taux pour une réunion FOMC (méthodo CME FedWatch)."""
+
+    date: str
+    probabilities: dict[str, float] = Field(default_factory=dict)
+    hold: float | None = None
+    hike: float | None = None
+    cut: float | None = None
+    most_likely_range: str | None = None
+    most_likely_prob: float | None = None
+
+    model_config = ConfigDict(extra="ignore")
+
+
+class RateProbabilitiesOut(BaseModel):
+    """Anticipations de taux Fed par réunion (ADR-029, CONTEXTE).
+
+    Reproduit le « flagship » de centralbank.watch via pyfedwatch + futures ZQ
+    gratuits. Lecture seule de `tik.macro.rate_probabilities` — anticipation du
+    marché, ne touche jamais direction/veracity/combined_bias.
+    """
+
+    available: bool = False
+    source: str = "pyfedwatch"
+    fetched_at: str | None = None
+    watch_date: str | None = None
+    current_range: str | None = None
+    effr: float | None = None
+    meetings: list[RateMeetingOut] = Field(default_factory=list)
+    context_only: bool = True
+
+    model_config = ConfigDict(extra="ignore")
+
+
 class MacroCockpitOut(BaseModel):
     """Vue cockpit agrégée (1 appel) : régime macro + snapshots shadow existants.
 
@@ -710,6 +744,7 @@ class MacroCockpitOut(BaseModel):
     """
 
     regime: MacroRegimeOut
+    rate_probabilities: RateProbabilitiesOut | None = None
     fear_greed: dict[str, Any] | None = None
     derivatives_btc: dict[str, Any] | None = None
     etf_flows_btc: dict[str, Any] | None = None

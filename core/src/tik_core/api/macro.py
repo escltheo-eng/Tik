@@ -28,7 +28,11 @@ from tik_core.auth import AuthContext, require_scope
 from tik_core.config import get_settings
 from tik_core.storage.database import get_session
 from tik_core.storage.macro_events_repo import fetch_upcoming
-from tik_core.storage.schemas import MacroCockpitOut, MacroRegimeOut
+from tik_core.storage.schemas import (
+    MacroCockpitOut,
+    MacroRegimeOut,
+    RateProbabilitiesOut,
+)
 from tik_core.utils.time import iso_utc
 
 log = structlog.get_logger()
@@ -36,6 +40,7 @@ log = structlog.get_logger()
 router = APIRouter(prefix="/macro")
 
 REGIME_KEY = "tik.macro.regime"
+RATE_PROB_KEY = "tik.macro.rate_probabilities"
 FEAR_GREED_KEY = "tik.sentiment.fear_greed"
 DERIV_KEY = "tik.deriv.binance.btc"
 ETF_KEY = "tik.etf.btc"
@@ -100,6 +105,23 @@ async def get_macro_regime(
         await redis.aclose()
 
 
+@router.get("/rate_probabilities", response_model=RateProbabilitiesOut)
+async def get_rate_probabilities(
+    _ctx: AuthContext = Depends(require_scope("read:signals")),
+) -> RateProbabilitiesOut:
+    """Probabilités de taux Fed par réunion FOMC (méthodo CME FedWatch). Vide si pas publié."""
+    settings = get_settings()
+    redis = aioredis.from_url(settings.redis_url, decode_responses=True)
+    try:
+        payload = await _read_json(redis, RATE_PROB_KEY)
+        if not payload:
+            return RateProbabilitiesOut(available=False)
+        payload.setdefault("available", True)
+        return RateProbabilitiesOut(**payload)
+    finally:
+        await redis.aclose()
+
+
 @router.get("/cockpit", response_model=MacroCockpitOut)
 async def get_macro_cockpit(
     session: AsyncSession = Depends(get_session),
@@ -117,6 +139,13 @@ async def get_macro_cockpit(
             MacroRegimeOut(**{**regime_raw, "available": True})
             if regime_raw
             else MacroRegimeOut(available=False)
+        )
+
+        rate_prob_raw = await _read_json(redis, RATE_PROB_KEY)
+        rate_probabilities = (
+            RateProbabilitiesOut(**{**rate_prob_raw, "available": True})
+            if rate_prob_raw
+            else RateProbabilitiesOut(available=False)
         )
 
         fear_greed = _subset(
@@ -173,6 +202,7 @@ async def get_macro_cockpit(
 
         return MacroCockpitOut(
             regime=regime,
+            rate_probabilities=rate_probabilities,
             fear_greed=fear_greed,
             derivatives_btc=derivatives_btc,
             etf_flows_btc=etf_flows_btc,
