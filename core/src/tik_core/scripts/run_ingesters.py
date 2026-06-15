@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from tik_core.aggregator.binance_derivatives_ingester import BinanceDerivativesIngester
 from tik_core.aggregator.binance_ingester import BinanceTradesIngester
+from tik_core.aggregator.breaking_news_ingester import BreakingNewsIngester
 from tik_core.aggregator.btc_etf_flows_ingester import BtcEtfFlowsIngester
 from tik_core.aggregator.cftc_cot_ingester import CftcCotIngester
 from tik_core.aggregator.coingecko_sentiment_ingester import CoinGeckoSentimentIngester
@@ -198,6 +199,17 @@ async def main() -> None:
         # retirer cette ligne.
         BtcEtfFlowsIngester(redis, entity="BTC", interval_s=6 * 3600),
     ]
+
+    # Breaking-news alerting (ADR-027) — gaté par toggle (défaut OFF). Capte les
+    # annonces NON programmées pouvant bouger le BTC (Trump/géopol, Fed, tarifs,
+    # régulation crypto) → alerte Telegram + carte dashboard. C'est de
+    # l'ALERTING/contexte, PAS un overlay directionnel (zéro ligne dans les
+    # moteurs, ne touche jamais le combined_bias). Activer = TIK_BREAKING_NEWS_ENABLED=true.
+    if settings.breaking_news_enabled:
+        ingesters.append(BreakingNewsIngester(redis, settings=settings))
+        log.info("breaking_news.enabled")
+    else:
+        log.info("breaking_news.disabled")
 
     for ing in ingesters:
         await ing.start()

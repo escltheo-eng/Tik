@@ -133,6 +133,37 @@ export interface Headline {
   fetched_at: string;
 }
 
+// ----- Breaking news (ADR-027) -----
+// Alerting / contexte / discipline — PAS un signal directionnel (ne touche
+// jamais le combined_bias). Miroir de core/.../schemas.py:BreakingNewsItem.
+
+export interface BreakingNewsItem {
+  title: string;
+  title_fr: string | null; // traduction auto (best-effort Ollama), peut être null
+  source: string;
+  url: string | null;
+  category: string; // 'guerre/géopol' | 'politique US' | 'tarifs/commerce' | 'Fed/taux/macro' | 'crypto/régulation'
+  keyword: string | null;
+  published_at: string | null;
+  detected_at: string | null;
+}
+
+// Réaction MESURÉE du BTC après une alerte (factuel a posteriori, PAS une prédiction).
+export interface BreakingReaction {
+  category: string;
+  title: string;
+  horizon_h: number;
+  pct: number; // variation BTC
+  btc0: number;
+  btc1: number;
+  gold_pct: number | null; // variation Or (null si indisponible)
+  gold0: number | null;
+  gold1: number | null;
+  gold_closed: boolean; // or figé (marché fermé) → pas de mesure
+  alerted_at: number; // epoch seconds
+  measured_at: number; // epoch seconds
+}
+
 // ----- Macro events (Lacune B Phase B1 trading manuel J+10) -----
 
 export type MacroImportance = 'HIGH' | 'MEDIUM' | 'LOW';

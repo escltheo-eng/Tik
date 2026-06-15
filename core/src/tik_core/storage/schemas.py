@@ -433,6 +433,47 @@ class SourceHealthOut(BaseModel):
         return iso_utc(value)
 
 
+class BreakingNewsItem(BaseModel):
+    """Un titre breaking-news capté (ADR-027).
+
+    Alerting / contexte / discipline — PAS un signal directionnel (ne touche
+    jamais le combined_bias). `published_at` / `detected_at` sont des chaînes
+    ISO 8601 déjà sérialisées par l'ingester (stockées telles quelles en Redis).
+    `title_fr` = traduction automatique (best-effort Ollama), peut être null.
+    """
+
+    title: str
+    title_fr: str | None = None
+    source: str
+    url: str | None = None
+    category: str
+    keyword: str | None = None
+    published_at: str | None = None
+    detected_at: str | None = None
+
+
+class BreakingReaction(BaseModel):
+    """Réaction mesurée du BTC après une alerte breaking (ADR-027).
+
+    FACTUEL, pas une prédiction (Tik n'a aucun edge directionnel, NO-GO). `pct`
+    = variation du BTC sur `horizon_h` h depuis l'alerte. `alerted_at` /
+    `measured_at` = epoch seconds (entiers).
+    """
+
+    category: str
+    title: str
+    horizon_h: int
+    pct: float
+    btc0: float
+    btc1: float
+    gold_pct: float | None = None
+    gold0: float | None = None
+    gold1: float | None = None
+    gold_closed: bool = False
+    alerted_at: int
+    measured_at: int
+
+
 # ----- Polymarket (marchés prédictifs, SHADOW — contexte) -----
 
 

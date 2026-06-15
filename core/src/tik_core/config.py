@@ -94,6 +94,15 @@ class Settings(BaseSettings):
     # vs Fear & Greed (apport indépendant ?). Toggle env : TIK_COINGECKO_OVERLAY_ENABLED.
     coingecko_overlay_enabled: bool = False
 
+    # --- Breaking-news alerting (ADR-027) ---
+    # Ingester quasi temps réel (RSS BBC/Al Jazeera/Cointelegraph + Google News
+    # ciblé) qui capte les annonces NON programmées pouvant bouger le BTC
+    # (Trump/géopol, Fed/taux, tarifs/sanctions, régulation crypto) et envoie
+    # une alerte Telegram + alimente une carte dashboard. DÉSACTIVÉ par défaut :
+    # c'est de l'ALERTING/contexte, pas un overlay directionnel (ne touche jamais
+    # le combined_bias). Toggle env : TIK_BREAKING_NEWS_ENABLED.
+    breaking_news_enabled: bool = False
+
     # --- Notifications Telegram (briefing du matin + alertes) ---
     # Bot créé par l'utilisatrice via @BotFather. Le token + chat_id sont des
     # secrets → définis dans core/.env (TIK_TELEGRAM_BOT_TOKEN /

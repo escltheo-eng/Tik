@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, StyleSheet } from 'react-native';
 
 import { HitRateByVeracityCard } from '@/components/dashboard/hit-rate-by-veracity-card';
+import { BreakingNewsCard } from '@/components/dashboard/breaking-news-card';
 import { DerivativesCard } from '@/components/dashboard/derivatives-card';
 import { FlashStabilityCard } from '@/components/dashboard/flash-stability-card';
 import { HitRateCard } from '@/components/dashboard/hit-rate-card';
@@ -199,6 +200,8 @@ export default function HomeScreen() {
           • Tik neutral = pas de vue → ne force pas un trade
         </ThemedText>
       </ThemedView>
+
+      <BreakingNewsCard />
 
       {flashCardEnabled ? <FlashStabilityCard signals={kpis.signals24h} /> : null}
 

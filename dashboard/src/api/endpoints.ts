@@ -10,6 +10,8 @@
 
 import { HttpClient } from './client';
 import {
+  BreakingNewsItem,
+  BreakingReaction,
   DerivativesSnapshot,
   Entity,
   FeedbackPayload,
@@ -51,6 +53,27 @@ export async function getSignalFreshness(
 // Santé par source OSINT (2026-05-28) — dégradation silencieuse par source.
 export async function getSourceHealth(client: HttpClient): Promise<SourceHealth> {
   return client.get<SourceHealth>('/metrics/source_health');
+}
+
+// Breaking news (ADR-027) — derniers titres géopol/macro captés (alerting/contexte).
+export async function getBreakingNews(
+  client: HttpClient,
+  options: { limit?: number; category?: string } = {},
+): Promise<BreakingNewsItem[]> {
+  return client.get<BreakingNewsItem[]>('/metrics/breaking_news', {
+    limit: options.limit ?? 20,
+    category: options.category,
+  });
+}
+
+// Réactions MESURÉES du BTC après les alertes breaking (factuel, pas prédictif).
+export async function getBreakingReactions(
+  client: HttpClient,
+  options: { limit?: number } = {},
+): Promise<BreakingReaction[]> {
+  return client.get<BreakingReaction[]>('/metrics/breaking_reactions', {
+    limit: options.limit ?? 10,
+  });
 }
 
 // ----- Entities -----

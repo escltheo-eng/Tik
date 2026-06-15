@@ -56,6 +56,8 @@ from tik_core.scripts.backtest import fetch_btc_history, fetch_gold_history
 from tik_core.storage.database import get_session
 from tik_core.storage.models import Signal
 from tik_core.storage.schemas import (
+    BreakingNewsItem,
+    BreakingReaction,
     HitRateByVeracityBucket,
     HitRateByVeracityOut,
     HitRateOut,
@@ -734,3 +736,120 @@ async def get_source_health(
             for i in items
         ],
     )
+
+
+# L'endpoint relit simplement la liste Redis que l'ingester a déjà classée et
+# stockée (catégorie comprise) — aucune logique de classification ici.
+BREAKING_RECENT_KEY = "tik.breaking.recent"
+BREAKING_MAX_LIMIT = 40
+REACTIONS_MAX_LIMIT = 20
+
+
+@router.get("/breaking_news", response_model=list[BreakingNewsItem])
+async def get_breaking_news(
+    limit: int = Query(
+        20,
+        ge=1,
+        le=BREAKING_MAX_LIMIT,
+        description="Nb max de titres breaking à retourner (plus récents d'abord).",
+    ),
+    category: str | None = Query(
+        None,
+        description="Filtre optionnel par catégorie (ex. 'guerre/géopol').",
+    ),
+    _ctx: AuthContext = Depends(require_scope("read:signals")),
+) -> list[BreakingNewsItem]:
+    """Derniers titres breaking-news captés (ADR-027) — pour la carte dashboard.
+
+    Lit la liste Redis `tik.breaking.recent` (alimentée par le
+    BreakingNewsIngester, plus récents en tête) et la renvoie telle quelle.
+
+    ⚠️ Alerting / contexte, PAS un signal directionnel : ces titres ne touchent
+    jamais le combined_bias ni la véracité (ADR-018/NO-GO inchangés). Lecture
+    seule, best-effort (erreur Redis / JSON corrompu → item ignoré, jamais de 500).
+    """
+    settings = get_settings()
+    redis = aioredis.from_url(settings.redis_url, decode_responses=True)
+    out: list[BreakingNewsItem] = []
+    try:
+        raw_items = await redis.lrange(BREAKING_RECENT_KEY, 0, BREAKING_MAX_LIMIT - 1)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("metrics.breaking_news.read_error", error=str(exc))
+        raw_items = []
+    finally:
+        await redis.aclose()
+
+    for raw in raw_items:
+        try:
+            d = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if category and d.get("category") != category:
+            continue
+        out.append(
+            BreakingNewsItem(
+                title=d.get("title", ""),
+                title_fr=d.get("title_fr"),
+                source=d.get("source", "?"),
+                url=d.get("url"),
+                category=d.get("category", "?"),
+                keyword=d.get("keyword"),
+                published_at=d.get("published_at"),
+                detected_at=d.get("detected_at"),
+            )
+        )
+        if len(out) >= limit:
+            break
+    return out
+
+
+BREAKING_REACTIONS_KEY = "tik.breaking.reactions"
+
+
+@router.get("/breaking_reactions", response_model=list[BreakingReaction])
+async def get_breaking_reactions(
+    limit: int = Query(10, ge=1, le=REACTIONS_MAX_LIMIT),
+    _ctx: AuthContext = Depends(require_scope("read:signals")),
+) -> list[BreakingReaction]:
+    """Réactions MESURÉES du BTC après les alertes breaking (ADR-027).
+
+    Lit la liste Redis `tik.breaking.reactions` (alimentée par le
+    BreakingNewsIngester à +1 h / +4 h de chaque alerte). C'est du **factuel
+    a posteriori**, PAS une prédiction (Tik n'a aucun edge directionnel, NO-GO).
+    Lecture seule, best-effort (erreur / JSON corrompu → item ignoré, jamais 500).
+    """
+    settings = get_settings()
+    redis = aioredis.from_url(settings.redis_url, decode_responses=True)
+    out: list[BreakingReaction] = []
+    try:
+        raw_items = await redis.lrange(BREAKING_REACTIONS_KEY, 0, REACTIONS_MAX_LIMIT - 1)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("metrics.breaking_reactions.read_error", error=str(exc))
+        raw_items = []
+    finally:
+        await redis.aclose()
+
+    for raw in raw_items:
+        try:
+            d = json.loads(raw)
+            out.append(
+                BreakingReaction(
+                    category=d.get("category", "?"),
+                    title=d.get("title", ""),
+                    horizon_h=int(d.get("horizon_h", 0)),
+                    pct=float(d.get("pct", 0.0)),
+                    btc0=float(d.get("btc0", 0.0)),
+                    btc1=float(d.get("btc1", 0.0)),
+                    gold_pct=d.get("gold_pct"),
+                    gold0=d.get("gold0"),
+                    gold1=d.get("gold1"),
+                    gold_closed=bool(d.get("gold_closed", False)),
+                    alerted_at=int(d.get("alerted_at", 0)),
+                    measured_at=int(d.get("measured_at", 0)),
+                )
+            )
+        except (json.JSONDecodeError, TypeError, ValueError):
+            continue
+        if len(out) >= limit:
+            break
+    return out
