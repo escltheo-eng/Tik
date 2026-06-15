@@ -22,6 +22,7 @@ from tik_core.aggregator.fred_calendar_ingester import FredCalendarIngester
 from tik_core.aggregator.fred_ingester import FredIngester
 from tik_core.aggregator.gdelt_ingester import GdeltIngester
 from tik_core.aggregator.google_news_ingester import GoogleNewsIngester
+from tik_core.aggregator.macro_regime_ingester import MacroRegimeIngester
 from tik_core.aggregator.macro_static_ingester import MacroStaticIngester
 from tik_core.aggregator.news_classifier import build_news_classifier
 from tik_core.aggregator.polymarket_ingester import PolymarketIngester
@@ -93,6 +94,15 @@ async def main() -> None:
         BinanceTradesIngester(redis, symbol="btcusdt", entity_id="BTC"),
         YahooPoller(redis, symbol="GC=F", entity_id="GOLD", interval_s=60),
         FredIngester(redis, api_key=settings.fred_api_key, interval_s=3600),
+        # Macro Regime (ADR-028) — indicateurs macro OBJECTIFS non-sentiment :
+        # Fed Net Liquidity (WALCL−TGA−RRP, hebdo) + taux réel 10Y + proba récession
+        # + pente courbe + conditions financières, calculés depuis FRED (gratuit) et
+        # publiés dans tik.macro.regime pour le cockpit dashboard. CONTEXTE STRICT :
+        # ne touche jamais le combined_bias / la veracity / la direction (zéro overlay,
+        # zéro toggle). Reproduit le menu de centralbank.watch via sources primaires
+        # (pas de scraping). Polling 6h (données hebdo/quotidiennes). Retrait = retirer
+        # cette ligne. Skip propre si pas de clé FRED.
+        MacroRegimeIngester(redis, api_key=settings.fred_api_key, interval_s=6 * 3600),
         FearGreedIngester(redis, interval_s=3600),
         CryptoCompareIngester(
             redis,

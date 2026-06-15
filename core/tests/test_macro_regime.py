@@ -1,0 +1,185 @@
+"""Tests du Macro Regime (ADR-028) — fonctions pures + schémas + helpers cockpit.
+
+Pas de Redis/HTTP : on teste la LOGIQUE (calcul net liquidity, régime) et la
+construction des schémas, à la manière de test_derivatives_api.py.
+
+⭐ Test central : le PIÈGE DES UNITÉS du Fed Net Liquidity. WALCL et TGA sont en
+MILLIONS de $, RRP en MILLIARDS de $. Oublier la normalisation = erreur ×1000.
+"""
+
+from tik_core.aggregator.macro_regime_ingester import (
+    compute_net_liquidity_series,
+    compute_regime,
+    latest_valid,
+    parse_observations,
+    _rrp_for_date,
+)
+from tik_core.api.macro import _polymarket_summary, _subset
+from tik_core.storage.schemas import MacroRegimeOut
+
+
+def _mk_weekly(values: list[float], start: str = "2026-01-07") -> list[tuple[str, float]]:
+    """Construit une série (date_iso, value) sur des mercredis successifs."""
+    from datetime import date, timedelta
+
+    d0 = date.fromisoformat(start)
+    return [((d0 + timedelta(days=7 * i)).isoformat(), v) for i, v in enumerate(values)]
+
+
+class TestParseObservations:
+    def test_skips_missing(self):
+        obs = [
+            {"date": "2026-06-10", "value": "6725397"},
+            {"date": "2026-06-03", "value": "."},  # manquant FRED
+            {"date": "2026-05-27", "value": ""},
+            {"date": "2026-05-20", "value": "6700000"},
+        ]
+        out = parse_observations(obs)
+        assert out == {"2026-06-10": 6725397.0, "2026-05-20": 6700000.0}
+
+    def test_latest_valid(self):
+        assert latest_valid({"2026-01-01": 1.0, "2026-06-10": 4.45}) == ("2026-06-10", 4.45)
+        assert latest_valid({}) is None
+
+
+class TestRrpForDate:
+    def test_same_day(self):
+        rrp = {"2026-06-10": 0.5}
+        assert _rrp_for_date(rrp, "2026-06-10") == 0.5
+
+    def test_back_search_within_window(self):
+        # RRP absent le mercredi 06-10, présent le lundi 06-08 → trouvé (≤ 7 j).
+        rrp = {"2026-06-08": 0.7}
+        assert _rrp_for_date(rrp, "2026-06-10") == 0.7
+
+    def test_too_far_returns_none(self):
+        rrp = {"2026-05-01": 0.7}
+        assert _rrp_for_date(rrp, "2026-06-10") is None
+
+
+class TestNetLiquidityUnitsGotcha:
+    """⭐ Le test qui protège contre l'erreur d'un facteur 1000."""
+
+    def test_normalization_to_billions(self):
+        # Données réelles 2026-06-15 : WALCL/TGA en MILLIONS, RRP en MILLIARDS.
+        walcl = {"2026-06-10": 6_725_397.0}  # millions → 6725.397 Md$
+        tga = {"2026-06-10": 828_122.0}  # millions → 828.122 Md$
+        rrp = {"2026-06-10": 0.5}  # DÉJÀ en milliards
+        series = compute_net_liquidity_series(walcl, tga, rrp)
+        assert len(series) == 1
+        date_, net = series[0]
+        assert date_ == "2026-06-10"
+        # 6725.397 − 828.122 − 0.5 = 5896.775 → 5896.8 Md$ (~5.90 T$)
+        assert net == 5896.8
+        # Garde-fou explicite : sans normalisation /1000 on aurait des millions.
+        assert net < 10_000  # milliards, PAS millions
+
+    def test_aligns_on_shared_wednesday_dates(self):
+        walcl = {"2026-06-10": 6_725_397.0, "2026-06-03": 6_700_000.0}
+        tga = {"2026-06-10": 828_122.0}  # 06-03 absent côté TGA
+        rrp = {"2026-06-10": 0.5, "2026-06-03": 0.4}
+        series = compute_net_liquidity_series(walcl, tga, rrp)
+        # Seule la date partagée 06-10 produit un point.
+        assert [d for d, _ in series] == ["2026-06-10"]
+
+    def test_missing_rrp_defaults_zero(self):
+        walcl = {"2026-06-10": 6_725_397.0}
+        tga = {"2026-06-10": 828_122.0}
+        series = compute_net_liquidity_series(walcl, tga, {})  # RRP vide
+        # net = 6725.397 − 828.122 − 0 = 5897.275 → 5897.3
+        assert series[0][1] == 5897.3
+
+
+class TestComputeRegime:
+    def test_empty(self):
+        assert compute_regime([]) == {"available": False}
+
+    def test_expansion(self):
+        series = _mk_weekly([5000 + i * 20 for i in range(20)])  # croissance régulière
+        out = compute_regime(series)
+        assert out["available"] is True
+        assert out["regime"] == "expansion"
+        assert out["net_liquidity_busd"] == 5380.0
+        assert out["delta_13w_busd"] == 260.0  # 5380 − 5120 (13 pas en arrière)
+        assert out["delta_4w_busd"] == 80.0  # 5380 − 5300 (4 pas en arrière)
+        assert out["zscore_52w"] > 0  # dernier point = max → z positif
+        assert out["context_only"] is True
+
+    def test_contraction(self):
+        series = _mk_weekly([5400 - i * 20 for i in range(20)])  # décroissance
+        out = compute_regime(series)
+        assert out["regime"] == "contraction"
+        assert out["delta_13w_busd"] < 0
+
+    def test_neutral_flat(self):
+        series = _mk_weekly([5000.0] * 20)  # plat
+        out = compute_regime(series)
+        assert out["regime"] == "neutral"
+        assert out["delta_13w_busd"] == 0.0
+        assert out["zscore_52w"] == 0.0  # std nul → z = 0
+
+    def test_unknown_when_too_short(self):
+        series = _mk_weekly([5000.0, 5010.0, 5020.0])  # < 14 points
+        out = compute_regime(series)
+        assert out["regime"] == "unknown"
+        assert out["delta_13w_busd"] is None
+
+
+class TestMacroRegimeSchema:
+    def test_construct_from_blob(self):
+        blob = {
+            "source": "fred_macro_regime",
+            "fetched_at": "2026-06-15T13:00:00+00:00",
+            "context_only": True,
+            "net_liquidity": {
+                "available": True,
+                "as_of": "2026-06-10",
+                "net_liquidity_busd": 5896.8,
+                "net_liquidity_tusd": 5.897,
+                "delta_13w_busd": -120.0,
+                "regime": "contraction",
+                "components": {"walcl_busd": 6725.4, "rrp_busd": 0.5},
+            },
+            "indicators": {
+                "real_rate_10y": {"value": 2.16, "date": "2026-06-11", "series_id": "DFII10"},
+                "recession_prob_12m": {"value": 0.44, "date": "2026-04-01"},
+            },
+        }
+        out = MacroRegimeOut(**{**blob, "available": True})
+        assert out.available is True
+        assert out.net_liquidity.regime == "contraction"
+        assert out.net_liquidity.net_liquidity_tusd == 5.897
+        assert out.indicators["real_rate_10y"].value == 2.16
+        assert out.indicators["recession_prob_12m"].date == "2026-04-01"
+
+    def test_empty_when_unavailable(self):
+        out = MacroRegimeOut(available=False)
+        assert out.available is False
+        assert out.net_liquidity is None
+        assert out.indicators == {}
+
+
+class TestCockpitHelpers:
+    def test_subset(self):
+        d = {"a": 1, "b": 2, "c": 3}
+        assert _subset(d, ["a", "c"]) == {"a": 1, "c": 3}
+        assert _subset(None, ["a"]) is None
+        # champ absent → None (pas de KeyError)
+        assert _subset({"a": 1}, ["a", "z"]) == {"a": 1, "z": None}
+
+    def test_polymarket_summary(self):
+        payload = {
+            "n_events": 4,
+            "total_volume": 61576442.86,
+            "fetched_at": "2026-06-15T13:04:01+00:00",
+            "events": [
+                {"title": f"E{i}", "end_date": "2026-06-15T16:00:00Z", "markets": [1, 2]}
+                for i in range(5)
+            ],
+        }
+        out = _polymarket_summary(payload)
+        assert out["n_events"] == 4
+        assert out["total_volume"] == 61576442.86
+        assert len(out["events"]) == 3  # cappé à 3
+        assert out["events"][0] == {"title": "E0", "end_date": "2026-06-15T16:00:00Z"}
+        assert _polymarket_summary(None) is None

@@ -645,3 +645,76 @@ class ManualTradeStatsOut(BaseModel):
     avg_result_pct: float | None = None
     total_result_pct: float = 0.0
     by_alignment: ManualTradeStatsByAlignment
+
+
+# ----- Macro Regime / Cockpit (ADR-028, CONTEXTE objectif non-sentiment) -----
+
+
+class MacroIndicatorOut(BaseModel):
+    """Une valeur d'indicateur macro FRED datée (taux réel, proba récession…)."""
+
+    value: float | None = None
+    date: str | None = None
+    series_id: str | None = None
+
+    model_config = ConfigDict(extra="ignore")
+
+
+class NetLiquidityOut(BaseModel):
+    """Fed Net Liquidity (WALCL − TGA − RRP) hebdo + métriques de régime.
+
+    Tous les montants en MILLIARDS de $ (busd) sauf `net_liquidity_tusd` (trillions).
+    `regime` ∈ {expansion, contraction, neutral, unknown} : vent porteur/contraire
+    CONTEXTUEL, jamais une prédiction de prix (ADR-028).
+    """
+
+    available: bool = False
+    as_of: str | None = None
+    net_liquidity_busd: float | None = None
+    net_liquidity_tusd: float | None = None
+    n_weeks: int | None = None
+    delta_4w_busd: float | None = None
+    delta_13w_busd: float | None = None
+    zscore_52w: float | None = None
+    regime: str | None = None
+    components: dict[str, Any] | None = None
+    context_only: bool = True
+
+    model_config = ConfigDict(extra="ignore")
+
+
+class MacroRegimeOut(BaseModel):
+    """Blob régime macro objectif publié par `MacroRegimeIngester` (CONTEXTE strict).
+
+    Lecture seule de `tik.macro.regime`. Ne reflète QUE des séries FRED officielles
+    datées — ne touche jamais direction/veracity/combined_bias (ADR-028).
+    """
+
+    available: bool = False
+    source: str = "fred_macro_regime"
+    fetched_at: str | None = None
+    net_liquidity: NetLiquidityOut | None = None
+    indicators: dict[str, MacroIndicatorOut] = Field(default_factory=dict)
+    context_only: bool = True
+
+    model_config = ConfigDict(extra="ignore")
+
+
+class MacroCockpitOut(BaseModel):
+    """Vue cockpit agrégée (1 appel) : régime macro + snapshots shadow existants.
+
+    Inspiré du « Direction Overview » de novex.trading, mais Tik collecte déjà la
+    matière (Polymarket, dérivés/DMX, COT, ETF). Agrégateur pratique en LECTURE
+    SEULE pour le dashboard : chaque section est best-effort (None si absente) et
+    n'est que du CONTEXTE — aucune ne génère ni n'influence un signal Tik.
+    """
+
+    regime: MacroRegimeOut
+    fear_greed: dict[str, Any] | None = None
+    derivatives_btc: dict[str, Any] | None = None
+    etf_flows_btc: dict[str, Any] | None = None
+    cot_gold: dict[str, Any] | None = None
+    polymarket_btc: dict[str, Any] | None = None
+    next_macro_event: dict[str, Any] | None = None
+
+    model_config = ConfigDict(extra="ignore")

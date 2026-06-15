@@ -221,10 +221,11 @@ C'est ce qui distingue Tik d'un bot naïf. À respecter dans toute évolution.
 
 ### Ce qui tourne en production (VPS Hetzner `tik-server-1`, Docker)
 
-- **Core FastAPI** : moteurs swing BTC/GOLD + flash BTC, **OSINT pur** (ADR-018 — la direction vient du `combined_bias` OSINT cross-validé ; les indicateurs techniques RSI/MACD/EMA sont calculés mais à **poids 0**, informatifs seulement). ~12 ingesters (Binance, Yahoo, FRED, Fear&Greed, CryptoCompare, Google News, Reddit, GDELT, CFTC COT, CoinGecko, Polymarket, calendriers macro FRED + multi-banques centrales). Anti-fake-news ADR-011 actif. Hypothèse LLM Ollama (swing uniquement, flash = template).
+- **Core FastAPI** : moteurs swing BTC/GOLD + flash BTC, **OSINT pur** (ADR-018 — la direction vient du `combined_bias` OSINT cross-validé ; les indicateurs techniques RSI/MACD/EMA sont calculés mais à **poids 0**, informatifs seulement). ~13 ingesters (Binance, Yahoo, FRED, **Macro Regime (ADR-028, net liquidity)**, Fear&Greed, CryptoCompare, Google News, Reddit, GDELT, CFTC COT, CoinGecko, Polymarket, calendriers macro FRED + multi-banques centrales). Anti-fake-news ADR-011 actif. Hypothèse LLM Ollama (swing uniquement, flash = template).
 - **Dashboard Expo** (v0.5.x) : cockpit iPhone via Expo Go (Metro en tunnel ngrok sur le VPS), accès direct `IP:8200` + clé API.
 - **Notifications Telegram** (Paquet 50) : briefing 3×/jour (06/13/20 UTC) + alertes choc prix BTC / macro imminent + récap on-demand via Claude.
 - **Breaking-news alerting** (ADR-027, 2026-06-14) : ingester quasi temps réel (RSS BBC/Al Jazeera/Cointelegraph + Google News ciblé) qui capte les annonces **non programmées** pouvant bouger le BTC (Trump/géopol, Fed/taux, tarifs/sanctions, régulation crypto) → **alerte Telegram** (avec explication du mécanisme ↓/↑ par catégorie) **+ carte dashboard** « 🚨 Breaking » (onglet Marché). C'est de l'**alerting/contexte, PAS un overlay directionnel** (ne touche jamais le `combined_bias`, NO-GO inchangé). Toggle `TIK_BREAKING_NEWS_ENABLED` (ON en prod depuis le 2026-06-14). Déclenché par la perte trader sur l'accord Trump/Iran du 14/06.
+- **Couche Macro Regime** (ADR-028, 2026-06-15) : chiffres macro **objectifs et datés** calculés depuis FRED (gratuit) — **Fed Net Liquidity** hebdo (`WALCL−TGA−RRP`) + label régime (expansion/contraction/neutral) + proba récession 12 m (NY Fed), taux réel 10Y, breakeven, pente courbe (2s10s/3m10y), conditions financières (NFCI). Endpoints `GET /api/v1/macro/regime` + `GET /api/v1/macro/cockpit` (agrégateur 1-appel : régime + snapshots shadow Polymarket/dérivés/ETF/COT + prochain event), **carte dashboard « Régime macro »** (onglet Marché). **CONTEXTE STRICT** : famille NON-sentiment, ne touche jamais `combined_bias`/veracity/direction (NO-GO inchangé), **zéro affirmation** (anti-« Lecture macro » supprimée le 30/05). Né de la recherche sur centralbank.watch/novex.trading (aucun n'a d'API → on reproduit leur menu via FRED). Détail + verdict sources : `docs/adr/028-macro-regime-layer.md` + mémoire `macro-regime-layer-adr028`. Reste Phase 2 : proba taux Fed via `pyfedwatch` (gratuit).
 - **SDK Python (`sdk/`) : 🧊 GELÉ** (cf. [ADR-022](docs/adr/022-gel-couche-zeta-sdk.md)) — la couche Zeta n'est pas câblée et le trading est 100 % manuel. On n'y code **plus rien** jusqu'à un besoin réel. Code conservé intact (réversible, gel = zéro coût tant qu'on n'y touche pas).
 
 ### La vérité empirique (à ne jamais maquiller)
@@ -698,6 +699,6 @@ cp "$WORKTREE/path2" "$MAIN/path2"
 
 ---
 
-*Dernière mise à jour : 2026-06-11. Journal détaillé des livraisons (Paquets 1→50) déplacé dans [`HISTORIQUE.md`](HISTORIQUE.md) ; cette section ne garde plus que l'état courant (cf. ## 8).*
+*Dernière mise à jour : 2026-06-15 (ADR-028 couche Macro Regime). Journal détaillé des livraisons (Paquets 1→50) déplacé dans [`HISTORIQUE.md`](HISTORIQUE.md) ; cette section ne garde plus que l'état courant (cf. ## 8).*
 *Version Tik : Core MVP + multi-overlay swing/flash OSINT pur (ADR-018) + dashboard Expo + SDK gelé (ADR-022) + notifications Telegram. Détail par composant dans HISTORIQUE.md.*
 *Mainteneur : utilisatrice solo + assistant Claude.*

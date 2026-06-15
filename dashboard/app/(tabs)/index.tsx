@@ -9,6 +9,7 @@ import { FlashStabilityCard } from '@/components/dashboard/flash-stability-card'
 import { HitRateCard } from '@/components/dashboard/hit-rate-card';
 import { KpiCard } from '@/components/dashboard/kpi-card';
 import { MacroEventsCard } from '@/components/dashboard/macro-events-card';
+import { MacroRegimeCard } from '@/components/dashboard/macro-regime-card';
 import { PolymarketCard } from '@/components/dashboard/polymarket-card';
 import { MiniSparkline } from '@/components/dashboard/mini-sparkline';
 import { SignalFreshnessBanner } from '@/components/dashboard/signal-freshness-banner';
@@ -33,6 +34,7 @@ import { useTick } from '@/src/hooks/use-tick';
 import { useDerivatives } from '@/src/hooks/useDerivatives';
 import { usePolymarket } from '@/src/hooks/usePolymarket';
 import { useTopHeadlines } from '@/src/hooks/useTopHeadlines';
+import { useMacroRegime } from '@/src/hooks/useMacroRegime';
 import { useUpcomingMacroEvents } from '@/src/hooks/useUpcomingMacroEvents';
 import { timeAgo } from '@/src/utils/time';
 
@@ -129,6 +131,9 @@ export default function HomeScreen() {
   // Cap 4 events sur Home (1 mis en avant + 3 suivants), poll 5 min
   // (cohérent TTL cache Redis 5 min).
   const macroEventsState = useUpcomingMacroEvents({ hours: 7 * 24, limit: 4 });
+  // Régime macro objectif (ADR-028) — net liquidity Fed + indicateurs FRED.
+  // Contexte non-sentiment, lecture seule (ne touche aucun signal).
+  const macroRegimeState = useMacroRegime();
   const [hitRateEntity, setHitRateEntity] = useState<string>('BTC');
   const [hitRateHorizon, setHitRateHorizon] = useState<string>('swing');
   const [hitRateIncludeFlagged, setHitRateIncludeFlagged] = useState<boolean>(false);
@@ -236,6 +241,12 @@ export default function HomeScreen() {
         loading={macroEventsState.loading}
         error={macroEventsState.error}
         displayLimit={4}
+      />
+
+      <MacroRegimeCard
+        regime={macroRegimeState.regime}
+        loading={macroRegimeState.loading}
+        error={macroRegimeState.error}
       />
 
       <PolymarketCard

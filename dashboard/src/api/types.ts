@@ -370,6 +370,50 @@ export interface DerivativesSnapshot {
 // Couche éducative « Lecture macro » supprimée 2026-05-30 (cf. memory
 // macro-reading-removed-2026-05-30 pour rebuild guide en Option C / liens externes).
 
+// ----- Macro Regime / Cockpit (ADR-028, CONTEXTE objectif non-sentiment) -----
+// Chiffres FRED officiels datés (bilan Fed, taux réels, proba récession) — pas
+// d'affirmation, pas de LLM, ne touche jamais direction/veracity (contraste avec
+// la « Lecture macro » supprimée). Lecture seule, contexte pur.
+
+export interface MacroIndicator {
+  value: number | null;
+  date: string | null;
+  series_id?: string | null;
+}
+
+export interface NetLiquidity {
+  available: boolean;
+  as_of: string | null;
+  net_liquidity_busd: number | null; // milliards $
+  net_liquidity_tusd: number | null; // trillions $
+  n_weeks?: number | null;
+  delta_4w_busd: number | null;
+  delta_13w_busd: number | null;
+  zscore_52w: number | null;
+  regime: string | null; // expansion | contraction | neutral | unknown
+  components?: Record<string, unknown> | null;
+  context_only?: boolean;
+}
+
+export interface MacroRegime {
+  available: boolean;
+  source?: string;
+  fetched_at: string | null;
+  net_liquidity: NetLiquidity | null;
+  indicators: Record<string, MacroIndicator>;
+  context_only?: boolean;
+}
+
+export interface MacroCockpit {
+  regime: MacroRegime;
+  fear_greed: Record<string, unknown> | null;
+  derivatives_btc: Record<string, unknown> | null;
+  etf_flows_btc: Record<string, unknown> | null;
+  cot_gold: Record<string, unknown> | null;
+  polymarket_btc: Record<string, unknown> | null;
+  next_macro_event: Record<string, unknown> | null;
+}
+
 // ----- Carnet de trades manuels (Levier B 2026-06-03) -----
 
 export type TradeAlignment = 'with' | 'against' | 'none';

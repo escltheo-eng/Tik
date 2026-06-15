@@ -20,7 +20,9 @@ import {
   Health,
   HitRate,
   HitRateByVeracity,
+  MacroCockpit,
   MacroEvent,
+  MacroRegime,
   ManualTrade,
   ManualTradeCloseInput,
   ManualTradeInput,
@@ -240,6 +242,16 @@ export async function getMacroEventsHistory(
     entity_id: params.entityId,
     limit: params.limit ?? 200,
   });
+}
+
+// ----- Macro Regime / Cockpit (ADR-028, contexte objectif non-sentiment) -----
+
+export async function getMacroRegime(client: HttpClient): Promise<MacroRegime> {
+  return client.get<MacroRegime>('/macro/regime');
+}
+
+export async function getMacroCockpit(client: HttpClient): Promise<MacroCockpit> {
+  return client.get<MacroCockpit>('/macro/cockpit');
 }
 
 // ----- Hit rate (Phase A.2 trading manuel J+10) -----
