@@ -11,6 +11,8 @@ import json
 import redis.asyncio as aioredis
 import structlog
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect, status
+from redis.exceptions import RedisError
+from redis.exceptions import TimeoutError as RedisTimeoutError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -86,19 +88,29 @@ async def ws_signals(
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
 
-    await websocket.accept()
-    log.info("ws.connected", client_id=key.client_id, entity=entity, horizon=horizon)
-
     settings = get_settings()
     redis = aioredis.from_url(settings.redis_url, decode_responses=True)
     pubsub = redis.pubsub()
 
-    # Pattern de souscription
-    # tik.signal.<entity>.<horizon>
+    # Pattern de souscription : tik.signal.<entity>.<horizon>
     entity_pat = entity or "*"
     horizon_pat = horizon or "*"
     pattern = f"tik.signal.{entity_pat}.{horizon_pat}"
-    await pubsub.psubscribe(pattern)
+
+    # Souscrire AVANT d'accepter le WS : le client n'est "connecté" qu'une fois
+    # l'abonnement Redis actif → aucun signal publié dans la fenêtre
+    # accept→subscribe n'est perdu (race corrigée 2026-06-15, Bug 16).
+    try:
+        await pubsub.psubscribe(pattern)
+    except RedisError as exc:
+        log.warning("ws.subscribe_failed", error=str(exc))
+        await pubsub.aclose()
+        await redis.aclose()
+        await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
+        return
+
+    await websocket.accept()
+    log.info("ws.connected", client_id=key.client_id, entity=entity, horizon=horizon)
 
     # Heartbeat toutes les 30s
     async def _heartbeat() -> None:
@@ -112,10 +124,27 @@ async def ws_signals(
     hb_task = asyncio.create_task(_heartbeat())
 
     try:
-        async for message in pubsub.listen():
+        while True:
+            try:
+                # Lecture pubsub avec timeout : une fenêtre SANS signal est NORMALE.
+                # redis-py 8.0 lève redis TimeoutError sur read idle (~5s) même avec
+                # socket_timeout=None ; AVANT ce fix, le `async for pubsub.listen()`
+                # laissait cette exception remonter NON CAPTÉE → le handler crashait
+                # toutes les ~5s entre deux signaux → WS qui meurt + reconnexion en
+                # boucle côté dashboard + tracebacks en spam (Bug 16, mesuré le
+                # 2026-06-15 : 48 reconnexions/30 min). On encaisse l'inactivité et on
+                # continue d'écouter.
+                message = await pubsub.get_message(
+                    ignore_subscribe_messages=True, timeout=30
+                )
+            except RedisTimeoutError:
+                continue  # inactivité normale, on continue d'écouter
+            except RedisError as exc:
+                # Vraie erreur Redis (connexion perdue, etc.) → on sort proprement,
+                # le client se reconnectera.
+                log.warning("ws.redis_error", client_id=key.client_id, error=str(exc))
+                break
             if message is None:
-                continue
-            if message.get("type") not in ("pmessage", "message"):
                 continue
             data = message.get("data")
             if not data:
@@ -123,19 +152,18 @@ async def ws_signals(
             try:
                 parsed = json.loads(data) if isinstance(data, str) else data
             except (json.JSONDecodeError, TypeError) as exc:
-                # Payload mal formé côté publisher — on log et on continue
-                # avec le message suivant (les autres clients reçoivent OK).
+                # Payload mal formé côté publisher — on log et on continue avec le
+                # message suivant (les autres clients reçoivent OK).
                 log.warning("ws.payload_invalid", error=str(exc))
                 continue
             try:
                 await websocket.send_json({"type": "signal", "payload": parsed})
             except Exception as exc:  # noqa: BLE001
-                # Client déconnecté (RuntimeError "Cannot call 'send' once a
-                # close message has been sent." / ConnectionClosed). Sortie
-                # de la boucle pour laisser le finally libérer pubsub/redis,
-                # sinon coroutine zombie qui spam les warnings à chaque
-                # nouveau signal Redis publié → event loop sature → API
-                # FastAPI hang sur /api/v1/* (cf. bug runtime 2026-05-17).
+                # Client déconnecté (RuntimeError "Cannot call 'send' once a close
+                # message has been sent." / ConnectionClosed). Sortie de la boucle
+                # pour que le finally libère pubsub/redis, sinon coroutine zombie qui
+                # spam les warnings à chaque nouveau signal Redis publié → event loop
+                # sature → API FastAPI hang sur /api/v1/* (cf. Bug 10, 2026-05-17).
                 log.info("ws.client_gone", client_id=key.client_id, error=str(exc))
                 break
     except WebSocketDisconnect:
