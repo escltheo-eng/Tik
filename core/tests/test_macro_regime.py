@@ -8,11 +8,14 @@ MILLIONS de $, RRP en MILLIARDS de $. Oublier la normalisation = erreur ×1000.
 """
 
 from tik_core.aggregator.macro_regime_ingester import (
+    compute_global_liquidity_series,
+    compute_global_regime,
     compute_net_liquidity_series,
     compute_regime,
     latest_valid,
     parse_observations,
     _rrp_for_date,
+    _value_on_or_before,
 )
 from tik_core.api.macro import _polymarket_summary, _subset
 from tik_core.storage.schemas import MacroRegimeOut
@@ -88,6 +91,77 @@ class TestNetLiquidityUnitsGotcha:
         series = compute_net_liquidity_series(walcl, tga, {})  # RRP vide
         # net = 6725.397 − 828.122 − 0 = 5897.275 → 5897.3
         assert series[0][1] == 5897.3
+
+
+class TestValueOnOrBefore:
+    def test_same_day_and_back_search(self):
+        s = {"2026-06-05": 1.15, "2026-06-01": 1.10}
+        assert _value_on_or_before(s, "2026-06-05") == 1.15
+        assert _value_on_or_before(s, "2026-06-07") == 1.15  # 2 j en arrière
+        assert _value_on_or_before(s, "2026-06-03", max_back=2) == 1.10  # 2 j arrière
+        assert _value_on_or_before(s, "2026-06-20", max_back=7) is None  # trop loin
+
+
+class TestGlobalLiquidityUnitsGotcha:
+    """⭐ Conversions FX + le piège BoJ « 100 Mio ¥ »."""
+
+    def test_conversion_to_usd_billions(self):
+        # Données réelles 2026-06-15 (cadences différentes alignées sur WALCL).
+        walcl = {"2026-06-10": 6_725_397.0}  # millions USD
+        ecb = {"2026-06-05": 6_136_317.0}  # millions EUR (hebdo, 5 j avant)
+        boj = {"2026-05-01": 6_643_630.0}  # « 100 millions ¥ » (mensuel, 40 j avant)
+        eurusd = {"2026-06-10": 1.1533}  # USD pour 1 €
+        jpyusd = {"2026-06-10": 160.26}  # ¥ pour 1 $
+        series = compute_global_liquidity_series(walcl, ecb, boj, eurusd, jpyusd)
+        assert len(series) == 1
+        date_, gl = series[0]
+        assert date_ == "2026-06-10"
+        # même arithmétique que l'ingester (pin de correctness)
+        expected = round(
+            (6_725_397.0 + 6_136_317.0 * 1.1533 + 6_643_630.0 * 100.0 / 160.26) / 1000.0, 1
+        )
+        assert gl == expected
+        # ordre de grandeur ~18 T$ (≈ 18 000 Md$) — garde-fou anti-mauvaise-unité
+        assert 17_000 < gl < 19_000
+
+    def test_boj_x100_matters(self):
+        # Sans le ×100 sur la BoJ, le total chuterait de ~4000 Md$ → ce test
+        # échouerait, ce qui prouve que la conversion BoJ est bien appliquée.
+        walcl = {"2026-06-10": 6_725_397.0}
+        ecb = {"2026-06-10": 6_000_000.0}
+        boj = {"2026-06-10": 6_600_000.0}  # 100 Mio ¥
+        eurusd = {"2026-06-10": 1.15}
+        jpyusd = {"2026-06-10": 160.0}
+        gl = compute_global_liquidity_series(walcl, ecb, boj, eurusd, jpyusd)[0][1]
+        boj_contrib = 6_600_000.0 * 100.0 / 160.0 / 1000.0  # ~4125 Md$
+        assert boj_contrib > 4_000  # le ×100 donne bien des milliers de Md$
+
+    def test_skips_when_component_missing(self):
+        walcl = {"2026-06-10": 6_725_397.0}
+        # pas de FX → aucun point produit
+        series = compute_global_liquidity_series(
+            walcl, {"2026-06-10": 6e6}, {"2026-06-10": 6e6}, {}, {}
+        )
+        assert series == []
+
+
+class TestComputeGlobalRegime:
+    def test_keys_and_regime(self):
+        from datetime import date, timedelta
+
+        d0 = date.fromisoformat("2026-01-07")
+        series = [
+            ((d0 + timedelta(days=7 * i)).isoformat(), 17000.0 + i * 50) for i in range(20)
+        ]
+        out = compute_global_regime(series)
+        assert out["available"] is True
+        assert out["global_liquidity_busd"] == 17950.0
+        assert out["global_liquidity_tusd"] == 17.95
+        assert "net_liquidity_busd" not in out  # clés bien distinctes du net liquidity
+        assert out["regime"] == "expansion"
+
+    def test_empty(self):
+        assert compute_global_regime([]) == {"available": False}
 
 
 class TestComputeRegime:

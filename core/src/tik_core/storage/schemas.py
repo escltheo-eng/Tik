@@ -683,6 +683,29 @@ class NetLiquidityOut(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
 
+class GlobalLiquidityOut(BaseModel):
+    """Liquidité mondiale des banques centrales (Fed + ECB + BoJ, convertie USD).
+
+    Montants en MILLIARDS USD (busd) sauf `global_liquidity_tusd` (trillions).
+    `regime` ∈ {expansion, contraction, neutral, unknown} : driver macro n°1 du BTC,
+    CONTEXTUEL — jamais une prédiction de prix (ADR-028, amendement liquidité globale).
+    """
+
+    available: bool = False
+    as_of: str | None = None
+    global_liquidity_busd: float | None = None
+    global_liquidity_tusd: float | None = None
+    n_weeks: int | None = None
+    delta_4w_busd: float | None = None
+    delta_13w_busd: float | None = None
+    zscore_52w: float | None = None
+    regime: str | None = None
+    components: dict[str, Any] | None = None
+    context_only: bool = True
+
+    model_config = ConfigDict(extra="ignore")
+
+
 class MacroRegimeOut(BaseModel):
     """Blob régime macro objectif publié par `MacroRegimeIngester` (CONTEXTE strict).
 
@@ -694,6 +717,7 @@ class MacroRegimeOut(BaseModel):
     source: str = "fred_macro_regime"
     fetched_at: str | None = None
     net_liquidity: NetLiquidityOut | None = None
+    global_liquidity: GlobalLiquidityOut | None = None
     indicators: dict[str, MacroIndicatorOut] = Field(default_factory=dict)
     context_only: bool = True
 

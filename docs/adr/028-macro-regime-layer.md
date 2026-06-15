@@ -105,3 +105,28 @@ calculés depuis FRED (gratuit), publiés en CONTEXTE strict :
 3. **Aucune valeur prédictive démontrée** à ce stade — c'est du contexte, pas un edge.
 4. **Rendu dashboard non vérifié en runtime** au moment de l'écriture (Metro/ngrok) :
    typecheck TS OK + endpoints testés 200, mais rendu visuel à confirmer en Expo Go.
+
+---
+
+## Amendement 2026-06-15 — Liquidité globale (Fed + ECB + BoJ)
+
+Extension de la couche (même ingester `MacroRegimeIngester`, même blob `tik.macro.regime`)
+à la **liquidité mondiale des banques centrales** — driver macro structurel n°1 du BTC
+(« global liquidity → risk assets »), choisi par la trader comme prochaine brique macro.
+
+- **Agrégat** = `WALCL` (Fed, M$) + `ECBASSETSW` (ECB, M€) + `JPNASSETS` (BoJ, « 100 M¥ »),
+  **converti en USD** via FRED `DEXUSEU` (USD/€) et `DEXJPUS` (¥/$). Série hebdo (alignée
+  WALCL), régime calculé par le même `_regime_core` (factorisé : `compute_regime` pour le
+  net liquidity, `compute_global_regime` pour le global → clés distinctes, zéro régression).
+- **Exposé** dans `MacroRegimeOut.global_liquidity` (`GET /macro/regime` + cockpit) +
+  carte dashboard **« Liquidité mondiale »** (Fed/ECB/BoJ en barre empilée).
+- **Pièges d'unités résolus** (Phase 0 live 2026-06-15) : ECB en M€ (× USD/€), **BoJ en
+  « 100 M¥ »** (× 100 puis ÷ ¥/$). Sanity = **17,95 T$** (Fed 6,73 + ECB 7,08 + BoJ 4,15),
+  ordre de grandeur public correct (~18 T$). Test `TestGlobalLiquidityUnitsGotcha`.
+- **Cadences mixtes** alignées via `_value_on_or_before` : ECB hebdo (≤ 10 j), BoJ mensuel
+  (report ≤ 40 j), FX quotidien (≤ 7 j).
+- **CONTEXTE STRICT inchangé** : ne touche jamais combined_bias/veracity/direction.
+- Validé : 6 tests dédiés + suite complète 1594 verts (1 échec WS d'intégration
+  préexistant, sans lien). Déployé par simple restart (pur Python, pas de rebuild).
+- Limite : net liquidity vs global liquidity peuvent diverger (US réexpand pendant que
+  ECB/BoJ se contractent) — c'est une **nuance** affichée, pas une incohérence.

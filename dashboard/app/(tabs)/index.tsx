@@ -9,6 +9,7 @@ import { FlashStabilityCard } from '@/components/dashboard/flash-stability-card'
 import { HitRateCard } from '@/components/dashboard/hit-rate-card';
 import { KpiCard } from '@/components/dashboard/kpi-card';
 import { MacroEventsCard } from '@/components/dashboard/macro-events-card';
+import { GlobalLiquidityCard } from '@/components/dashboard/global-liquidity-card';
 import { MacroRegimeCard } from '@/components/dashboard/macro-regime-card';
 import { RateProbabilitiesCard } from '@/components/dashboard/rate-probabilities-card';
 import { PolymarketCard } from '@/components/dashboard/polymarket-card';
@@ -249,6 +250,12 @@ export default function HomeScreen() {
 
       <MacroRegimeCard
         regime={macroRegimeState.regime}
+        loading={macroRegimeState.loading}
+        error={macroRegimeState.error}
+      />
+
+      <GlobalLiquidityCard
+        globalLiquidity={macroRegimeState.regime?.global_liquidity ?? null}
         loading={macroRegimeState.loading}
         error={macroRegimeState.error}
       />

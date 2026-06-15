@@ -395,11 +395,26 @@ export interface NetLiquidity {
   context_only?: boolean;
 }
 
+export interface GlobalLiquidity {
+  available: boolean;
+  as_of: string | null;
+  global_liquidity_busd: number | null;
+  global_liquidity_tusd: number | null;
+  n_weeks?: number | null;
+  delta_4w_busd: number | null;
+  delta_13w_busd: number | null;
+  zscore_52w: number | null;
+  regime: string | null;
+  components?: Record<string, unknown> | null;
+  context_only?: boolean;
+}
+
 export interface MacroRegime {
   available: boolean;
   source?: string;
   fetched_at: string | null;
   net_liquidity: NetLiquidity | null;
+  global_liquidity?: GlobalLiquidity | null;
   indicators: Record<string, MacroIndicator>;
   context_only?: boolean;
 }

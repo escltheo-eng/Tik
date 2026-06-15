@@ -94,17 +94,26 @@ def latest_valid(obs: dict[str, float]) -> tuple[str, float] | None:
     return d, obs[d]
 
 
-def _rrp_for_date(rrp_daily: dict[str, float], target: str, max_back: int = 7) -> float | None:
-    """RRP (milliards) le jour `target`, ou le plus proche en arrière (≤ max_back jours)."""
+def _value_on_or_before(series: dict[str, float], target: str, max_back: int = 7) -> float | None:
+    """Valeur de `series` à `target`, ou la plus proche en arrière (≤ max_back jours).
+
+    Sert à aligner des séries de cadences différentes sur les dates WALCL (mercredi) :
+    RRP/FX quotidiens (≤ 7 j), ECB hebdo (≤ 10 j), BoJ mensuel (report ≤ 40 j).
+    """
     try:
         d0 = date.fromisoformat(target)
     except ValueError:
         return None
     for i in range(max_back + 1):
         key = (d0 - timedelta(days=i)).isoformat()
-        if key in rrp_daily:
-            return rrp_daily[key]
+        if key in series:
+            return series[key]
     return None
+
+
+def _rrp_for_date(rrp_daily: dict[str, float], target: str, max_back: int = 7) -> float | None:
+    """RRP (milliards) le jour `target` ou le plus proche en arrière (≤ max_back jours)."""
+    return _value_on_or_before(rrp_daily, target, max_back)
 
 
 def compute_net_liquidity_series(
@@ -132,12 +141,49 @@ def compute_net_liquidity_series(
     return series
 
 
-def compute_regime(series: list[tuple[str, float]], zscore_window: int = 52) -> dict:
-    """Dérive les métriques de régime à partir de la série net liquidity hebdo.
+def compute_global_liquidity_series(
+    walcl_mil_usd: dict[str, float],
+    ecb_mil_eur: dict[str, float],
+    boj_100mil_yen: dict[str, float],
+    eurusd_daily: dict[str, float],
+    jpyusd_daily: dict[str, float],
+) -> list[tuple[str, float]]:
+    """Série hebdo de la liquidité mondiale des banques centrales (Fed+ECB+BoJ) en
+    MILLIARDS USD, triée par date ascendante.
 
-    Renvoie des CHIFFRES (niveau, deltas, z-score) + un label machine
-    (`expansion`/`contraction`/`neutral`/`unknown`) que le dashboard traduit. Le
-    label décrit un vent porteur/contraire CONTEXTUEL, jamais une prédiction de prix.
+    Conversions (pièges d'unités, vérifiés en live le 2026-06-15) :
+    - Fed `WALCL` : déjà en millions USD.
+    - ECB `ECBASSETSW` : millions d'EUR → × `DEXUSEU` (USD pour 1 €) = millions USD.
+    - BoJ `JPNASSETS` : unité « 100 millions de ¥ » → × 100 = millions ¥, puis
+      ÷ `DEXJPUS` (¥ pour 1 $) = millions USD.
+
+    Alignée sur les dates WALCL (mercredi). ECB hebdo (report ≤ 10 j), BoJ mensuel
+    (report ≤ 40 j), FX quotidien (report ≤ 7 j). Un point est produit seulement si
+    toutes les composantes sont disponibles pour la date.
+    """
+    series: list[tuple[str, float]] = []
+    for d in sorted(walcl_mil_usd):
+        ecb = _value_on_or_before(ecb_mil_eur, d, 10)
+        boj = _value_on_or_before(boj_100mil_yen, d, 40)
+        fx_e = _value_on_or_before(eurusd_daily, d, 7)
+        fx_j = _value_on_or_before(jpyusd_daily, d, 7)
+        if ecb is None or boj is None or fx_e is None or fx_j is None or not fx_j:
+            continue
+        fed_mil = walcl_mil_usd[d]
+        ecb_mil = ecb * fx_e
+        boj_mil = boj * 100.0 / fx_j
+        global_busd = (fed_mil + ecb_mil + boj_mil) / 1000.0
+        series.append((d, round(global_busd, 1)))
+    return series
+
+
+def _regime_core(series: list[tuple[str, float]], zscore_window: int = 52) -> dict:
+    """Métriques de régime GÉNÉRIQUES (niveau, deltas, z-score, label) sur une série
+    hebdo (date, valeur en Md$). Le niveau brut est exposé sous `_level` (clé interne,
+    renommée par les wrappers compute_regime / compute_global_regime).
+
+    Le label `regime` (`expansion`/`contraction`/`neutral`/`unknown`) décrit un vent
+    porteur/contraire CONTEXTUEL, jamais une prédiction de prix.
     """
     if not series:
         return {"available": False}
@@ -146,8 +192,7 @@ def compute_regime(series: list[tuple[str, float]], zscore_window: int = 52) -> 
     out: dict = {
         "available": True,
         "as_of": latest_date,
-        "net_liquidity_busd": latest,
-        "net_liquidity_tusd": round(latest / 1000.0, 3),
+        "_level": latest,
         "n_weeks": len(series),
     }
 
@@ -182,6 +227,32 @@ def compute_regime(series: list[tuple[str, float]], zscore_window: int = 52) -> 
 
     out["context_only"] = True
     return out
+
+
+def compute_regime(series: list[tuple[str, float]], zscore_window: int = 52) -> dict:
+    """Régime du Fed Net Liquidity (clés `net_liquidity_busd`/`net_liquidity_tusd`)."""
+    core = _regime_core(series, zscore_window)
+    if not core.get("available"):
+        return {"available": False}
+    level = core.pop("_level")
+    return {
+        **core,
+        "net_liquidity_busd": level,
+        "net_liquidity_tusd": round(level / 1000.0, 3),
+    }
+
+
+def compute_global_regime(series: list[tuple[str, float]], zscore_window: int = 52) -> dict:
+    """Régime de la liquidité mondiale (clés `global_liquidity_busd`/`_tusd`)."""
+    core = _regime_core(series, zscore_window)
+    if not core.get("available"):
+        return {"available": False}
+    level = core.pop("_level")
+    return {
+        **core,
+        "global_liquidity_busd": level,
+        "global_liquidity_tusd": round(level / 1000.0, 3),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -290,6 +361,37 @@ class MacroRegimeIngester(BaseIngester):
         except Exception as exc:  # noqa: BLE001
             log.warning("macro_regime.net_liquidity.error", error=str(exc))
             blob["net_liquidity"] = {"available": False}
+
+        # --- Liquidité globale (Fed + ECB + BoJ, convertie en USD) ---
+        try:
+            walcl_g = parse_observations(
+                await self._fetch_obs(client, NET_LIQUIDITY_SERIES["walcl"], 60)
+            )
+            ecb = parse_observations(await self._fetch_obs(client, "ECBASSETSW", 60))
+            boj = parse_observations(await self._fetch_obs(client, "JPNASSETS", 24))
+            eurusd = parse_observations(await self._fetch_obs(client, "DEXUSEU", 400))
+            jpyusd = parse_observations(await self._fetch_obs(client, "DEXJPUS", 400))
+            gl_series = compute_global_liquidity_series(walcl_g, ecb, boj, eurusd, jpyusd)
+            gl = compute_global_regime(gl_series)
+            if gl.get("available"):
+                wl, el, bl = latest_valid(walcl_g), latest_valid(ecb), latest_valid(boj)
+                eu, jp = latest_valid(eurusd), latest_valid(jpyusd)
+                gl["components"] = {
+                    "fed_tusd": round(wl[1] / 1e6, 2) if wl else None,
+                    "ecb_tusd": round(el[1] * eu[1] / 1e6, 2) if (el and eu) else None,
+                    "boj_tusd": (
+                        round(bl[1] * 100.0 / jp[1] / 1e6, 2) if (bl and jp and jp[1]) else None
+                    ),
+                    "eurusd": eu[1] if eu else None,
+                    "jpyusd": jp[1] if jp else None,
+                    "fed_date": wl[0] if wl else None,
+                    "ecb_date": el[0] if el else None,
+                    "boj_date": bl[0] if bl else None,
+                }
+            blob["global_liquidity"] = gl
+        except Exception as exc:  # noqa: BLE001
+            log.warning("macro_regime.global_liquidity.error", error=str(exc))
+            blob["global_liquidity"] = {"available": False}
 
         # --- Indicateurs (dernière valeur valide) ---
         indicators: dict[str, dict] = {}
