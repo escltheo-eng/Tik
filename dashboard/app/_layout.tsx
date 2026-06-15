@@ -53,6 +53,14 @@ function RootLayoutNav() {
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
             <Stack.Screen name="login" options={{ headerShown: false }} />
             <Stack.Screen name="signal/[id]" options={{ title: 'Détail signal' }} />
+            <Stack.Screen
+              name="cosmique"
+              options={{
+                title: '✨ Aperçu cosmique',
+                headerStyle: { backgroundColor: '#06070d' },
+                headerTintColor: '#e8ecf5',
+              }}
+            />
             <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
           </Stack>
         </WatchlistProvider>
