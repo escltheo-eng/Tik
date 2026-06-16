@@ -277,11 +277,17 @@ export default function HomeScreen() {
         </Pressable>
       ) : null}
 
-      {/* Accès aux sources OSINT (onglet Sources — bientôt dans la nav 6→5) */}
+      {/* Accès aux écrans dispatchés (onglets Sources / Plus — bientôt dans la nav 6→5) */}
       <Pressable
         onPress={() => router.push('/sources')}
         style={({ pressed }) => [styles.sourcesLink, { opacity: pressed ? 0.8 : 1 }]}>
         <Text style={styles.sourcesLinkText}>🔭 Toutes les sources OSINT</Text>
+        <Text style={styles.sourcesLinkChevron}>›</Text>
+      </Pressable>
+      <Pressable
+        onPress={() => router.push('/plus')}
+        style={({ pressed }) => [styles.sourcesLink, { opacity: pressed ? 0.8 : 1 }]}>
+        <Text style={styles.sourcesLinkText}>📊 Profil &amp; performance</Text>
         <Text style={styles.sourcesLinkChevron}>›</Text>
       </Pressable>
     </>

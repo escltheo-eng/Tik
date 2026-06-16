@@ -77,6 +77,14 @@ function RootLayoutNav() {
                 headerTintColor: '#e8ecf5',
               }}
             />
+            <Stack.Screen
+              name="plus"
+              options={{
+                title: 'Profil',
+                headerStyle: { backgroundColor: '#06070d' },
+                headerTintColor: '#e8ecf5',
+              }}
+            />
             <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
           </Stack>
         </WatchlistProvider>
