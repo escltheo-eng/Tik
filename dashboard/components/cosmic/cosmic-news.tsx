@@ -7,6 +7,7 @@
  * thémées sur le Cockpit. CONTEXTE/alerte, pas un signal directionnel (Axe #1).
  */
 
+import { useState } from 'react';
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Cosmic } from '@/constants/cosmic';
@@ -24,17 +25,24 @@ function sentimentMeta(s: string): { label: string; color: string } {
   return { label: 'NEUTRE', color: Cosmic.neutral };
 }
 
-const CATEGORY_EMOJI: Record<string, string> = {
-  'guerre/géopol': '🌍',
-  'politique US': '🏛️',
-  'tarifs/commerce': '📦',
-  'Fed/taux/macro': '🏦',
-  'crypto/régulation': '⚖️',
-  personnalités: '🗣️',
-};
-function categoryEmoji(c: string): string {
-  return CATEGORY_EMOJI[c] ?? '📰';
+interface CatMeta {
+  emoji: string;
+  label: string;
+  color: string;
 }
+const CATEGORY_META: Record<string, CatMeta> = {
+  'guerre/géopol': { emoji: '🌍', label: 'Guerre/géopol', color: Cosmic.short },
+  'politique US': { emoji: '🏛️', label: 'Politique US', color: Cosmic.macro },
+  'tarifs/commerce': { emoji: '📦', label: 'Tarifs/commerce', color: Cosmic.neutral },
+  'Fed/taux/macro': { emoji: '🏦', label: 'Fed/taux', color: Cosmic.neutral },
+  'crypto/régulation': { emoji: '⚖️', label: 'Crypto/régul', color: Cosmic.accent },
+  personnalités: { emoji: '🗣️', label: 'Personnalités', color: Cosmic.macro },
+};
+function categoryMeta(c: string): CatMeta {
+  return CATEGORY_META[c] ?? { emoji: '📰', label: c || 'Actu', color: Cosmic.textDim };
+}
+
+const COLLAPSED_COUNT = 3;
 
 const ENTITIES = ['BTC', 'GOLD'] as const;
 
@@ -55,7 +63,9 @@ export function CosmicHeadlines({
   error,
   displayLimit = 5,
 }: HeadlinesProps) {
-  const items = headlines.slice(0, displayLimit);
+  const [expanded, setExpanded] = useState(false);
+  const visible = expanded ? headlines : headlines.slice(0, displayLimit);
+  const hidden = headlines.length - visible.length;
   return (
     <View style={styles.card}>
       <View style={styles.header}>
@@ -66,7 +76,10 @@ export function CosmicHeadlines({
             return (
               <Pressable
                 key={e}
-                onPress={() => onEntityChange?.(e)}
+                onPress={() => {
+                  setExpanded(false);
+                  onEntityChange?.(e);
+                }}
                 style={[styles.tog, active ? styles.togActive : null]}>
                 <Text style={[styles.togText, active ? styles.togTextActive : null]}>{e}</Text>
               </Pressable>
@@ -77,12 +90,12 @@ export function CosmicHeadlines({
 
       {error ? (
         <Text style={styles.empty}>Actus indisponibles : {error}</Text>
-      ) : loading && items.length === 0 ? (
+      ) : loading && visible.length === 0 ? (
         <Text style={styles.empty}>Chargement…</Text>
-      ) : items.length === 0 ? (
+      ) : visible.length === 0 ? (
         <Text style={styles.empty}>Pas d&apos;actu récente.</Text>
       ) : (
-        items.map((h, i) => {
+        visible.map((h, i) => {
           const sm = sentimentMeta(h.sentiment);
           return (
             <Pressable
@@ -103,35 +116,62 @@ export function CosmicHeadlines({
           );
         })
       )}
+
+      {hidden > 0 ? (
+        <Pressable onPress={() => setExpanded(true)} style={styles.more}>
+          <Text style={styles.moreText}>Voir les {hidden} autres ›</Text>
+        </Pressable>
+      ) : expanded && headlines.length > displayLimit ? (
+        <Pressable onPress={() => setExpanded(false)} style={styles.more}>
+          <Text style={styles.moreText}>Réduire ‹</Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
 
 interface BreakingProps {
   items: BreakingNewsItem[];
-  displayLimit?: number;
 }
 
-export function CosmicBreaking({ items, displayLimit = 5 }: BreakingProps) {
-  const visible = items.slice(0, displayLimit);
-  if (visible.length === 0) return null;
+export function CosmicBreaking({ items }: BreakingProps) {
+  const [expanded, setExpanded] = useState(false);
+  if (items.length === 0) return null;
+  const visible = expanded ? items : items.slice(0, COLLAPSED_COUNT);
+  const hidden = items.length - visible.length;
   return (
     <View style={[styles.card, styles.breakingCard]}>
       <Text style={styles.breakingTitle}>🚨 Breaking</Text>
       <Text style={styles.breakingSub}>
         Alerte / contexte — pas un signal. Vérifie ta position, ne trade pas dans la panique.
       </Text>
-      {visible.map((it, i) => (
-        <Pressable
-          key={`${it.url ?? it.title}-${i}`}
-          onPress={() => openUrl(it.url)}
-          style={({ pressed }) => [styles.brRow, { opacity: pressed && it.url ? 0.6 : 1 }]}>
-          <Text style={styles.brEmoji}>{categoryEmoji(it.category)}</Text>
-          <Text style={styles.brText} numberOfLines={2}>
-            {it.title_fr ?? it.title}
-          </Text>
+      {visible.map((it, i) => {
+        const m = categoryMeta(it.category);
+        return (
+          <Pressable
+            key={`${it.url ?? it.title}-${i}`}
+            onPress={() => openUrl(it.url)}
+            style={({ pressed }) => [styles.brRow, { opacity: pressed && it.url ? 0.6 : 1 }]}>
+            <View style={[styles.brTag, { borderColor: m.color + '66', backgroundColor: m.color + '1f' }]}>
+              <Text style={[styles.brTagText, { color: m.color }]}>
+                {m.emoji} {m.label}
+              </Text>
+            </View>
+            <Text style={styles.brText} numberOfLines={2}>
+              {it.title_fr ?? it.title}
+            </Text>
+          </Pressable>
+        );
+      })}
+      {hidden > 0 ? (
+        <Pressable onPress={() => setExpanded(true)} style={styles.more}>
+          <Text style={[styles.moreText, { color: Cosmic.short }]}>Voir les {hidden} autres ›</Text>
         </Pressable>
-      ))}
+      ) : expanded && items.length > COLLAPSED_COUNT ? (
+        <Pressable onPress={() => setExpanded(false)} style={styles.more}>
+          <Text style={[styles.moreText, { color: Cosmic.short }]}>Réduire ‹</Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -236,21 +276,36 @@ const styles = StyleSheet.create({
     lineHeight: 15,
   },
   brRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 8,
-    paddingVertical: 5,
+    gap: 5,
+    paddingVertical: 7,
     borderTopWidth: 1,
     borderTopColor: Cosmic.border,
   },
-  brEmoji: {
-    fontSize: 14,
-    marginTop: 1,
+  brTag: {
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  brTagText: {
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+    fontFamily: Fonts.mono,
   },
   brText: {
-    flex: 1,
     color: Cosmic.text,
     fontSize: 13,
     lineHeight: 18,
+  },
+  more: {
+    paddingTop: 8,
+    alignItems: 'center',
+  },
+  moreText: {
+    color: Cosmic.accent,
+    fontSize: 12,
+    fontWeight: '700',
   },
 });

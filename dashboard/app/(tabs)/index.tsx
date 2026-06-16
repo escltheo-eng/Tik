@@ -87,7 +87,7 @@ export default function HomeScreen() {
   const macroRegimeState = useMacroRegime();
   const { trades } = useTrades();
   const [headlinesEntity, setHeadlinesEntity] = useState<string>('BTC');
-  const headlinesState = useTopHeadlines(headlinesEntity, { limit: 5 });
+  const headlinesState = useTopHeadlines(headlinesEntity, { limit: 15 });
   const breaking = useBreakingNews(8);
   useTick();
 
