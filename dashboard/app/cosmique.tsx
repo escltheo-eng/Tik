@@ -31,7 +31,7 @@ import {
 import { CosmicBackground } from '@/components/cosmic/cosmic-background';
 import { CosmicSignalRow } from '@/components/cosmic/cosmic-signal-row';
 import { InfoTooltip } from '@/components/ui/info-tooltip';
-import { Cosmic } from '@/constants/cosmic';
+import { Cosmic, TitleShadow } from '@/constants/cosmic';
 import { useSignalStream } from '@/src/hooks/useSignalStream';
 import { useTick } from '@/src/hooks/use-tick';
 import { computeFlashStability } from '@/src/flash/stability';
@@ -322,6 +322,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   title: {
+    ...TitleShadow.strong,
     color: Cosmic.text,
     fontSize: 22,
     fontWeight: '700',

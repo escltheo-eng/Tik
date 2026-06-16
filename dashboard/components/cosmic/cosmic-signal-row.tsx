@@ -30,7 +30,7 @@ export function CosmicSignalRow({ signal, showChoppy, onChoppyPress }: Props) {
 
   return (
     <Pressable
-      onPress={() => router.push(`/signal/${encodeURIComponent(signal.id)}`)}
+      onPress={() => router.push(`/signal-cosmique/${encodeURIComponent(signal.id)}`)}
       style={({ pressed }) => [styles.row, { opacity: pressed ? 0.65 : 1 }]}>
       {/* Ligne 1 : sens + actif + horizon + badges + heure */}
       <View style={styles.line}>

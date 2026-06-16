@@ -10,6 +10,8 @@
  * n'a aucun edge directionnel prouvé (go/no-go 2026-05-27).
  */
 
+import type { TextStyle } from 'react-native';
+
 export const Cosmic = {
   bg: '#0a0c14',
   bgDeep: '#06070d',
@@ -50,3 +52,26 @@ export function directionMeta(direction: string): DirectionMeta {
 export function sunColor(entityId: string): string {
   return entityId === 'GOLD' ? Cosmic.goldSun : Cosmic.btcSun;
 }
+
+/**
+ * Ombres « relief / 3D » réutilisables pour les titres cosmiques. Effet de texte
+ * surélevé : lumière implicite en haut-gauche → ombre portée en bas-droite, ce
+ * qui détache le titre du fond et lui donne du volume.
+ *
+ * Note technique : React Native ne supporte qu'UNE ombre par `Text`, donc pas
+ * d'extrusion multi-couches (qui exigerait d'empiler des `Text` en position
+ * absolue — fragile en layout). Ce relief « une ombre » est robuste et rend bien
+ * sur le fond sombre. `strong` pour les gros titres, `soft` pour les sous-titres.
+ */
+export const TitleShadow: { strong: TextStyle; soft: TextStyle } = {
+  strong: {
+    textShadowColor: 'rgba(0,0,0,0.6)',
+    textShadowOffset: { width: 1, height: 2 },
+    textShadowRadius: 4,
+  },
+  soft: {
+    textShadowColor: 'rgba(0,0,0,0.5)',
+    textShadowOffset: { width: 0.5, height: 1.5 },
+    textShadowRadius: 2.5,
+  },
+};

@@ -18,7 +18,7 @@ import { useRouter } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Defs, RadialGradient, Stop } from 'react-native-svg';
 
-import { Cosmic, directionMeta, sunColor } from '@/constants/cosmic';
+import { Cosmic, TitleShadow, directionMeta, sunColor } from '@/constants/cosmic';
 import { Fonts } from '@/constants/theme';
 import type { Signal } from '@/src/api/types';
 import { amplitudeDisplay, horizonLabel } from '@/src/utils/amplitude';
@@ -28,6 +28,15 @@ interface Props {
   entityId: string;
   signal: Signal | null;
   loading?: boolean;
+  /**
+   * - `'summary'` (défaut) : carte riche autoporteuse. Cliquable (tap → page
+   *   détail), avec le teaser « Pourquoi » (top 3 evidence) + contre-scénario +
+   *   lien « toucher pour le détail ». Pour un usage liste / home.
+   * - `'detail'` : héros en haut de la page détail elle-même. NON cliquable, et
+   *   sans le teaser evidence/contre-scénario/lien — ces sections sont rendues
+   *   EN ENTIER plus bas sur la page, on évite ainsi le doublon.
+   */
+  variant?: 'summary' | 'detail';
 }
 
 /** Mini-soleil lumineux (halo radial SVG) propre à l'actif. */
@@ -62,9 +71,10 @@ function prettySource(source: string): string {
   return map[base.toLowerCase()] ?? base.replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-export function CosmicSignalCard({ entityId, signal, loading }: Props) {
+export function CosmicSignalCard({ entityId, signal, loading, variant = 'summary' }: Props) {
   const sun = sunColor(entityId);
   const router = useRouter();
+  const isDetail = variant === 'detail';
 
   // --- État vide (pas de signal récent) ---
   if (!signal) {
@@ -98,7 +108,8 @@ export function CosmicSignalCard({ entityId, signal, loading }: Props) {
 
   return (
     <Pressable
-      onPress={() => router.push(`/signal/${signal.id}`)}
+      onPress={isDetail ? undefined : () => router.push(`/signal-cosmique/${encodeURIComponent(signal.id)}`)}
+      disabled={isDetail}
       style={({ pressed }) => [
         styles.card,
         { borderColor: dir.color + '55', opacity: pressed ? 0.85 : 1 },
@@ -114,7 +125,7 @@ export function CosmicSignalCard({ entityId, signal, loading }: Props) {
         <View style={styles.horizonBadge}>
           <Text style={styles.horizonText}>{horizonLabel(signal.horizon)}</Text>
         </View>
-        <Text style={styles.chevron}>›</Text>
+        {isDetail ? null : <Text style={styles.chevron}>›</Text>}
       </View>
 
       {/* Bloc décision : direction + conviction */}
@@ -139,8 +150,9 @@ export function CosmicSignalCard({ entityId, signal, loading }: Props) {
         </View>
       </View>
 
-      {/* Pourquoi : evidence sourcée */}
-      {topEvidence.length > 0 ? (
+      {/* Pourquoi : evidence sourcée (teaser — masqué sur la page détail, où la
+          section Evidence complète est rendue dessous) */}
+      {!isDetail && topEvidence.length > 0 ? (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Pourquoi</Text>
           {topEvidence.map((ev, i) => (
@@ -155,8 +167,9 @@ export function CosmicSignalCard({ entityId, signal, loading }: Props) {
         </View>
       ) : null}
 
-      {/* Contre-scénario : ce qui invaliderait le signal */}
-      {counter ? (
+      {/* Contre-scénario : ce qui invaliderait le signal (teaser — masqué sur la
+          page détail, où tous les contre-scénarios sont listés dessous) */}
+      {!isDetail && counter ? (
         <View style={styles.counterBox}>
           <Text style={styles.counterTitle}>
             ⚠ Contre-scénario · {Math.round(counter.probability * 100)}%
@@ -168,8 +181,10 @@ export function CosmicSignalCard({ entityId, signal, loading }: Props) {
         </View>
       ) : null}
 
-      {/* Affordance de navigation (drill-down vers le détail complet) */}
-      <Text style={styles.detailHint}>Toucher la carte pour le détail complet →</Text>
+      {/* Affordance de navigation (drill-down) — inutile sur la page détail */}
+      {isDetail ? null : (
+        <Text style={styles.detailHint}>Toucher la carte pour le détail complet →</Text>
+      )}
 
       {/* Rappel discipline (anti vernis de certitude) */}
       <Text style={styles.disclaimer}>
@@ -204,6 +219,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   assetName: {
+    ...TitleShadow.strong,
     color: Cosmic.text,
     fontSize: 24,
     fontWeight: '600',
@@ -231,6 +247,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   direction: {
+    ...TitleShadow.strong,
     fontSize: 30,
     fontWeight: '800',
     letterSpacing: 1,

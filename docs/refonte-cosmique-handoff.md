@@ -66,10 +66,32 @@ Tap une ligne → page détail (encore en ancien style ; cosmique = bout 2).
 - ⓘ d'explication (glossaire in-app) sur `conv/accord/horizon`
 - Tap ligne → page détail (drill-down)
 
+## Page détail cosmique (bout 2 — FAIT, validé trader 2026-06-16) — ce qu'elle contient
+
+- **Route DÉDIÉE** `app/signal-cosmique/[id].tsx` — NE PAS confondre avec `app/signal/[id].tsx`,
+  resté **intact en thème clair**. Pourquoi : il n'existe qu'UNE route détail ; la passer en
+  cosmique « en place » faisait que les ANCIENS onglets encore clairs (Signals/Watchlist/Alerts)
+  ouvraient aussi le détail sombre (**bug remonté par la trader**). Solution : `cosmic-signal-row`
+  + `cosmic-signal-card` poussent vers `/signal-cosmique/...` ; les anciens onglets gardent
+  `/signal/...`. Route enregistrée dans `_layout.tsx` (header sombre). Au bout 5 (promotion du
+  cosmique en vrai onglet), on consolidera les deux routes.
+- **Héros** = `CosmicSignalCard variant="detail"` (nouveau prop) : non cliquable, **sans** le
+  teaser evidence/contre-scénario/lien — ces sections sont rendues EN ENTIER dessous (pas de
+  doublon). Le variant `summary` (défaut) garde le comportement riche+cliquable.
+- Sous le héros : flags AFN + proximité macro (cosmiques **inline**), bouton Suivre, **track
+  record** (logique 3 états ✓/≈/✗ + points MT5 **intégralement préservée**), hypothèse, hypothèse
+  LLM/template (ADR-012), contre-scénarios, evidence, triggers décisionnels + contexte technique
+  (collapsible cosmique inline), advisory, dates/ID.
+- **Relief « 3D » des titres** (demande trader) : `TitleShadow.strong/.soft` dans
+  `constants/cosmic.ts` — ombre portée RN (UNE seule ombre possible, donc pas d'extrusion
+  multi-couches). Appliqué aux gros titres héros (actif + direction) + titres de section + titre
+  « Signals ». Ajustable en 1 endroit (2 valeurs).
+- Badges AFN/macro + collapsible **ré-implémentés en cosmique inline** : les composants partagés
+  (`AntiFakeNewsBadge`, `NearMacroBadge`, `Collapsible`) dépendent du thème clair/sombre de
+  l'appareil → ils jureraient sur le fond sombre forcé. Légère duplication de logique triviale, assumée.
+
 ## Bouts RESTANTS (Passe 1)
 
-2. **Page détail en cosmique** — y placer `CosmicSignalCard` en haut + le reste
-   (hypothèse, contexte technique poids 0, evidence, contre-scénarios, track record).
 3. **Page Macro** — les cartes liquidité Fed/mondiale **riches** (qui existent déjà sur
    la Home actuelle) y déménagent ; un **bandeau contexte** compact en haut de Signals
    tape vers cette page. (PAS d'index « Stress » : donnée absente.)
@@ -162,7 +184,43 @@ manque mesuré »).
 - Backtests limités à ~41 j de couverture prix, **régime baissier** → dépendants période ;
   fenêtres chevauchantes → pas de significativité fine (cf. mémoire `measurement-overlapping-returns`).
 
-## Prochaine étape recommandée
+## Prochaines étapes possibles (options C / D / E proposées à la trader)
 
-(c) reprendre la refonte au **bout 2 (page détail cosmique)**, et/ou (e) préparer la
-**mesure des shadows non-sentiment** (le seul levier d'edge mesurable).
+La trader doit choisir. Les trois sont valides ; (c) et (e) recommandées.
+
+### (C) Reprendre la refonte UI — bout 3 : page Macro [RECOMMANDÉ]
+Bout 2 (page détail cosmique) **FAIT et validé** (cf. section dédiée plus haut). Suite directe =
+bout 3 : déménager les cartes liquidité Fed/mondiale **riches** (déjà sur la Home actuelle) vers
+une page Macro cosmique, avec un **bandeau contexte** compact en haut de Signals qui tape vers
+elle. PAS d'index « Stress » (donnée absente). Puis bouts 4→6 (cf. plus haut).
+
+### (D) Backtest de la valeur prédictive INDIVIDUELLE de chaque source
+But : mesurer si Fear & Greed, Google News, GDELT… pris **séparément** ont un pouvoir
+prédictif (corrélation biais source → rendement futur), pour savoir laquelle (s'il y en
+a une) mérite plus de poids — vs lesquelles ne sont que du bruit.
+- ⚠️ **Pas de script clé-en-main pour le sentiment.** `backtest_numeric_sources.py`
+  existe mais pour les **sources numériques** (DXY/COT). `measure_coingecko_predictive.py`
+  fait ce type de mesure pour CoinGecko → **s'en inspirer** pour bâtir l'équivalent
+  par-source sentiment (lecture seule DB + klines prix).
+- Cadre rigueur obligatoire : fenêtres **non chevauchantes**, comparaison vs
+  **Always SHORT** (pas Random), N par source, IC/Spearman (cf. mémoires
+  `measurement-rigor-controls`, `measurement-overlapping-returns`).
+- Caveat honnête attendu : vu le NO-GO + « même famille sentiment », il est **probable**
+  qu'aucune source sentiment ne ressorte prédictive. À mesurer quand même avant d'affirmer.
+
+### (E) Mesurer les shadows NON-SENTIMENT — le vrai levier d'edge [RECOMMANDÉ sur le fond]
+C'est là qu'un edge peut exister (familles différentes du sentiment). Deux familles
+**déjà collectées en shadow**, jamais branchées, à mesurer **~2026-06-17** :
+- **Dérivés Binance (ADR-023)** : `python -m tik_core.scripts.measure_btc_derivatives`
+  (funding / open interest / long-short ratio). Mémoire `binance-derivatives-shadow-live`.
+- **Flux ETF spot BTC (ADR-024)** : `python -m tik_core.scripts.measure_btc_etf_flows`
+  (inflow/outflow net quotidien, SoSoValue). Mémoire `btc-etf-flows-shadow-live` (IC
+  préliminaire ~0, à confirmer).
+- Règle absolue : **mesurer ≥ 2 semaines (IC / hit rate / gain apparié vs Always SHORT)
+  AVANT tout enrôlement** sur le `combined_bias` (CLAUDE.md « la vérité empirique »).
+- ⚠️ Lancer ces scripts **lecture seule** (ils lisent Redis/DB, ne mutent rien) ;
+  vérifier d'abord `crontab -l` + les logs `measure-*-cron.log` (mémoire
+  `prefer-check-before-rerun` : ne pas re-mesurer pour rien).
+
+**Recommandation :** (C) pour continuer l'UI commencée, (E) sur le fond car c'est le seul
+levier d'edge mesurable. (D) utile mais probablement un cul-de-sac (sentiment).

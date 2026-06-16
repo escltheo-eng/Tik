@@ -54,6 +54,14 @@ function RootLayoutNav() {
             <Stack.Screen name="login" options={{ headerShown: false }} />
             <Stack.Screen name="signal/[id]" options={{ title: 'Détail signal' }} />
             <Stack.Screen
+              name="signal-cosmique/[id]"
+              options={{
+                title: 'Détail signal',
+                headerStyle: { backgroundColor: '#06070d' },
+                headerTintColor: '#e8ecf5',
+              }}
+            />
+            <Stack.Screen
               name="cosmique"
               options={{
                 title: '✨ Aperçu cosmique',
