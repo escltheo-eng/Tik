@@ -1,13 +1,12 @@
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { CosmicBackground } from '@/components/cosmic/cosmic-background';
 import { PersonalHitRateCard } from '@/components/watchlist/personal-hit-rate-card';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { Cosmic, TitleShadow, directionMeta, serifTitleFamily } from '@/constants/cosmic';
+import { Fonts } from '@/constants/theme';
 import { getHitRate, reportFeedback } from '@/src/api/endpoints';
 import type { HitRate } from '@/src/api/types';
 import { useAuth } from '@/src/auth/AuthContext';
@@ -38,30 +37,18 @@ const OUTCOME_LABELS: Record<WatchlistEntry['outcome'], string> = {
   n_a: 'N/A',
 };
 
+// Couleurs d'outcome adaptées au fond sombre cosmique (texte/bordure).
 const OUTCOME_COLORS: Record<WatchlistEntry['outcome'], string> = {
-  pending: '#7f8c8d',
-  confirmed: '#27ae60',
-  refuted: '#c0392b',
-  inconclusive: '#e67e22',
-  n_a: '#95a5a6',
+  pending: '#8693a8',
+  confirmed: Cosmic.long,
+  refuted: Cosmic.short,
+  inconclusive: Cosmic.neutral,
+  n_a: Cosmic.textFaint,
 };
-
-function directionColor(direction: string): string {
-  switch (direction) {
-    case 'long':
-      return '#27ae60';
-    case 'short':
-      return '#c0392b';
-    default:
-      return '#7f8c8d';
-  }
-}
 
 export default function WatchlistScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const colorScheme = useColorScheme() ?? 'light';
-  const palette = Colors[colorScheme];
   const { entries, remove, setOutcome, clear, hydrated } = useWatchlist();
   const { client, isAuthenticated } = useAuth();
   useTick();
@@ -169,39 +156,22 @@ export default function WatchlistScreen() {
     [client, setOutcome],
   );
 
-  // F2 audit UX 2026-05-17 : 2 lignes lisibles.
-  //   Ligne 1 : entity · direction badge · horizon   |   timestamp
-  //   Ligne 2 : outcome badge · veracity %           (confidence retiré,
-  //             déjà visible dans le détail du signal)
+  // 2 lignes lisibles : (1) entity · direction · horizon · âge ; (2) outcome · veracity.
   const renderEntry = (entry: WatchlistEntry) => {
-    const dirColor = directionColor(entry.direction);
+    const dir = directionMeta(entry.direction);
     const outcomeColor = OUTCOME_COLORS[entry.outcome];
     return (
       <Pressable
         key={entry.signalId}
-        onPress={() => router.push(`/signal/${encodeURIComponent(entry.signalId)}`)}
-        style={({ pressed }) => [
-          styles.row,
-          {
-            borderColor: palette.icon,
-            backgroundColor: pressed
-              ? colorScheme === 'dark'
-                ? '#1a1d20'
-                : '#f5f5f5'
-              : 'transparent',
-          },
-        ]}>
+        onPress={() => router.push(`/signal-cosmique/${encodeURIComponent(entry.signalId)}`)}
+        style={({ pressed }) => [styles.row, { opacity: pressed ? 0.7 : 1 }]}>
         <View style={styles.rowLine}>
-          <ThemedText type="defaultSemiBold" style={styles.entityLabel}>
-            {entry.entityId}
-          </ThemedText>
-          <View style={[styles.directionBadge, { backgroundColor: dirColor }]}>
-            <ThemedText style={styles.directionLabel}>
-              {entry.direction.toUpperCase()}
-            </ThemedText>
+          <Text style={styles.entityLabel}>{entry.entityId}</Text>
+          <View style={[styles.tag, { backgroundColor: dir.color + '22', borderColor: dir.color + '66' }]}>
+            <Text style={[styles.tagText, { color: dir.color }]}>{dir.label}</Text>
           </View>
-          <ThemedText style={styles.horizonLabel}>{entry.horizon}</ThemedText>
-          <ThemedText style={styles.timestamp}>{timeAgo(entry.addedAt)}</ThemedText>
+          <Text style={styles.horizonLabel}>{entry.horizon}</Text>
+          <Text style={styles.timestamp}>{timeAgo(entry.addedAt)}</Text>
         </View>
         <View style={styles.rowLine}>
           <Pressable
@@ -211,19 +181,14 @@ export default function WatchlistScreen() {
             accessibilityLabel="Modifier le résultat observé"
             style={({ pressed }) => [
               styles.outcomeBadge,
-              {
-                borderColor: outcomeColor,
-                opacity: pressed ? 0.55 : 1,
-              },
+              { borderColor: outcomeColor, opacity: pressed ? 0.55 : 1 },
             ]}>
-            <ThemedText style={[styles.outcomeLabel, { color: outcomeColor }]}>
+            <Text style={[styles.outcomeLabel, { color: outcomeColor }]}>
               {OUTCOME_LABELS[entry.outcome]}
               {entry.manuallyResolved ? ' ✎' : ''}
-            </ThemedText>
+            </Text>
           </Pressable>
-          <ThemedText style={styles.veracityLabel}>
-            verac {(entry.veracity * 100).toFixed(0)}%
-          </ThemedText>
+          <Text style={styles.veracityLabel}>verac {(entry.veracity * 100).toFixed(0)}%</Text>
         </View>
         <Pressable
           onPress={() => confirmRemove(entry)}
@@ -231,57 +196,57 @@ export default function WatchlistScreen() {
           style={({ pressed }) => [styles.removeBtn, { opacity: pressed ? 0.4 : 0.7 }]}
           accessibilityRole="button"
           accessibilityLabel="Retirer de la watchlist">
-          <ThemedText style={styles.removeBtnLabel}>×</ThemedText>
+          <Text style={styles.removeBtnLabel}>×</Text>
         </Pressable>
       </Pressable>
     );
   };
 
   return (
-    <ThemedView style={[styles.container, { paddingTop: insets.top + 8 }]}>
-      <View style={styles.header}>
-        <ThemedText type="title">Watchlist</ThemedText>
-        <ThemedText style={styles.subtitle}>
-          Signaux marqués pour follow-up. L&apos;outcome est résolu automatiquement à l&apos;expiration de l&apos;horizon (1h flash / 5j swing / 90j macro). Tape un badge pour ajuster le verdict manuellement.
-        </ThemedText>
-        {personalStats.total > 0 ? (
-          <PersonalHitRateCard
-            stats={personalStats}
-            globalReference={globalRef}
-            comparisonLabel={comparison?.label ?? null}
-            loading={globalLoading}
-            error={globalError}
-          />
-        ) : null}
-        {personalStats.total > 0 ? (
-          <View style={styles.actions}>
-            <Pressable
-              onPress={clear}
-              style={({ pressed }) => [
-                styles.actionBtn,
-                { borderColor: palette.icon, opacity: pressed ? 0.6 : 1 },
-              ]}>
-              <ThemedText style={{ color: palette.text, fontSize: 13 }}>Tout effacer</ThemedText>
-            </Pressable>
-          </View>
-        ) : null}
-      </View>
+    <CosmicBackground>
+      <View style={[styles.container, { paddingTop: insets.top + 8 }]}>
+        <View style={styles.header}>
+          <Text style={styles.title}>Watchlist</Text>
+          <Text style={styles.subtitle}>
+            {"Signaux marqués pour follow-up. L'outcome est résolu automatiquement à l'expiration " +
+              "de l'horizon (1h flash / 5j swing / 90j macro). Tape un badge pour ajuster le " +
+              'verdict manuellement.'}
+          </Text>
+          {personalStats.total > 0 ? (
+            <PersonalHitRateCard
+              stats={personalStats}
+              globalReference={globalRef}
+              comparisonLabel={comparison?.label ?? null}
+              loading={globalLoading}
+              error={globalError}
+            />
+          ) : null}
+          {personalStats.total > 0 ? (
+            <View style={styles.actions}>
+              <Pressable
+                onPress={clear}
+                style={({ pressed }) => [styles.actionBtn, { opacity: pressed ? 0.6 : 1 }]}>
+                <Text style={styles.actionLabel}>Tout effacer</Text>
+              </Pressable>
+            </View>
+          ) : null}
+        </View>
 
-      {!hydrated ? null : entries.length === 0 ? (
-        <ThemedView style={styles.empty}>
-          <ThemedText style={styles.emptyTitle}>Aucun signal suivi</ThemedText>
-          <ThemedText style={styles.emptyText}>
-            Ouvre un signal depuis l&apos;onglet Signals et tape sur ★ Suivre pour le marquer.
-            Tu pourras ensuite suivre l&apos;évolution dans cet onglet et mesurer ton hit rate
-            personnel.
-          </ThemedText>
-        </ThemedView>
-      ) : (
-        <ScrollView contentContainerStyle={styles.listContent}>
-          {sortedEntries.map(renderEntry)}
-        </ScrollView>
-      )}
-    </ThemedView>
+        {!hydrated ? null : entries.length === 0 ? (
+          <View style={styles.empty}>
+            <Text style={styles.emptyTitle}>Aucun signal suivi</Text>
+            <Text style={styles.emptyText}>
+              {"Ouvre un signal depuis l'onglet Signals et tape sur ★ Suivre pour le marquer. Tu " +
+                "pourras ensuite suivre l'évolution dans cet onglet et mesurer ton hit rate personnel."}
+            </Text>
+          </View>
+        ) : (
+          <ScrollView contentContainerStyle={styles.listContent}>
+            {sortedEntries.map(renderEntry)}
+          </ScrollView>
+        )}
+      </View>
+    </CosmicBackground>
   );
 }
 
@@ -294,9 +259,18 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     gap: 8,
   },
+  title: {
+    ...TitleShadow.glow,
+    fontFamily: serifTitleFamily,
+    color: Cosmic.text,
+    fontSize: 28,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
   subtitle: {
+    color: Cosmic.textDim,
     fontSize: 13,
-    opacity: 0.7,
+    lineHeight: 18,
   },
   actions: {
     flexDirection: 'row',
@@ -305,9 +279,14 @@ const styles = StyleSheet.create({
   },
   actionBtn: {
     borderWidth: 1,
+    borderColor: Cosmic.borderStrong,
     borderRadius: 16,
     paddingVertical: 6,
     paddingHorizontal: 12,
+  },
+  actionLabel: {
+    color: Cosmic.textDim,
+    fontSize: 13,
   },
   empty: {
     flex: 1,
@@ -317,12 +296,13 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   emptyTitle: {
+    color: Cosmic.text,
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   emptyText: {
+    color: Cosmic.textDim,
     textAlign: 'center',
-    opacity: 0.6,
     fontSize: 14,
     lineHeight: 20,
   },
@@ -331,8 +311,10 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   row: {
+    backgroundColor: Cosmic.card,
+    borderColor: Cosmic.border,
     borderWidth: 1,
-    borderRadius: 8,
+    borderRadius: 12,
     padding: 12,
     paddingRight: 40,
     gap: 8,
@@ -344,42 +326,48 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   entityLabel: {
+    color: Cosmic.text,
     fontSize: 15,
-  },
-  directionBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 4,
-  },
-  directionLabel: {
-    color: '#ffffff',
-    fontSize: 10,
     fontWeight: '700',
-    letterSpacing: 0.4,
+  },
+  tag: {
+    borderWidth: 1,
+    borderRadius: 7,
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    minWidth: 58,
+    alignItems: 'center',
+  },
+  tagText: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
   horizonLabel: {
+    color: Cosmic.textFaint,
     fontSize: 12,
-    opacity: 0.7,
+    fontFamily: Fonts.mono,
     textTransform: 'uppercase',
   },
   timestamp: {
+    color: Cosmic.textFaint,
     fontSize: 11,
-    opacity: 0.6,
     marginLeft: 'auto',
   },
   outcomeBadge: {
     borderWidth: 1,
-    borderRadius: 4,
+    borderRadius: 6,
     paddingHorizontal: 8,
     paddingVertical: 2,
   },
   outcomeLabel: {
     fontSize: 11,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   veracityLabel: {
+    color: Cosmic.textDim,
     fontSize: 12,
-    opacity: 0.75,
+    fontFamily: Fonts.mono,
   },
   removeBtn: {
     position: 'absolute',
@@ -391,6 +379,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   removeBtnLabel: {
+    color: Cosmic.textDim,
     fontSize: 22,
     lineHeight: 24,
     fontWeight: '700',
