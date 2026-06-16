@@ -3,20 +3,24 @@ import React from 'react';
 
 import { HapticTab } from '@/components/haptic-tab';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { Cosmic } from '@/constants/cosmic';
 import { useAlerts } from '@/src/alerts/AlertsContext';
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
   const { unreadCount } = useAlerts();
 
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
+        // Barre d'onglets cosmique (refonte γ, bout 5) — sombre, accent ambre.
+        tabBarActiveTintColor: Cosmic.accent,
+        tabBarInactiveTintColor: Cosmic.textFaint,
         headerShown: false,
         tabBarButton: HapticTab,
+        tabBarStyle: {
+          backgroundColor: Cosmic.bgDeep,
+          borderTopColor: Cosmic.border,
+        },
       }}>
       <Tabs.Screen
         name="index"

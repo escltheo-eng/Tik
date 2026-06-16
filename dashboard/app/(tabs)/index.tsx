@@ -1,4 +1,3 @@
-import { useRouter } from 'expo-router';
 import type { ReactNode } from 'react';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, StyleSheet } from 'react-native';
@@ -90,7 +89,6 @@ export default function HomeScreen() {
   const { client, baseUrl } = useAuth();
   const colorScheme = useColorScheme() ?? 'light';
   const palette = Colors[colorScheme];
-  const router = useRouter();
 
   const [activeTab, setActiveTab] = useState<HomeTab>('market');
   const [flashCardEnabled] = useFlashCardSetting();
@@ -191,14 +189,6 @@ export default function HomeScreen() {
   // Marché : vue trading manuel quotidien (cf. backlog #5 Levier B+D).
   const renderMarketTab = () => (
     <>
-      <Pressable
-        onPress={() => router.push('/cosmique')}
-        style={({ pressed }) => [styles.cosmicTeaser, { opacity: pressed ? 0.8 : 1 }]}>
-        <ThemedText style={styles.cosmicTeaserText}>
-          ✨ Aperçu refonte cosmique (échantillon) →
-        </ThemedText>
-      </Pressable>
-
       <SignalFreshnessBanner />
       <ThemedView style={[styles.disciplineCard, { borderColor: '#e67e22' }]}>
         <ThemedText style={styles.disciplineTitle}>
@@ -618,21 +608,5 @@ const styles = StyleSheet.create({
   disciplineLine: {
     fontSize: 13,
     lineHeight: 18,
-  },
-  cosmicTeaser: {
-    marginTop: 8,
-    marginBottom: 4,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#f5b042',
-    backgroundColor: 'rgba(245, 176, 66, 0.10)',
-  },
-  cosmicTeaserText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#f5b042',
-    textAlign: 'center',
   },
 });

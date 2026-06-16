@@ -1,3 +1,23 @@
+/**
+ * Onglet « Signals » cosmique (refonte γ — promu en vrai onglet au bout 5).
+ *
+ * Était l'écran d'aperçu `app/cosmique.tsx` ; déplacé ici comme onglet Signals
+ * principal (le teaser et l'ancien onglet thémé ont été retirés).
+ *
+ * Port cosmique de l'ancien onglet Signals (que la trader appréciait) :
+ *   - filtres en haut : actif (Tous/BTC/GOLD) · horizon (Flash/Swing/Macro) ·
+ *     temporalité (24h/5j/30j)
+ *   - statut de connexion live
+ *   - pastille « Court terme BTC » (stabilité flash) — BTC only (pas de flash GOLD)
+ *   - pastille « GOLD swing » (stabilité directionnelle swing) — l'équivalent honnête
+ *   - liste des signaux (lignes cosmiques) → tap = page détail (drill-down)
+ *   - % expliqués via le ⓘ (glossaire in-app)
+ *
+ * Pas de cartes BTC/GOLD résumées en haut (doublon avec la liste, retiré sur
+ * retour trader). La carte « riche » (drivers + contre-scénario) ira en haut de
+ * la page détail (bout 2). Données 100 % réelles.
+ */
+
 import { useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import {
@@ -7,23 +27,22 @@ import {
   Pressable,
   RefreshControl,
   StyleSheet,
+  Text,
   View,
   type ListRenderItem,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { AntiFakeNewsBadge } from '@/components/dashboard/anti-fake-news-badge';
-import { NearMacroBadge } from '@/components/dashboard/near-macro-badge';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Signal } from '@/src/api/types';
+import { CosmicBackground } from '@/components/cosmic/cosmic-background';
+import { CosmicSignalRow } from '@/components/cosmic/cosmic-signal-row';
+import { InfoTooltip } from '@/components/ui/info-tooltip';
+import { Cosmic, TitleShadow, serifTitleFamily } from '@/constants/cosmic';
+import type { MacroRegime, Signal } from '@/src/api/types';
 import { computeFlashStability } from '@/src/flash/stability';
+import { useMacroRegime } from '@/src/hooks/useMacroRegime';
 import { useSignalStream } from '@/src/hooks/useSignalStream';
 import { useTick } from '@/src/hooks/use-tick';
-import { formatAmplitudePct, horizonLabel } from '@/src/utils/amplitude';
-import { parseUtcIso, timeAgo } from '@/src/utils/time';
+import { computeDirectionStability } from '@/src/signals/stability';
+import { parseUtcIso } from '@/src/utils/time';
 
 const ENTITY_FILTERS: { label: string; value: string | undefined }[] = [
   { label: 'Tous', value: undefined },
@@ -38,28 +57,11 @@ const HORIZON_FILTERS: { label: string; value: string | undefined }[] = [
   { label: 'Macro', value: 'macro' },
 ];
 
-// Fenêtres temporelles pour le preload signaux historiques.
-// 24h utilise /signals/latest (cap 200, mais on demande 100). 5j/30j
-// utilisent /signals (search) qui supporte jusqu'à 720h et limit 1000.
-// Le WebSocket continue de prepend les nouveaux signaux par-dessus.
-// Avec ~100 signaux/jour, 30j ≈ 3000 signaux → cap backend 1000 → on
-// affiche les 1000 plus récents sur la fenêtre demandée (≈ 10j réels).
 const DURATION_FILTERS: { label: string; sinceHours: number | undefined; preloadLimit: number }[] = [
   { label: '24h', sinceHours: undefined, preloadLimit: 100 },
-  { label: '5j',  sinceHours: 120,       preloadLimit: 500 },
-  { label: '30j', sinceHours: 720,       preloadLimit: 1000 },
+  { label: '5j', sinceHours: 120, preloadLimit: 500 },
+  { label: '30j', sinceHours: 720, preloadLimit: 1000 },
 ];
-
-function directionColor(direction: string): string {
-  switch (direction) {
-    case 'long':
-      return '#27ae60';
-    case 'short':
-      return '#c0392b';
-    default:
-      return '#7f8c8d';
-  }
-}
 
 function connectionLabel(state: string): string {
   switch (state) {
@@ -81,27 +83,42 @@ function connectionLabel(state: string): string {
 function connectionColor(state: string): string {
   switch (state) {
     case 'connected':
-      return '#27ae60';
+      return Cosmic.long;
     case 'connecting':
     case 'reconnecting':
-      return '#f39c12';
+      return Cosmic.neutral;
     case 'auth_error':
-      return '#c0392b';
+      return Cosmic.short;
     default:
-      return '#7f8c8d';
+      return Cosmic.textFaint;
   }
+}
+
+/** Libellé + couleur compacts pour le bandeau contexte macro (haut de Signals). */
+function macroBannerInfo(regime: MacroRegime | null): { text: string; color: string } {
+  const r = regime?.global_liquidity?.regime ?? regime?.net_liquidity?.regime ?? null;
+  if (r === 'expansion') return { text: 'liquidité mondiale en expansion', color: Cosmic.long };
+  if (r === 'contraction') return { text: 'liquidité mondiale en contraction', color: Cosmic.neutral };
+  if (r === 'neutral') return { text: 'liquidité mondiale stable', color: Cosmic.textDim };
+  return { text: 'voir le contexte', color: Cosmic.textDim };
+}
+
+interface Pastille {
+  icon: string;
+  color: string;
+  label: string;
+  hint: string;
+  onPress?: () => void;
 }
 
 export default function SignalsScreen() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
-  const colorScheme = useColorScheme() ?? 'light';
-  const palette = Colors[colorScheme];
+  const macro = useMacroRegime();
+  const macroBanner = macroBannerInfo(macro.regime);
 
   const [entity, setEntity] = useState<string | undefined>(undefined);
   const [horizon, setHorizon] = useState<string | undefined>(undefined);
   const [durationIdx, setDurationIdx] = useState<number>(0);
-
   const duration = DURATION_FILTERS[durationIdx];
 
   const { signals, connectionState, error, preloadLoading, preloadError, refresh } = useSignalStream({
@@ -112,8 +129,6 @@ export default function SignalsScreen() {
     maxSignals: duration.preloadLimit,
   });
 
-  // Pull-to-refresh : rattrapage manuel léger (un geste vs reload complet de
-  // l'app). Complète le rattrapage auto du hook (reconnexion + retour 1er plan).
   const [refreshing, setRefreshing] = useState(false);
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -123,25 +138,16 @@ export default function SignalsScreen() {
       setRefreshing(false);
     }
   }, [refresh]);
-  // Force re-render des items FlatList toutes les 30 s pour rafraîchir les
-  // libellés "il y a X" (la FlatList mémoïse ses rows par défaut).
+
   const tick = useTick();
 
-  // Stabilité flash BTC (Paquet 42, logique pure réutilisée) : le flash flippe
-  // long↔short sans edge (~7 min). On garde la direction visible mais on signale
-  // quand le court terme est haché. Calculé sur les signaux bruts (indépendant
-  // des filtres actifs) ; `tick` rafraîchit la fenêtre glissante. Re-render
-  // FlatList via extraData.
+  // Pastille BTC : stabilité flash (haché ↔ calme). BTC only (pas de flash GOLD).
   const flashStability = useMemo(
     () => computeFlashStability(signals, { entityId: 'BTC' }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [signals, tick],
   );
   const flashChoppy = flashStability.state === 'choppy';
-
-  // (B) Le badge par-ligne ne s'affiche que sur les flash BTC RÉCENTS : un flash
-  // > 1h n'est plus tradable (TTL signal ≈ 1h, ADR-005), inutile d'y coller un
-  // repère "court terme". Borne = fenêtre de stabilité (45 min).
   const flashRecentCutoffMs = flashStability.windowMinutes * 60_000;
   const isRecentFlashBtc = useCallback(
     (s: Signal) =>
@@ -151,105 +157,66 @@ export default function SignalsScreen() {
     [flashRecentCutoffMs],
   );
 
-  // Explication partagée (bandeau d'état + badge par-ligne).
+  // Pastille GOLD : stabilité directionnelle swing (équivalent honnête, GOLD n'a
+  // pas de flash). Fenêtre 48h.
+  const goldStability = useMemo(
+    () => computeDirectionStability(signals, { entityId: 'GOLD', horizon: 'swing', windowHours: 48 }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [signals, tick],
+  );
+
   const openChoppyExplain = useCallback(() => {
     Alert.alert(
       'Court terme indécis (flash BTC)',
-      'Le flash a changé plusieurs fois de direction (long↔short) sur les ' +
-        'dernières ~45 min. Le très court terme est haché : la direction affichée ' +
-        'sert au timing, pas à suivre telle quelle.\n\n' +
-        'À ne pas confondre avec le badge anti-fake-news (AFN, orange) : l’AFN ' +
-        'signale un désaccord entre sources SUR UN signal ; ce repère signale que ' +
-        'la direction CHANGE souvent DANS LE TEMPS.',
+      'Le flash a changé plusieurs fois de direction (long↔short) sur les ~45 dernières ' +
+        'min. Le très court terme est haché : la direction sert au timing, pas à suivre telle quelle.',
       [{ text: 'OK', style: 'default' }],
     );
   }, []);
 
-  // Bandeau d'état "court terme BTC" : synthèse haché / calme / pas de données.
-  // Visible seulement quand BTC est dans le filtre (sur GOLD seul ça n'a aucun
-  // sens — pas de flash GOLD, ADR-005).
+  const openGoldExplain = useCallback(() => {
+    Alert.alert(
+      'GOLD swing : stabilité de la direction',
+      'GOLD n’a pas de moteur « flash » (Yahoo a 15 min de retard). On regarde donc si la ' +
+        'direction de ses signaux SWING tient (stable) ou bascule long↔short (hésitante) ' +
+        'sur les dernières 48 h. Aide à repérer une direction nette vs un marché qui hésite. ' +
+        'Ce n’est pas une garantie de sens (aucun edge prouvé).',
+      [{ text: 'OK', style: 'default' }],
+    );
+  }, []);
+
   const showFlashBanner = entity === undefined || entity === 'BTC';
-  const flashBanner = useMemo(() => {
+  const flashPastille: Pastille = useMemo(() => {
     if (flashStability.state === 'choppy') {
-      return {
-        icon: '🔀',
-        color: '#5b54c9',
-        label: 'haché',
-        hint: 'la direction flip souvent — mauvais moment pour entrer sur du court terme',
-      };
+      return { icon: '🔀', color: '#a79bff', label: 'Court terme BTC : haché', hint: 'la direction flip souvent — mauvais moment pour du court terme', onPress: openChoppyExplain };
     }
     if (flashStability.state === 'no_data') {
-      return {
-        icon: '•',
-        color: '#7f8c8d',
-        label: 'pas assez de données',
-        hint: 'peu de signaux flash récents sur la fenêtre',
-      };
+      return { icon: '•', color: Cosmic.textDim, label: 'Court terme BTC : pas assez de données', hint: 'peu de signaux flash récents', onPress: openChoppyExplain };
     }
-    return {
-      icon: '✓',
-      color: '#27ae60',
-      label: 'calme',
-      hint: 'direction du court terme lisible sur les ~45 dernières min',
-    };
-  }, [flashStability.state]);
+    return { icon: '✓', color: Cosmic.long, label: 'Court terme BTC : calme', hint: 'direction du court terme lisible (~45 min)', onPress: openChoppyExplain };
+  }, [flashStability.state, openChoppyExplain]);
 
-  const renderItem: ListRenderItem<Signal> = useMemo(() => {
-    const SignalRow: ListRenderItem<Signal> = ({ item }) => (
-      <Pressable
-        onPress={() => router.push(`/signal/${encodeURIComponent(item.id)}`)}
-        style={({ pressed }) => [
-          styles.row,
-          {
-            borderColor: palette.icon,
-            backgroundColor: pressed ? (colorScheme === 'dark' ? '#1a1d20' : '#f5f5f5') : 'transparent',
-          },
-        ]}>
-        <ThemedView style={[styles.rowHeader, { backgroundColor: 'transparent' }]}>
-          <ThemedText type="defaultSemiBold">{item.entity_id}</ThemedText>
-          <ThemedText style={styles.timestamp}>{timeAgo(item.timestamp)}</ThemedText>
-        </ThemedView>
+  const showGoldBanner = entity === undefined || entity === 'GOLD';
+  const goldPastille: Pastille = useMemo(() => {
+    if (goldStability.state === 'stable') {
+      return { icon: '✓', color: Cosmic.long, label: 'GOLD swing : direction stable', hint: 'pas de bascule sur 48 h', onPress: openGoldExplain };
+    }
+    if (goldStability.state === 'hesitant') {
+      return { icon: '🔀', color: Cosmic.neutral, label: 'GOLD swing : hésitante', hint: 'la direction a basculé récemment', onPress: openGoldExplain };
+    }
+    return { icon: '•', color: Cosmic.textDim, label: 'GOLD swing : pas assez de données', hint: 'peu de signaux swing GOLD récents', onPress: openGoldExplain };
+  }, [goldStability.state, openGoldExplain]);
 
-        <ThemedView style={[styles.rowMiddle, { backgroundColor: 'transparent' }]}>
-          <View style={[styles.directionBadge, { backgroundColor: directionColor(item.direction) }]}>
-            <ThemedText style={styles.directionLabel}>{item.direction.toUpperCase()}</ThemedText>
-          </View>
-          <ThemedText style={styles.horizonLabel}>{horizonLabel(item.horizon)}</ThemedText>
-          <AntiFakeNewsBadge status={item.circuit_breaker_status} compact />
-          {item.advisory?.near_macro_event ? (
-            <NearMacroBadge data={item.advisory.near_macro_event} compact />
-          ) : null}
-          {flashChoppy && isRecentFlashBtc(item) ? (
-            <Pressable
-              onPress={openChoppyExplain}
-              hitSlop={6}
-              accessibilityRole="button"
-              accessibilityLabel="Court terme indécis — appuyer pour en savoir plus">
-              <ThemedText style={styles.choppyTag}>🔀 court terme indécis</ThemedText>
-            </Pressable>
-          ) : null}
-        </ThemedView>
-
-        <ThemedView style={[styles.rowFooter, { backgroundColor: 'transparent' }]}>
-          <ThemedText style={styles.metric}>
-            conv {(item.confidence * 100).toFixed(0)}%
-          </ThemedText>
-          <ThemedText style={styles.metric}>
-            verac {(item.veracity * 100).toFixed(0)}%
-          </ThemedText>
-          <ThemedText style={styles.metric}>
-            sources {item.sources_count}
-          </ThemedText>
-          {item.advisory?.expected_amplitude_pct ? (
-            <ThemedText style={styles.metric}>
-              ampl ±{formatAmplitudePct(item.advisory.expected_amplitude_pct)}%
-            </ThemedText>
-          ) : null}
-        </ThemedView>
-      </Pressable>
-    );
-    return SignalRow;
-  }, [router, palette.icon, colorScheme, flashChoppy, isRecentFlashBtc, openChoppyExplain]);
+  const renderItem: ListRenderItem<Signal> = useCallback(
+    ({ item }) => (
+      <CosmicSignalRow
+        signal={item}
+        showChoppy={flashChoppy && isRecentFlashBtc(item)}
+        onChoppyPress={openChoppyExplain}
+      />
+    ),
+    [flashChoppy, isRecentFlashBtc, openChoppyExplain],
+  );
 
   const filterPill = (label: string, active: boolean, onPress: () => void) => (
     <Pressable
@@ -258,120 +225,139 @@ export default function SignalsScreen() {
       style={({ pressed }) => [
         styles.pill,
         {
-          backgroundColor: active ? palette.tint : 'transparent',
-          borderColor: active ? palette.tint : palette.icon,
+          backgroundColor: active ? Cosmic.accent : 'transparent',
+          borderColor: active ? Cosmic.accent : Cosmic.borderStrong,
           opacity: pressed ? 0.7 : 1,
         },
       ]}>
-      <ThemedText style={[styles.pillLabel, { color: active ? '#ffffff' : palette.text }]}>
-        {label}
-      </ThemedText>
+      <Text style={[styles.pillLabel, { color: active ? Cosmic.bgDeep : Cosmic.textDim }]}>{label}</Text>
     </Pressable>
   );
 
+  const renderPastille = (p: Pastille, show: boolean) =>
+    show ? (
+      <Pressable onPress={p.onPress} style={[styles.pastille, { borderColor: p.color + '66' }]}>
+        <Text style={[styles.pastilleLabel, { color: p.color }]}>
+          {p.icon} {p.label}
+        </Text>
+        <Text style={styles.pastilleHint}>{p.hint}</Text>
+      </Pressable>
+    ) : null;
+
+  const ListHeader = (
+    <View style={styles.header}>
+      <View style={styles.statusRow}>
+        <Text style={styles.title}>Signals</Text>
+        <View style={styles.statusInline}>
+          <View style={[styles.dot, { backgroundColor: connectionColor(connectionState) }]} />
+          <Text style={[styles.statusText, { color: connectionColor(connectionState) }]}>
+            {connectionLabel(connectionState)}
+          </Text>
+        </View>
+      </View>
+
+      {/* Bandeau contexte macro compact → page Macro cosmique (bout 3) */}
+      <Pressable
+        onPress={() => router.push('/macro-cosmique')}
+        style={({ pressed }) => [styles.macroBanner, { opacity: pressed ? 0.7 : 1 }]}
+        accessibilityRole="button"
+        accessibilityLabel="Voir le contexte macro">
+        <Text style={styles.macroBannerText} numberOfLines={1}>
+          🌐 Macro · <Text style={{ color: macroBanner.color }}>{macroBanner.text}</Text>
+        </Text>
+        <Text style={styles.macroChevron}>›</Text>
+      </Pressable>
+
+      <View style={styles.filterRow}>
+        {DURATION_FILTERS.map((d, idx) => filterPill(d.label, durationIdx === idx, () => setDurationIdx(idx)))}
+      </View>
+      <View style={styles.filterRow}>
+        {ENTITY_FILTERS.map((f) => filterPill(f.label, entity === f.value, () => setEntity(f.value)))}
+      </View>
+      <View style={styles.filterRow}>
+        {HORIZON_FILTERS.map((f) => filterPill(f.label, horizon === f.value, () => setHorizon(f.value)))}
+      </View>
+
+      {renderPastille(flashPastille, showFlashBanner)}
+      {renderPastille(goldPastille, showGoldBanner)}
+
+      <View style={styles.legendRow}>
+        <Text style={styles.legendText}>conv</Text>
+        <InfoTooltip entryKey="conviction" />
+        <Text style={styles.legendSep}>·</Text>
+        <Text style={styles.legendText}>accord</Text>
+        <InfoTooltip entryKey="veracity" />
+        <Text style={styles.legendSep}>·</Text>
+        <Text style={styles.legendText}>horizon</Text>
+        <InfoTooltip entryKey="horizon" />
+      </View>
+
+      {error || preloadError ? (
+        <View style={styles.errorBox}>
+          <Text style={styles.errorText}>{error ?? preloadError}</Text>
+        </View>
+      ) : null}
+    </View>
+  );
+
   return (
-    <ThemedView style={[styles.container, { paddingTop: insets.top + 8 }]}>
-      <ThemedView style={styles.header}>
-        <ThemedView style={styles.headerTop}>
-          <ThemedText type="title">Signals</ThemedText>
-          <ThemedView style={styles.statusInline}>
-            <View style={[styles.dot, { backgroundColor: connectionColor(connectionState) }]} />
-            <ThemedText style={[styles.statusText, { color: connectionColor(connectionState) }]}>
-              {connectionLabel(connectionState)}
-            </ThemedText>
-          </ThemedView>
-        </ThemedView>
-
-        <ThemedView style={styles.filterRow}>
-          {DURATION_FILTERS.map((d, idx) =>
-            filterPill(d.label, durationIdx === idx, () => setDurationIdx(idx)),
-          )}
-        </ThemedView>
-
-        <ThemedView style={styles.filterRow}>
-          {ENTITY_FILTERS.map((f) =>
-            filterPill(f.label, entity === f.value, () => setEntity(f.value)),
-          )}
-        </ThemedView>
-
-        <ThemedView style={styles.filterRow}>
-          {HORIZON_FILTERS.map((f) =>
-            filterPill(f.label, horizon === f.value, () => setHorizon(f.value)),
-          )}
-        </ThemedView>
-
-        {error || preloadError ? (
-          <ThemedView style={styles.errorBox}>
-            <ThemedText style={{ color: '#c0392b' }}>
-              {error ?? preloadError}
-            </ThemedText>
-          </ThemedView>
-        ) : null}
-
-        {/* Bandeau d'état "court terme BTC" — visible quand BTC est dans le filtre.
-            Synthèse maintenant : haché (à éviter) / calme / pas assez de données.
-            Permet de voir l'état d'un coup d'œil sans scanner la liste, SANS
-            polluer l'onglet Alertes (le flash est haché ~76% du temps). */}
-        {showFlashBanner ? (
-          <Pressable
-            onPress={openChoppyExplain}
-            hitSlop={4}
-            accessibilityRole="button"
-            accessibilityLabel={`Court terme BTC : ${flashBanner.label}. Appuyer pour en savoir plus.`}
-            style={[styles.flashBanner, { borderColor: flashBanner.color }]}>
-            <ThemedText style={[styles.flashBannerText, { color: flashBanner.color }]}>
-              {flashBanner.icon} Court terme BTC : {flashBanner.label}
-            </ThemedText>
-            <ThemedText style={styles.flashBannerHint}>{flashBanner.hint}</ThemedText>
-          </Pressable>
-        ) : null}
-      </ThemedView>
-
+    <CosmicBackground>
       {preloadLoading && signals.length === 0 ? (
-        <ThemedView style={styles.empty}>
-          <ActivityIndicator size="large" />
-          <ThemedText style={styles.emptyText}>Chargement des derniers signaux…</ThemedText>
-        </ThemedView>
-      ) : signals.length === 0 ? (
-        <ThemedView style={styles.empty}>
-          <ThemedText style={styles.emptyText}>
-            Aucun signal pour l’instant. Le flux est ouvert, les nouveaux signaux apparaîtront ici dès qu’ils seront émis par le core.
-          </ThemedText>
-        </ThemedView>
+        <View style={styles.center}>
+          {ListHeader}
+          <ActivityIndicator size="large" color={Cosmic.accent} />
+          <Text style={styles.emptyText}>Chargement des derniers signaux…</Text>
+        </View>
       ) : (
         <FlatList
           data={signals}
           extraData={`${tick}-${flashChoppy}`}
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
+          ListHeaderComponent={ListHeader}
+          ListEmptyComponent={
+            <Text style={styles.emptyText}>
+              Aucun signal pour l’instant. Le flux est ouvert, les nouveaux signaux apparaîtront ici.
+            </Text>
+          }
           contentContainerStyle={styles.listContent}
-          ItemSeparatorComponent={() => <View style={styles.separator} />}
           refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              tintColor={palette.tint}
-            />
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Cosmic.accent} />
           }
         />
       )}
-    </ThemedView>
+    </CosmicBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  listContent: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 40,
+  },
+  center: {
     flex: 1,
     paddingHorizontal: 16,
+    paddingTop: 12,
+    gap: 16,
   },
   header: {
-    paddingBottom: 12,
-    gap: 12,
+    gap: 10,
+    marginBottom: 8,
   },
-  headerTop: {
+  statusRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  title: {
+    ...TitleShadow.glow,
+    fontFamily: serifTitleFamily,
+    color: Cosmic.text,
+    fontSize: 28,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
   statusInline: {
     flexDirection: 'row',
@@ -383,9 +369,30 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   dot: {
-    width: 10,
-    height: 10,
+    width: 9,
+    height: 9,
     borderRadius: 5,
+  },
+  macroBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: Cosmic.borderStrong,
+    borderRadius: 10,
+    paddingHorizontal: 11,
+    paddingVertical: 8,
+    backgroundColor: Cosmic.card,
+  },
+  macroBannerText: {
+    flex: 1,
+    color: Cosmic.textDim,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  macroChevron: {
+    color: Cosmic.textDim,
+    fontSize: 18,
   },
   filterRow: {
     flexDirection: 'row',
@@ -394,118 +401,60 @@ const styles = StyleSheet.create({
   },
   pill: {
     borderWidth: 1,
-    borderRadius: 16,
-    paddingHorizontal: 12,
+    borderRadius: 999,
+    paddingHorizontal: 13,
     paddingVertical: 6,
   },
   pillLabel: {
     fontSize: 13,
-    fontWeight: '600',
-  },
-  errorBox: {
-    borderWidth: 1,
-    borderColor: '#c0392b',
-    borderRadius: 8,
-    padding: 8,
-    backgroundColor: 'rgba(192, 57, 43, 0.08)',
-  },
-  empty: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
-    gap: 12,
-  },
-  emptyText: {
-    textAlign: 'center',
-    opacity: 0.7,
-  },
-  listContent: {
-    paddingBottom: 24,
-  },
-  row: {
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    gap: 8,
-  },
-  rowHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  timestamp: {
-    fontSize: 12,
-    opacity: 0.6,
-  },
-  rowMiddle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  directionBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
-  },
-  directionLabel: {
-    color: '#ffffff',
-    fontSize: 11,
     fontWeight: '700',
-    letterSpacing: 0.5,
   },
-  horizonLabel: {
-    fontSize: 12,
-    opacity: 0.7,
-    textTransform: 'uppercase',
-  },
-  choppyTag: {
-    // Indigo — volontairement DISTINCT de l'orange AFN (#e67e22) pour ne pas
-    // confondre "court terme haché" (temporel) avec "anti-fake-news" (1 signal).
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#5b54c9',
-    backgroundColor: 'rgba(91, 84, 201, 0.14)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-  flashBanner: {
+  pastille: {
     borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    borderRadius: 10,
+    paddingHorizontal: 11,
+    paddingVertical: 8,
+    backgroundColor: Cosmic.card,
     gap: 2,
   },
-  flashBannerText: {
+  pastilleLabel: {
     fontSize: 13,
     fontWeight: '700',
   },
-  flashBannerHint: {
+  pastilleHint: {
+    color: Cosmic.textFaint,
     fontSize: 11,
-    opacity: 0.7,
   },
-  alertBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  alertLabel: {
-    color: '#ffffff',
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  rowFooter: {
+  legendRow: {
     flexDirection: 'row',
-    gap: 12,
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 2,
   },
-  metric: {
+  legendText: {
+    color: Cosmic.textDim,
     fontSize: 12,
-    opacity: 0.7,
   },
-  separator: {
-    height: 8,
+  legendSep: {
+    color: Cosmic.textFaint,
+    fontSize: 12,
+  },
+  errorBox: {
+    borderWidth: 1,
+    borderColor: Cosmic.short + '88',
+    borderRadius: 10,
+    padding: 10,
+    backgroundColor: 'rgba(232,122,122,0.08)',
+  },
+  errorText: {
+    color: Cosmic.short,
+    fontSize: 13,
+  },
+  emptyText: {
+    color: Cosmic.textDim,
+    fontSize: 13,
+    textAlign: 'center',
+    paddingHorizontal: 16,
+    marginTop: 12,
   },
 });
