@@ -15,21 +15,16 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CosmicBackground } from '@/components/cosmic/cosmic-background';
-import { BreakingNewsCard } from '@/components/dashboard/breaking-news-card';
 import { DerivativesCard } from '@/components/dashboard/derivatives-card';
 import { PolymarketCard } from '@/components/dashboard/polymarket-card';
 import { SourceHealthCard } from '@/components/dashboard/source-health-card';
-import { TopHeadlinesCard } from '@/components/dashboard/top-headlines-card';
 import { Cosmic, TitleShadow, serifTitleFamily } from '@/constants/cosmic';
 import { Fonts } from '@/constants/theme';
 import { useDerivatives } from '@/src/hooks/useDerivatives';
 import { usePolymarket } from '@/src/hooks/usePolymarket';
-import { useTopHeadlines } from '@/src/hooks/useTopHeadlines';
 
 export default function SourcesScreen() {
   const insets = useSafeAreaInsets();
-  const [headlinesEntity, setHeadlinesEntity] = useState<string>('BTC');
-  const headlinesState = useTopHeadlines(headlinesEntity, { limit: 5 });
   const [polymarketEntity, setPolymarketEntity] = useState<string>('GOLD');
   const polymarketState = usePolymarket(polymarketEntity, { limit: 4 });
   const derivativesState = useDerivatives('BTC');
@@ -70,16 +65,7 @@ export default function SourcesScreen() {
           error={derivativesState.error}
         />
 
-        <Text style={styles.section}>Actualité</Text>
-        <BreakingNewsCard />
-        <TopHeadlinesCard
-          headlines={headlinesState.headlines}
-          entityId={headlinesEntity}
-          onEntityChange={setHeadlinesEntity}
-          displayLimit={5}
-          loading={headlinesState.loading}
-          error={headlinesState.error}
-        />
+        <Text style={styles.footer}>L&apos;actualité (breaking + top headlines) est sur le Cockpit.</Text>
       </ScrollView>
     </CosmicBackground>
   );
@@ -125,6 +111,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: 0.6,
+    marginTop: 8,
+  },
+  footer: {
+    color: Cosmic.textFaint,
+    fontSize: 12,
+    fontStyle: 'italic',
     marginTop: 8,
   },
 });

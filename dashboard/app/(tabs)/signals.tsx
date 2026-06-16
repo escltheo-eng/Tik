@@ -33,6 +33,7 @@ import {
 } from 'react-native';
 
 import { CosmicBackground } from '@/components/cosmic/cosmic-background';
+import { CosmicSignalCard } from '@/components/cosmic/cosmic-signal-card';
 import { CosmicSignalRow } from '@/components/cosmic/cosmic-signal-row';
 import { InfoTooltip } from '@/components/ui/info-tooltip';
 import { Cosmic, TitleShadow, serifTitleFamily } from '@/constants/cosmic';
@@ -128,6 +129,10 @@ export default function SignalsScreen() {
     preloadLimit: duration.preloadLimit,
     maxSignals: duration.preloadLimit,
   });
+
+  // « À la une » (hybride) : dernier signal par actif, respecte le filtre courant.
+  const featuredBtc = useMemo(() => signals.find((s) => s.entity_id === 'BTC') ?? null, [signals]);
+  const featuredGold = useMemo(() => signals.find((s) => s.entity_id === 'GOLD') ?? null, [signals]);
 
   const [refreshing, setRefreshing] = useState(false);
   const onRefresh = useCallback(async () => {
@@ -292,6 +297,15 @@ export default function SignalsScreen() {
         <InfoTooltip entryKey="horizon" />
       </View>
 
+      {/* À la une — cartes riches du dernier signal par actif (hybride) */}
+      {featuredBtc || featuredGold ? (
+        <View style={styles.featured}>
+          <Text style={styles.featuredLabel}>À la une</Text>
+          {featuredBtc ? <CosmicSignalCard entityId="BTC" signal={featuredBtc} /> : null}
+          {featuredGold ? <CosmicSignalCard entityId="GOLD" signal={featuredGold} /> : null}
+        </View>
+      ) : null}
+
       {error || preloadError ? (
         <View style={styles.errorBox}>
           <Text style={styles.errorText}>{error ?? preloadError}</Text>
@@ -438,6 +452,18 @@ const styles = StyleSheet.create({
   legendSep: {
     color: Cosmic.textFaint,
     fontSize: 12,
+  },
+  featured: {
+    gap: 4,
+    marginTop: 4,
+  },
+  featuredLabel: {
+    color: Cosmic.accent,
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 2,
   },
   errorBox: {
     borderWidth: 1,

@@ -16,15 +16,19 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CosmicBackground } from '@/components/cosmic/cosmic-background';
 import { CosmicSignalCard } from '@/components/cosmic/cosmic-signal-card';
+import { BreakingNewsCard } from '@/components/dashboard/breaking-news-card';
+import { TopHeadlinesCard } from '@/components/dashboard/top-headlines-card';
 import { Cosmic, TitleShadow, directionMeta, serifTitleFamily } from '@/constants/cosmic';
 import { Fonts } from '@/constants/theme';
 import { getHealth } from '@/src/api/endpoints';
 import { TikError } from '@/src/api/errors';
 import { Health, Signal } from '@/src/api/types';
 import { useAuth } from '@/src/auth/AuthContext';
+import { useBreakingNews } from '@/src/hooks/useBreakingNews';
 import { useDashboardKpis } from '@/src/hooks/useDashboardKpis';
 import { useMacroRegime } from '@/src/hooks/useMacroRegime';
 import { useTick } from '@/src/hooks/use-tick';
+import { useTopHeadlines } from '@/src/hooks/useTopHeadlines';
 import { useTrades } from '@/src/journal/useTrades';
 import { useUpcomingMacroEvents } from '@/src/hooks/useUpcomingMacroEvents';
 import { formatLocal, parseUtcIso } from '@/src/utils/time';
@@ -83,6 +87,9 @@ export default function HomeScreen() {
   const macroEventsState = useUpcomingMacroEvents({ hours: 7 * 24, limit: 8 });
   const macroRegimeState = useMacroRegime();
   const { trades } = useTrades();
+  const [headlinesEntity, setHeadlinesEntity] = useState<string>('BTC');
+  const headlinesState = useTopHeadlines(headlinesEntity, { limit: 5 });
+  const breaking = useBreakingNews(8);
   useTick();
 
   const statusLabel: Record<HealthState['status'], string> = {
@@ -210,6 +217,18 @@ export default function HomeScreen() {
         {/* Dernier signal BTC (priorité) */}
         <Text style={styles.sectionLabel}>Dernier signal BTC</Text>
         <CosmicSignalCard entityId="BTC" signal={latestBtc} loading={kpis.loading} />
+
+        {/* Dernières infos : breaking (seulement si choc récent) + top headlines (bull/bear) */}
+        {breaking.items.length > 0 ? <BreakingNewsCard /> : null}
+        <Text style={styles.sectionLabel}>Dernières actus</Text>
+        <TopHeadlinesCard
+          headlines={headlinesState.headlines}
+          entityId={headlinesEntity}
+          onEntityChange={setHeadlinesEntity}
+          displayLimit={5}
+          loading={headlinesState.loading}
+          error={headlinesState.error}
+        />
 
         {/* Trades ouverts → Carnet */}
         {openTrades.length > 0 ? (
