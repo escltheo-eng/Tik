@@ -466,7 +466,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.3,
   },
-  subtitle: { color: Cosmic.textDim, fontSize: 13, lineHeight: 18 },
+  subtitle: { color: Cosmic.textDim, fontSize: 14, lineHeight: 20 },
   warn: { fontSize: 13, color: Cosmic.neutral },
   newBtn: {
     backgroundColor: Cosmic.accent,
@@ -519,7 +519,7 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   tikTitle: { color: Cosmic.text, fontSize: 12, fontWeight: '700' },
-  tikText: { color: Cosmic.textDim, fontSize: 13, lineHeight: 18 },
+  tikText: { color: Cosmic.textDim, fontSize: 14, lineHeight: 20 },
   saveBtn: {
     backgroundColor: Cosmic.accent,
     borderRadius: 10,
@@ -544,7 +544,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   rowLine: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  entity: { color: Cosmic.text, fontSize: 15, fontWeight: '700' },
+  entity: { color: Cosmic.text, fontSize: 16, fontWeight: '700' },
   tag: {
     borderWidth: 1,
     borderRadius: 7,
@@ -556,7 +556,7 @@ const styles = StyleSheet.create({
   tagText: { fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
   lots: { color: Cosmic.textDim, fontSize: 12 },
   timestamp: { color: Cosmic.textFaint, fontSize: 11, marginLeft: 'auto' },
-  priceText: { color: Cosmic.text, fontSize: 14 },
+  priceText: { color: Cosmic.text, fontSize: 15 },
   result: { fontSize: 15, fontWeight: '700' },
   alignTag: {
     borderWidth: 1,
@@ -566,7 +566,7 @@ const styles = StyleSheet.create({
     marginLeft: 'auto',
   },
   alignLabel: { fontSize: 11, fontWeight: '700' },
-  note: { color: Cosmic.textDim, fontSize: 13, fontStyle: 'italic' },
+  note: { color: Cosmic.textDim, fontSize: 14, fontStyle: 'italic' },
   rowActions: { flexDirection: 'row', gap: 12, alignItems: 'center', marginTop: 2 },
   actionBtn: {
     borderWidth: 1,

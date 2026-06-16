@@ -269,8 +269,8 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     color: Cosmic.textDim,
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: 14,
+    lineHeight: 20,
   },
   actions: {
     flexDirection: 'row',
@@ -303,8 +303,8 @@ const styles = StyleSheet.create({
   emptyText: {
     color: Cosmic.textDim,
     textAlign: 'center',
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 15,
+    lineHeight: 22,
   },
   listContent: {
     paddingBottom: 24,
@@ -327,7 +327,7 @@ const styles = StyleSheet.create({
   },
   entityLabel: {
     color: Cosmic.text,
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '700',
   },
   tag: {
@@ -366,7 +366,7 @@ const styles = StyleSheet.create({
   },
   veracityLabel: {
     color: Cosmic.textDim,
-    fontSize: 12,
+    fontSize: 13,
     fontFamily: Fonts.mono,
   },
   removeBtn: {
