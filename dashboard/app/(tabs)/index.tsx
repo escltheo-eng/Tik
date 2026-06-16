@@ -1,72 +1,44 @@
 /**
- * Home → COCKPIT cosmique (refonte γ, bout 6).
+ * Cockpit cosmique (refonte γ, bout 6) — vue unique « Puis-je trader ? ».
  *
- * Sous-onglet Marché transformé en cockpit « Puis-je trader ? » : bandeau macro
- * réel + statut de discipline (F1) + dernier signal BTC (CosmicSignalCard) +
- * trades ouverts + prochain event. Les cartes de contexte (breaking, headlines,
- * Polymarket, dérivés) restent TEMPORAIREMENT en bas en attendant l'onglet
- * Sources (elles y déménageront). Les sous-onglets Calibration/Système gardent
- * leur contenu (sombre via le thème global) en attendant l'onglet Plus.
+ * Landing quotidien : bandeau macro réel + statut de DISCIPLINE (F1) + dernier
+ * signal BTC + trades ouverts + prochain event. Le contexte (sources) vit dans
+ * l'onglet Sources ; les stats/perf/config dans l'onglet Plus.
  *
- * Honnêteté (Axe #1) : le statut de discipline dit « y a-t-il un frein ? », PAS
- * « Tik dit d'acheter » — aucun edge directionnel prouvé (NO-GO 2026-05-27).
- * Données 100 % réelles ; rien d'inventé (pas de Silver, Stress, influence).
+ * Honnêteté (Axe #1) : le statut dit « y a-t-il un frein ? », PAS « achète » —
+ * aucun edge directionnel prouvé (NO-GO 2026-05-27). Données 100 % réelles.
  */
 
-import type { ReactNode } from 'react';
+import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CosmicBackground } from '@/components/cosmic/cosmic-background';
 import { CosmicSignalCard } from '@/components/cosmic/cosmic-signal-card';
-import { HitRateByVeracityCard } from '@/components/dashboard/hit-rate-by-veracity-card';
-import { HitRateCard } from '@/components/dashboard/hit-rate-card';
-import { KpiCard } from '@/components/dashboard/kpi-card';
-import { MiniSparkline } from '@/components/dashboard/mini-sparkline';
-import { SourceHealthCard } from '@/components/dashboard/source-health-card';
-import { StatsLLMCard } from '@/components/dashboard/stats-llm-card';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
 import { Cosmic, TitleShadow, directionMeta, serifTitleFamily } from '@/constants/cosmic';
-import { Colors, Fonts } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { Fonts } from '@/constants/theme';
 import { getHealth } from '@/src/api/endpoints';
 import { TikError } from '@/src/api/errors';
 import { Health, Signal } from '@/src/api/types';
 import { useAuth } from '@/src/auth/AuthContext';
 import { useDashboardKpis } from '@/src/hooks/useDashboardKpis';
-import { useHitRate } from '@/src/hooks/useHitRate';
-import { useHitRateByVeracity } from '@/src/hooks/useHitRateByVeracity';
 import { useMacroRegime } from '@/src/hooks/useMacroRegime';
 import { useTick } from '@/src/hooks/use-tick';
-import { useUpcomingMacroEvents } from '@/src/hooks/useUpcomingMacroEvents';
-import { useRouter } from 'expo-router';
 import { useTrades } from '@/src/journal/useTrades';
+import { useUpcomingMacroEvents } from '@/src/hooks/useUpcomingMacroEvents';
 import { formatLocal, parseUtcIso } from '@/src/utils/time';
 
-import pkg from '../../package.json';
-
-const APP_VERSION = pkg.version;
 const HEALTH_REFRESH_INTERVAL_MS = 30_000;
 const MACRO_WINDOW_MS = 4 * 3600 * 1000; // ±4h discipline (Garde-fou 2-bis)
 const SWING_VERACITY_FLOOR = 0.85; // seuil transitoire Garde-fou 2-bis
-
-type HomeTab = 'market' | 'calibration' | 'system';
-const TAB_LABELS: Record<HomeTab, string> = {
-  market: 'Cockpit',
-  calibration: 'Calibration',
-  system: 'Système',
-};
-const TAB_ORDER: HomeTab[] = ['market', 'calibration', 'system'];
 
 interface HealthState {
   status: 'idle' | 'loading' | 'ok' | 'error';
   data: Health | null;
   error: string | null;
-  lastChecked: Date | null;
 }
-const INITIAL_HEALTH: HealthState = { status: 'idle', data: null, error: null, lastChecked: null };
+const INITIAL_HEALTH: HealthState = { status: 'idle', data: null, error: null };
 
 /** Label + couleur d'un régime de liquidité. */
 function regimeView(r: string | null | undefined): { label: string; color: string } {
@@ -77,23 +49,19 @@ function regimeView(r: string | null | undefined): { label: string; color: strin
 }
 
 export default function HomeScreen() {
-  const { client, baseUrl } = useAuth();
+  const { client } = useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const colorScheme = useColorScheme() ?? 'light';
-  const palette = Colors[colorScheme];
 
-  const [activeTab, setActiveTab] = useState<HomeTab>('market');
   const [healthState, setHealthState] = useState<HealthState>(INITIAL_HEALTH);
-
   const checkHealth = useCallback(async () => {
     setHealthState((s) => ({ ...s, status: 'loading' }));
     try {
       const data = await getHealth(client);
-      setHealthState({ status: 'ok', data, error: null, lastChecked: new Date() });
+      setHealthState({ status: 'ok', data, error: null });
     } catch (err) {
       const msg = err instanceof TikError ? err.message : (err as Error).message;
-      setHealthState({ status: 'error', data: null, error: msg, lastChecked: new Date() });
+      setHealthState({ status: 'error', data: null, error: msg });
     }
   }, [client]);
 
@@ -115,15 +83,6 @@ export default function HomeScreen() {
   const macroEventsState = useUpcomingMacroEvents({ hours: 7 * 24, limit: 8 });
   const macroRegimeState = useMacroRegime();
   const { trades } = useTrades();
-  const [hitRateEntity, setHitRateEntity] = useState<string>('BTC');
-  const [hitRateHorizon, setHitRateHorizon] = useState<string>('swing');
-  const [hitRateIncludeFlagged, setHitRateIncludeFlagged] = useState<boolean>(false);
-  const hitRateState = useHitRate(hitRateEntity, hitRateHorizon, {
-    includeFlagged: hitRateIncludeFlagged,
-  });
-  const hitRateByVeracityState = useHitRateByVeracity(hitRateEntity, hitRateHorizon, {
-    includeFlagged: hitRateIncludeFlagged,
-  });
   useTick();
 
   const statusLabel: Record<HealthState['status'], string> = {
@@ -150,7 +109,6 @@ export default function HomeScreen() {
     [kpis.signals24h],
   );
 
-  // Event macro HIGH dans la fenêtre ±4h (discipline Garde-fou 2-bis).
   const macroBlockEvent = useMemo(() => {
     const now = Date.now();
     return (
@@ -165,7 +123,6 @@ export default function HomeScreen() {
   const nextEvent = macroEventsState.events[0] ?? null;
   const openTrades = useMemo(() => trades.filter((t) => t.status === 'open'), [trades]);
 
-  // Statut de discipline (le pire critère donne la couleur). NE dit PAS « achète ».
   const swingVeracityOk = latestBtcSwing ? latestBtcSwing.veracity >= SWING_VERACITY_FLOOR : false;
   const discipline: { color: string; head: string } = macroBlockEvent
     ? { color: Cosmic.short, head: '🔴 Frein de discipline' }
@@ -187,231 +144,14 @@ export default function HomeScreen() {
     { ok: true, text: 'Sizing 1 % max — ta vraie protection' },
   ];
 
-  // ---------- COCKPIT (sous-onglet Marché) ----------
-  const renderMarketTab = () => (
-    <>
-      {/* Bandeau global macro (réel) */}
-      {(() => {
-        const r = macroRegimeState.regime;
-        const liq = regimeView(r?.global_liquidity?.regime);
-        const rec = r?.indicators?.recession_prob_12m?.value ?? null;
-        const realRate = r?.indicators?.real_rate_10y?.value ?? null;
-        return (
-          <Pressable
-            onPress={() => router.push('/macro-cosmique')}
-            style={({ pressed }) => [styles.globalStrip, { opacity: pressed ? 0.8 : 1 }]}>
-            <View style={styles.globalItem}>
-              <Text style={styles.globalLabel}>Liquidité</Text>
-              <Text style={[styles.globalValue, { color: liq.color }]}>{liq.label}</Text>
-            </View>
-            <View style={[styles.globalItem, styles.globalItemMid]}>
-              <Text style={styles.globalLabel}>Récession 12m</Text>
-              <Text
-                style={[
-                  styles.globalValue,
-                  { color: rec != null && rec >= 0.5 ? Cosmic.neutral : Cosmic.text },
-                ]}>
-                {rec != null ? `${(rec * 100).toFixed(0)}%` : '—'}
-              </Text>
-            </View>
-            <View style={styles.globalItem}>
-              <Text style={styles.globalLabel}>Taux réel 10Y</Text>
-              <Text style={styles.globalValue}>
-                {realRate != null ? `${realRate.toFixed(2)}%` : '—'}
-              </Text>
-            </View>
-          </Pressable>
-        );
-      })()}
-
-      {/* Statut de discipline (F1) */}
-      <View style={[styles.disciplineCard, { borderColor: discipline.color + '88' }]}>
-        <Text style={[styles.disciplineHead, { color: discipline.color }]}>{discipline.head}</Text>
-        <Text style={styles.disciplineSub}>
-          « Puis-je trader ? » = freins de discipline, PAS un ordre d&apos;achat (aucun edge prouvé).
-        </Text>
-        {criteria.map((c, i) => (
-          <View key={i} style={styles.critRow}>
-            <Text style={[styles.critIcon, { color: c.ok ? Cosmic.long : Cosmic.neutral }]}>
-              {c.ok ? '✓' : '⚠'}
-            </Text>
-            <Text style={styles.critText}>{c.text}</Text>
-          </View>
-        ))}
-      </View>
-
-      {/* Dernier signal BTC (priorité) */}
-      <Text style={styles.sectionLabel}>Dernier signal BTC</Text>
-      <CosmicSignalCard entityId="BTC" signal={latestBtc} loading={kpis.loading} />
-
-      {/* Trades ouverts */}
-      {openTrades.length > 0 ? (
-        <Pressable
-          onPress={() => router.push('/journal')}
-          style={({ pressed }) => [styles.openTrades, { opacity: pressed ? 0.8 : 1 }]}>
-          <Text style={styles.sectionLabel}>Mes trades ouverts ({openTrades.length})</Text>
-          {openTrades.slice(0, 3).map((t) => {
-            const dir = directionMeta(t.direction);
-            return (
-              <View key={t.id} style={styles.openTradeRow}>
-                <Text style={styles.openTradeEntity}>{t.entity_id}</Text>
-                <Text style={[styles.openTradeDir, { color: dir.color }]}>{dir.label}</Text>
-                <Text style={styles.openTradeMeta}>{t.size_lots} lot · @ {t.entry_price}</Text>
-              </View>
-            );
-          })}
-          <Text style={styles.openTradesHint}>Ouvrir le Carnet ›</Text>
-        </Pressable>
-      ) : null}
-
-      {/* Prochain event macro */}
-      {nextEvent ? (
-        <Pressable
-          onPress={() => router.push('/macro')}
-          style={({ pressed }) => [styles.nextEvent, { opacity: pressed ? 0.8 : 1 }]}>
-          <Text style={styles.nextEventLabel}>📅 Prochain event</Text>
-          <Text style={styles.nextEventText} numberOfLines={1}>
-            {nextEvent.event_name} · {formatLocal(nextEvent.scheduled_for)}
-          </Text>
-          <Text style={styles.nextEventChevron}>›</Text>
-        </Pressable>
-      ) : null}
-
-      {/* Accès aux écrans dispatchés (onglets Sources / Plus — bientôt dans la nav 6→5) */}
-      <Pressable
-        onPress={() => router.push('/sources')}
-        style={({ pressed }) => [styles.sourcesLink, { opacity: pressed ? 0.8 : 1 }]}>
-        <Text style={styles.sourcesLinkText}>🔭 Toutes les sources OSINT</Text>
-        <Text style={styles.sourcesLinkChevron}>›</Text>
-      </Pressable>
-      <Pressable
-        onPress={() => router.push('/plus')}
-        style={({ pressed }) => [styles.sourcesLink, { opacity: pressed ? 0.8 : 1 }]}>
-        <Text style={styles.sourcesLinkText}>📊 Profil &amp; performance</Text>
-        <Text style={styles.sourcesLinkChevron}>›</Text>
-      </Pressable>
-    </>
-  );
-
-  // ---------- Calibration (inchangé — déménagera vers Plus) ----------
-  const renderCalibrationTab = () => (
-    <>
-      <HitRateCard
-        data={hitRateState.data}
-        entityId={hitRateEntity}
-        horizon={hitRateHorizon}
-        includeFlagged={hitRateIncludeFlagged}
-        onEntityChange={setHitRateEntity}
-        onHorizonChange={setHitRateHorizon}
-        onIncludeFlaggedChange={setHitRateIncludeFlagged}
-        loading={hitRateState.loading}
-        error={hitRateState.error}
-      />
-      <HitRateByVeracityCard
-        data={hitRateByVeracityState.data}
-        entityId={hitRateEntity}
-        horizon={hitRateHorizon}
-        loading={hitRateByVeracityState.loading}
-        error={hitRateByVeracityState.error}
-      />
-      <ThemedView style={[styles.card, { borderColor: palette.icon }]}>
-        <ThemedText type="defaultSemiBold">Tendance veracity</ThemedText>
-        {kpis.veracitySeries.length >= 2 ? (
-          <>
-            <ThemedText style={styles.veracityStats}>
-              min {(Math.min(...kpis.veracitySeries) * 100).toFixed(0)}% · actuelle{' '}
-              {(kpis.veracitySeries[kpis.veracitySeries.length - 1] * 100).toFixed(0)}% · max{' '}
-              {(Math.max(...kpis.veracitySeries) * 100).toFixed(0)}%
-            </ThemedText>
-            <ThemedText style={styles.veracitySubtitle}>
-              {kpis.veracitySeries.length} derniers signaux · ~24 dernières heures
-            </ThemedText>
-          </>
-        ) : null}
-        <MiniSparkline
-          values={kpis.veracitySeries}
-          height={80}
-          color={palette.tint}
-          thresholds={[0.7]}
-          personalThreshold={0.85}
-          personalThresholdColor="#27ae60"
-          autoScale
-          emptyMessage="Pas assez de signaux pour tracer"
-        />
-      </ThemedView>
-
-      <ThemedView style={styles.section}>
-        <ThemedText type="subtitle">Activité 24 h</ThemedText>
-        <ThemedView style={styles.kpiRow}>
-          <KpiCard title="Total" value={kpis.signalsByHorizon.total.toString()} subtitle="signaux émis" />
-          <KpiCard title="Flash" value={kpis.signalsByHorizon.flash.toString()} />
-        </ThemedView>
-        <ThemedView style={styles.kpiRow}>
-          <KpiCard title="Swing" value={kpis.signalsByHorizon.swing.toString()} />
-          <KpiCard title="Macro" value={kpis.signalsByHorizon.macro.toString()} />
-        </ThemedView>
-      </ThemedView>
-
-      <StatsLLMCard stats={kpis.llmStatsToday} loading={kpis.loading} error={kpis.signals24hError} />
-    </>
-  );
-
-  // ---------- Système (inchangé — déménagera vers Plus) ----------
-  const renderSystemTab = () => (
-    <>
-      <ThemedView style={[styles.statusBox, { borderColor: statusColor[healthState.status] }]}>
-        <ThemedView style={styles.statusHeader}>
-          <ThemedText type="defaultSemiBold">État du core</ThemedText>
-          {healthState.status === 'loading' ? (
-            <ActivityIndicator size="small" />
-          ) : (
-            <ThemedView style={[styles.dot, { backgroundColor: statusColor[healthState.status] }]} />
-          )}
-        </ThemedView>
-        <ThemedText style={{ color: statusColor[healthState.status], fontWeight: '600' }}>
-          {statusLabel[healthState.status]}
-        </ThemedText>
-        {healthState.status === 'ok' && healthState.data ? (
-          <ThemedText style={styles.metaText}>
-            v{healthState.data.version} · env {healthState.data.env} · {baseUrl}
-          </ThemedText>
-        ) : healthState.status === 'error' && healthState.error ? (
-          <ThemedText style={styles.errorText}>{healthState.error}</ThemedText>
-        ) : null}
-        <Pressable
-          onPress={() => void checkHealth()}
-          disabled={healthState.status === 'loading'}
-          style={({ pressed }) => [
-            styles.refreshBtn,
-            { backgroundColor: palette.tint, opacity: pressed || healthState.status === 'loading' ? 0.7 : 1 },
-          ]}>
-          <ThemedText style={styles.refreshLabel}>Rafraîchir</ThemedText>
-        </Pressable>
-      </ThemedView>
-
-      <SourceHealthCard />
-
-      <ThemedView style={styles.versionBox}>
-        <ThemedText style={styles.versionText}>
-          tik-dashboard v{APP_VERSION} — Expo SDK 54
-        </ThemedText>
-        <ThemedText style={styles.versionText}>
-          Identifiants / déconnexion : onglet Config.
-        </ThemedText>
-      </ThemedView>
-    </>
-  );
-
-  const tabContent: Record<HomeTab, ReactNode> = {
-    market: renderMarketTab(),
-    calibration: renderCalibrationTab(),
-    system: renderSystemTab(),
-  };
+  const liq = regimeView(macroRegimeState.regime?.global_liquidity?.regime);
+  const recession = macroRegimeState.regime?.indicators?.recession_prob_12m?.value ?? null;
+  const realRate = macroRegimeState.regime?.indicators?.real_rate_10y?.value ?? null;
 
   return (
     <CosmicBackground>
       <ScrollView contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 10 }]}>
-        {/* Header cosmique */}
+        {/* Header */}
         <View style={styles.headerRow}>
           <View>
             <Text style={styles.brand}>
@@ -427,33 +167,82 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* Sous-onglets cosmiques */}
-        <View style={styles.subTabBar}>
-          {TAB_ORDER.map((tab) => {
-            const isActive = tab === activeTab;
-            return (
-              <Pressable
-                key={tab}
-                onPress={() => setActiveTab(tab)}
-                accessibilityRole="tab"
-                accessibilityState={{ selected: isActive }}
-                style={({ pressed }) => [
-                  styles.subTab,
-                  {
-                    backgroundColor: isActive ? Cosmic.accent : 'transparent',
-                    borderColor: isActive ? Cosmic.accent : Cosmic.borderStrong,
-                    opacity: pressed ? 0.7 : 1,
-                  },
-                ]}>
-                <Text style={[styles.subTabLabel, { color: isActive ? Cosmic.bgDeep : Cosmic.textDim }]}>
-                  {TAB_LABELS[tab]}
-                </Text>
-              </Pressable>
-            );
-          })}
+        {/* Bandeau global macro (réel) → page Macro */}
+        <Pressable
+          onPress={() => router.push('/macro-cosmique')}
+          style={({ pressed }) => [styles.globalStrip, { opacity: pressed ? 0.8 : 1 }]}>
+          <View style={styles.globalItem}>
+            <Text style={styles.globalLabel}>Liquidité</Text>
+            <Text style={[styles.globalValue, { color: liq.color }]}>{liq.label}</Text>
+          </View>
+          <View style={[styles.globalItem, styles.globalItemMid]}>
+            <Text style={styles.globalLabel}>Récession 12m</Text>
+            <Text
+              style={[
+                styles.globalValue,
+                { color: recession != null && recession >= 0.5 ? Cosmic.neutral : Cosmic.text },
+              ]}>
+              {recession != null ? `${(recession * 100).toFixed(0)}%` : '—'}
+            </Text>
+          </View>
+          <View style={styles.globalItem}>
+            <Text style={styles.globalLabel}>Taux réel 10Y</Text>
+            <Text style={styles.globalValue}>{realRate != null ? `${realRate.toFixed(2)}%` : '—'}</Text>
+          </View>
+        </Pressable>
+
+        {/* Statut de discipline (F1) */}
+        <View style={[styles.disciplineCard, { borderColor: discipline.color + '88' }]}>
+          <Text style={[styles.disciplineHead, { color: discipline.color }]}>{discipline.head}</Text>
+          <Text style={styles.disciplineSub}>
+            « Puis-je trader ? » = freins de discipline, PAS un ordre d&apos;achat (aucun edge prouvé).
+          </Text>
+          {criteria.map((c, i) => (
+            <View key={i} style={styles.critRow}>
+              <Text style={[styles.critIcon, { color: c.ok ? Cosmic.long : Cosmic.neutral }]}>
+                {c.ok ? '✓' : '⚠'}
+              </Text>
+              <Text style={styles.critText}>{c.text}</Text>
+            </View>
+          ))}
         </View>
 
-        {tabContent[activeTab]}
+        {/* Dernier signal BTC (priorité) */}
+        <Text style={styles.sectionLabel}>Dernier signal BTC</Text>
+        <CosmicSignalCard entityId="BTC" signal={latestBtc} loading={kpis.loading} />
+
+        {/* Trades ouverts → Carnet */}
+        {openTrades.length > 0 ? (
+          <Pressable
+            onPress={() => router.push('/journal')}
+            style={({ pressed }) => [styles.openTrades, { opacity: pressed ? 0.8 : 1 }]}>
+            <Text style={styles.sectionLabel}>Mes trades ouverts ({openTrades.length})</Text>
+            {openTrades.slice(0, 3).map((t) => {
+              const dir = directionMeta(t.direction);
+              return (
+                <View key={t.id} style={styles.openTradeRow}>
+                  <Text style={styles.openTradeEntity}>{t.entity_id}</Text>
+                  <Text style={[styles.openTradeDir, { color: dir.color }]}>{dir.label}</Text>
+                  <Text style={styles.openTradeMeta}>{t.size_lots} lot · @ {t.entry_price}</Text>
+                </View>
+              );
+            })}
+            <Text style={styles.openTradesHint}>Ouvrir le Carnet ›</Text>
+          </Pressable>
+        ) : null}
+
+        {/* Prochain event macro */}
+        {nextEvent ? (
+          <Pressable
+            onPress={() => router.push('/macro')}
+            style={({ pressed }) => [styles.nextEvent, { opacity: pressed ? 0.8 : 1 }]}>
+            <Text style={styles.nextEventLabel}>📅 Prochain event</Text>
+            <Text style={styles.nextEventText} numberOfLines={1}>
+              {nextEvent.event_name} · {formatLocal(nextEvent.scheduled_for)}
+            </Text>
+            <Text style={styles.nextEventChevron}>›</Text>
+          </Pressable>
+        ) : null}
       </ScrollView>
     </CosmicBackground>
   );
@@ -505,23 +294,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginTop: 2,
   },
-  subTabBar: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 4,
-  },
-  subTab: {
-    flex: 1,
-    paddingVertical: 9,
-    borderWidth: 1,
-    borderRadius: 999,
-    alignItems: 'center',
-  },
-  subTabLabel: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  // Bandeau global
   globalStrip: {
     flexDirection: 'row',
     backgroundColor: Cosmic.card,
@@ -554,7 +326,6 @@ const styles = StyleSheet.create({
     fontFamily: serifTitleFamily,
     fontStyle: 'italic',
   },
-  // Discipline
   disciplineCard: {
     backgroundColor: Cosmic.card,
     borderWidth: 1,
@@ -596,7 +367,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
     marginTop: 4,
   },
-  // Trades ouverts
   openTrades: {
     backgroundColor: Cosmic.card,
     borderColor: Cosmic.border,
@@ -623,7 +393,7 @@ const styles = StyleSheet.create({
   },
   openTradeMeta: {
     color: Cosmic.textDim,
-    fontSize: 12,
+    fontSize: 13,
     fontFamily: Fonts.mono,
   },
   openTradesHint: {
@@ -633,7 +403,6 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     marginTop: 2,
   },
-  // Prochain event
   nextEvent: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -659,41 +428,4 @@ const styles = StyleSheet.create({
     color: Cosmic.textDim,
     fontSize: 18,
   },
-  sourcesLink: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: Cosmic.card,
-    borderColor: Cosmic.borderStrong,
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingVertical: 13,
-    paddingHorizontal: 14,
-    marginTop: 4,
-  },
-  sourcesLinkText: {
-    flex: 1,
-    color: Cosmic.accent,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  sourcesLinkChevron: {
-    color: Cosmic.accent,
-    fontSize: 18,
-  },
-  // ----- styles repris (Calibration/Système, thémés sombre) -----
-  errorText: { color: '#e87a7a', fontSize: 13 },
-  metaText: { fontSize: 12, opacity: 0.6 },
-  refreshBtn: { marginTop: 8, paddingVertical: 10, borderRadius: 8, alignItems: 'center' },
-  refreshLabel: { color: '#ffffff', fontWeight: '600' },
-  card: { marginTop: 4, padding: 16, borderWidth: 1, borderRadius: 12, gap: 8 },
-  section: { gap: 12, marginTop: 4 },
-  kpiRow: { flexDirection: 'row', gap: 12 },
-  veracityStats: { fontSize: 13, opacity: 0.85, marginTop: 2 },
-  veracitySubtitle: { fontSize: 11, opacity: 0.5, marginBottom: 4 },
-  statusBox: { padding: 16, borderWidth: 1, borderRadius: 12, gap: 8 },
-  statusHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  dot: { width: 12, height: 12, borderRadius: 6 },
-  versionBox: { marginTop: 16, paddingTop: 12, gap: 4 },
-  versionText: { fontSize: 12, opacity: 0.5 },
 });

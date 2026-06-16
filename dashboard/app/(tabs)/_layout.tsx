@@ -12,7 +12,7 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        // Barre d'onglets cosmique (refonte γ, bout 5) — sombre, accent ambre.
+        // Barre d'onglets cosmique (refonte γ, bout 6) — 5 onglets, sombre, accent ambre.
         tabBarActiveTintColor: Cosmic.accent,
         tabBarInactiveTintColor: Cosmic.textFaint,
         headerShown: false,
@@ -22,6 +22,7 @@ export default function TabLayout() {
           borderTopColor: Cosmic.border,
         },
       }}>
+      {/* --- 5 onglets visibles : Cockpit · Signals · Sources · Carnet · Plus --- */}
       <Tabs.Screen
         name="index"
         options={{
@@ -39,10 +40,10 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="watchlist"
+        name="sources"
         options={{
-          title: 'Watchlist',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="star.fill" color={color} />,
+          title: 'Sources',
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="globe" color={color} />,
         }}
       />
       <Tabs.Screen
@@ -53,32 +54,23 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="alerts"
+        name="plus"
         options={{
-          title: 'Alerts',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="bell.fill" color={color} />,
+          title: 'Plus',
+          tabBarIcon: ({ color }) => (
+            <IconSymbol size={28} name="person.crop.circle.fill" color={color} />
+          ),
+          // Le badge alertes non-lues remonte ici (Alerts vit dans le hub Plus).
           tabBarBadge: unreadCount > 0 ? String(unreadCount) : undefined,
         }}
       />
-      <Tabs.Screen
-        name="bots"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="config"
-        options={{
-          title: 'Config',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="gearshape.fill" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="about"
-        options={{
-          href: null,
-        }}
-      />
+
+      {/* --- Écrans hors barre du bas (accessibles depuis le hub Plus) --- */}
+      <Tabs.Screen name="watchlist" options={{ href: null }} />
+      <Tabs.Screen name="alerts" options={{ href: null }} />
+      <Tabs.Screen name="config" options={{ href: null }} />
+      <Tabs.Screen name="bots" options={{ href: null }} />
+      <Tabs.Screen name="about" options={{ href: null }} />
     </Tabs>
   );
 }
