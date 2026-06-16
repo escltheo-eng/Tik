@@ -20,16 +20,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CosmicBackground } from '@/components/cosmic/cosmic-background';
 import { CosmicSignalCard } from '@/components/cosmic/cosmic-signal-card';
-import { BreakingNewsCard } from '@/components/dashboard/breaking-news-card';
-import { DerivativesCard } from '@/components/dashboard/derivatives-card';
 import { HitRateByVeracityCard } from '@/components/dashboard/hit-rate-by-veracity-card';
 import { HitRateCard } from '@/components/dashboard/hit-rate-card';
 import { KpiCard } from '@/components/dashboard/kpi-card';
 import { MiniSparkline } from '@/components/dashboard/mini-sparkline';
-import { PolymarketCard } from '@/components/dashboard/polymarket-card';
 import { SourceHealthCard } from '@/components/dashboard/source-health-card';
 import { StatsLLMCard } from '@/components/dashboard/stats-llm-card';
-import { TopHeadlinesCard } from '@/components/dashboard/top-headlines-card';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Cosmic, TitleShadow, directionMeta, serifTitleFamily } from '@/constants/cosmic';
@@ -40,13 +36,10 @@ import { TikError } from '@/src/api/errors';
 import { Health, Signal } from '@/src/api/types';
 import { useAuth } from '@/src/auth/AuthContext';
 import { useDashboardKpis } from '@/src/hooks/useDashboardKpis';
-import { useDerivatives } from '@/src/hooks/useDerivatives';
 import { useHitRate } from '@/src/hooks/useHitRate';
 import { useHitRateByVeracity } from '@/src/hooks/useHitRateByVeracity';
 import { useMacroRegime } from '@/src/hooks/useMacroRegime';
-import { usePolymarket } from '@/src/hooks/usePolymarket';
 import { useTick } from '@/src/hooks/use-tick';
-import { useTopHeadlines } from '@/src/hooks/useTopHeadlines';
 import { useUpcomingMacroEvents } from '@/src/hooks/useUpcomingMacroEvents';
 import { useRouter } from 'expo-router';
 import { useTrades } from '@/src/journal/useTrades';
@@ -119,11 +112,6 @@ export default function HomeScreen() {
   }, [checkHealth]);
 
   const kpis = useDashboardKpis();
-  const [headlinesEntity, setHeadlinesEntity] = useState<string>('BTC');
-  const headlinesState = useTopHeadlines(headlinesEntity, { limit: 5 });
-  const [polymarketEntity, setPolymarketEntity] = useState<string>('GOLD');
-  const polymarketState = usePolymarket(polymarketEntity, { limit: 4 });
-  const derivativesState = useDerivatives('BTC');
   const macroEventsState = useUpcomingMacroEvents({ hours: 7 * 24, limit: 8 });
   const macroRegimeState = useMacroRegime();
   const { trades } = useTrades();
@@ -289,31 +277,13 @@ export default function HomeScreen() {
         </Pressable>
       ) : null}
 
-      {/* --- Contexte (déménagera vers l'onglet Sources) --- */}
-      <Text style={styles.contextHeader}>Contexte</Text>
-      <BreakingNewsCard />
-      <TopHeadlinesCard
-        headlines={headlinesState.headlines}
-        entityId={headlinesEntity}
-        onEntityChange={setHeadlinesEntity}
-        displayLimit={5}
-        loading={headlinesState.loading}
-        error={headlinesState.error}
-      />
-      <PolymarketCard
-        snapshot={polymarketState.snapshot}
-        entityId={polymarketEntity}
-        onEntityChange={setPolymarketEntity}
-        displayLimit={3}
-        marketsPerEvent={4}
-        loading={polymarketState.loading}
-        error={polymarketState.error}
-      />
-      <DerivativesCard
-        snapshot={derivativesState.snapshot}
-        loading={derivativesState.loading}
-        error={derivativesState.error}
-      />
+      {/* Accès aux sources OSINT (onglet Sources — bientôt dans la nav 6→5) */}
+      <Pressable
+        onPress={() => router.push('/sources')}
+        style={({ pressed }) => [styles.sourcesLink, { opacity: pressed ? 0.8 : 1 }]}>
+        <Text style={styles.sourcesLinkText}>🔭 Toutes les sources OSINT</Text>
+        <Text style={styles.sourcesLinkChevron}>›</Text>
+      </Pressable>
     </>
   );
 
@@ -683,13 +653,27 @@ const styles = StyleSheet.create({
     color: Cosmic.textDim,
     fontSize: 18,
   },
-  contextHeader: {
-    color: Cosmic.textFaint,
-    fontSize: 11,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginTop: 10,
+  sourcesLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: Cosmic.card,
+    borderColor: Cosmic.borderStrong,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 13,
+    paddingHorizontal: 14,
+    marginTop: 4,
+  },
+  sourcesLinkText: {
+    flex: 1,
+    color: Cosmic.accent,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  sourcesLinkChevron: {
+    color: Cosmic.accent,
+    fontSize: 18,
   },
   // ----- styles repris (Calibration/Système, thémés sombre) -----
   errorText: { color: '#e87a7a', fontSize: 13 },
