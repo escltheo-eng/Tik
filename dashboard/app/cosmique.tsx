@@ -15,6 +15,7 @@
  * la page détail (bout 2). Données 100 % réelles.
  */
 
+import { useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -31,12 +32,13 @@ import {
 import { CosmicBackground } from '@/components/cosmic/cosmic-background';
 import { CosmicSignalRow } from '@/components/cosmic/cosmic-signal-row';
 import { InfoTooltip } from '@/components/ui/info-tooltip';
-import { Cosmic, TitleShadow } from '@/constants/cosmic';
+import { Cosmic, TitleShadow, serifTitleFamily } from '@/constants/cosmic';
+import type { MacroRegime, Signal } from '@/src/api/types';
+import { computeFlashStability } from '@/src/flash/stability';
+import { useMacroRegime } from '@/src/hooks/useMacroRegime';
 import { useSignalStream } from '@/src/hooks/useSignalStream';
 import { useTick } from '@/src/hooks/use-tick';
-import { computeFlashStability } from '@/src/flash/stability';
 import { computeDirectionStability } from '@/src/signals/stability';
-import type { Signal } from '@/src/api/types';
 import { parseUtcIso } from '@/src/utils/time';
 
 const ENTITY_FILTERS: { label: string; value: string | undefined }[] = [
@@ -89,6 +91,15 @@ function connectionColor(state: string): string {
   }
 }
 
+/** Libellé + couleur compacts pour le bandeau contexte macro (haut de Signals). */
+function macroBannerInfo(regime: MacroRegime | null): { text: string; color: string } {
+  const r = regime?.global_liquidity?.regime ?? regime?.net_liquidity?.regime ?? null;
+  if (r === 'expansion') return { text: 'liquidité mondiale en expansion', color: Cosmic.long };
+  if (r === 'contraction') return { text: 'liquidité mondiale en contraction', color: Cosmic.neutral };
+  if (r === 'neutral') return { text: 'liquidité mondiale stable', color: Cosmic.textDim };
+  return { text: 'voir le contexte', color: Cosmic.textDim };
+}
+
 interface Pastille {
   icon: string;
   color: string;
@@ -98,6 +109,10 @@ interface Pastille {
 }
 
 export default function CosmiqueScreen() {
+  const router = useRouter();
+  const macro = useMacroRegime();
+  const macroBanner = macroBannerInfo(macro.regime);
+
   const [entity, setEntity] = useState<string | undefined>(undefined);
   const [horizon, setHorizon] = useState<string | undefined>(undefined);
   const [durationIdx, setDurationIdx] = useState<number>(0);
@@ -238,6 +253,18 @@ export default function CosmiqueScreen() {
         </View>
       </View>
 
+      {/* Bandeau contexte macro compact → page Macro cosmique (bout 3) */}
+      <Pressable
+        onPress={() => router.push('/macro-cosmique')}
+        style={({ pressed }) => [styles.macroBanner, { opacity: pressed ? 0.7 : 1 }]}
+        accessibilityRole="button"
+        accessibilityLabel="Voir le contexte macro">
+        <Text style={styles.macroBannerText} numberOfLines={1}>
+          🌐 Macro · <Text style={{ color: macroBanner.color }}>{macroBanner.text}</Text>
+        </Text>
+        <Text style={styles.macroChevron}>›</Text>
+      </Pressable>
+
       <View style={styles.filterRow}>
         {DURATION_FILTERS.map((d, idx) => filterPill(d.label, durationIdx === idx, () => setDurationIdx(idx)))}
       </View>
@@ -322,10 +349,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   title: {
-    ...TitleShadow.strong,
+    ...TitleShadow.glow,
+    fontFamily: serifTitleFamily,
     color: Cosmic.text,
-    fontSize: 22,
+    fontSize: 28,
     fontWeight: '700',
+    letterSpacing: 0.3,
   },
   statusInline: {
     flexDirection: 'row',
@@ -340,6 +369,27 @@ const styles = StyleSheet.create({
     width: 9,
     height: 9,
     borderRadius: 5,
+  },
+  macroBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: Cosmic.borderStrong,
+    borderRadius: 10,
+    paddingHorizontal: 11,
+    paddingVertical: 8,
+    backgroundColor: Cosmic.card,
+  },
+  macroBannerText: {
+    flex: 1,
+    color: Cosmic.textDim,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  macroChevron: {
+    color: Cosmic.textDim,
+    fontSize: 18,
   },
   filterRow: {
     flexDirection: 'row',

@@ -219,10 +219,10 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   assetName: {
-    ...TitleShadow.strong,
+    ...TitleShadow.glow,
     color: Cosmic.text,
-    fontSize: 24,
-    fontWeight: '600',
+    fontSize: 26,
+    fontWeight: '700',
     fontFamily: Fonts.serif,
     fontStyle: 'italic',
   },

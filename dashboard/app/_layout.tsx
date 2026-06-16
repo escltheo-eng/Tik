@@ -62,6 +62,14 @@ function RootLayoutNav() {
               }}
             />
             <Stack.Screen
+              name="macro-cosmique"
+              options={{
+                title: 'Macro',
+                headerStyle: { backgroundColor: '#06070d' },
+                headerTintColor: '#e8ecf5',
+              }}
+            />
+            <Stack.Screen
               name="cosmique"
               options={{
                 title: '✨ Aperçu cosmique',

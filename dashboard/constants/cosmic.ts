@@ -10,19 +10,19 @@
  * n'a aucun edge directionnel prouvé (go/no-go 2026-05-27).
  */
 
-import type { TextStyle } from 'react-native';
+import { Platform, type TextStyle } from 'react-native';
 
 export const Cosmic = {
   bg: '#0a0c14',
   bgDeep: '#06070d',
-  card: '#131826',
-  cardAlt: '#1a2133',
-  border: 'rgba(255,255,255,0.06)',
-  borderStrong: 'rgba(255,255,255,0.12)',
-  text: '#e8ecf5',
-  textDim: 'rgba(232,236,245,0.62)',
-  textFaint: 'rgba(232,236,245,0.38)',
-  accent: '#f5b042', // ambre / safran
+  card: '#141a2b',
+  cardAlt: '#1d2539',
+  border: 'rgba(255,255,255,0.11)',
+  borderStrong: 'rgba(255,255,255,0.18)',
+  text: '#eef2fa',
+  textDim: 'rgba(236,240,250,0.78)',
+  textFaint: 'rgba(236,240,250,0.56)',
+  accent: '#ffc15e', // ambre / safran (un peu plus lumineux pour le contraste)
   long: '#6ec5a2', // vert doux (haussier)
   short: '#e87a7a', // rouge doux (baissier)
   neutral: '#e8b86b', // orange doux
@@ -63,7 +63,7 @@ export function sunColor(entityId: string): string {
  * absolue — fragile en layout). Ce relief « une ombre » est robuste et rend bien
  * sur le fond sombre. `strong` pour les gros titres, `soft` pour les sous-titres.
  */
-export const TitleShadow: { strong: TextStyle; soft: TextStyle } = {
+export const TitleShadow: { strong: TextStyle; soft: TextStyle; glow: TextStyle } = {
   strong: {
     textShadowColor: 'rgba(0,0,0,0.6)',
     textShadowOffset: { width: 1, height: 2 },
@@ -74,4 +74,21 @@ export const TitleShadow: { strong: TextStyle; soft: TextStyle } = {
     textShadowOffset: { width: 0.5, height: 1.5 },
     textShadowRadius: 2.5,
   },
+  // Halo ambré pour les GROS titres (pages + héros) : donne un relief lumineux
+  // « cosmique » plutôt qu'un simple texte blanc plat.
+  glow: {
+    textShadowColor: 'rgba(255,193,94,0.42)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 13,
+  },
 };
+
+/**
+ * Style de gros titre cosmique réutilisable (police serif système élégante +
+ * léger interlettrage). À combiner avec `TitleShadow.glow` et une taille/poids.
+ * `serifTitle` centralise le choix de police pour les titres de page/héros, le
+ * temps que les vraies polices (Fraunces…) arrivent au bout 4.
+ */
+export const serifTitleFamily =
+  Platform.select({ ios: 'ui-serif', web: "Georgia, 'Times New Roman', serif", default: 'serif' }) ??
+  'serif';
