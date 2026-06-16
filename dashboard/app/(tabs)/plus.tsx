@@ -21,8 +21,8 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CosmicBackground } from '@/components/cosmic/cosmic-background';
+import { CosmicHitRate } from '@/components/cosmic/cosmic-hit-rate';
 import { HitRateByVeracityCard } from '@/components/dashboard/hit-rate-by-veracity-card';
-import { HitRateCard } from '@/components/dashboard/hit-rate-card';
 import { StatsLLMCard } from '@/components/dashboard/stats-llm-card';
 import { Cosmic, TitleShadow, serifTitleFamily } from '@/constants/cosmic';
 import { Fonts } from '@/constants/theme';
@@ -51,9 +51,8 @@ export default function PlusScreen() {
   // Cartes détaillées avec sélecteurs (reprises de l'ex-onglet Calibration).
   const [hrEntity, setHrEntity] = useState<string>('BTC');
   const [hrHorizon, setHrHorizon] = useState<string>('swing');
-  const [hrFlagged, setHrFlagged] = useState<boolean>(false);
-  const hitRateState = useHitRate(hrEntity, hrHorizon, { includeFlagged: hrFlagged });
-  const byVeracityState = useHitRateByVeracity(hrEntity, hrHorizon, { includeFlagged: hrFlagged });
+  const hitRateState = useHitRate(hrEntity, hrHorizon);
+  const byVeracityState = useHitRateByVeracity(hrEntity, hrHorizon);
 
   const hr = heroHit.data?.hit_rate ?? null;
   const heroN = heroHit.data?.n_evaluated ?? 0;
@@ -144,16 +143,13 @@ export default function PlusScreen() {
           )}
         </View>
 
-        {/* Détail (sélecteurs entité/horizon) — réutilise les cartes existantes */}
-        <Text style={styles.section}>Détail hit rate</Text>
-        <HitRateCard
+        {/* Détail hit-rate en jauge cosmique (sélecteurs entité/horizon) */}
+        <CosmicHitRate
           data={hitRateState.data}
           entityId={hrEntity}
           horizon={hrHorizon}
-          includeFlagged={hrFlagged}
           onEntityChange={setHrEntity}
           onHorizonChange={setHrHorizon}
-          onIncludeFlaggedChange={setHrFlagged}
           loading={hitRateState.loading}
           error={hitRateState.error}
         />

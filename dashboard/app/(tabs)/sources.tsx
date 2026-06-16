@@ -15,9 +15,9 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CosmicBackground } from '@/components/cosmic/cosmic-background';
-import { DerivativesCard } from '@/components/dashboard/derivatives-card';
-import { PolymarketCard } from '@/components/dashboard/polymarket-card';
-import { SourceHealthCard } from '@/components/dashboard/source-health-card';
+import { CosmicDerivatives } from '@/components/cosmic/cosmic-derivatives';
+import { CosmicPolymarket } from '@/components/cosmic/cosmic-polymarket';
+import { CosmicSourceHealth } from '@/components/cosmic/cosmic-source-health';
 import { Cosmic, TitleShadow, serifTitleFamily } from '@/constants/cosmic';
 import { Fonts } from '@/constants/theme';
 import { useDerivatives } from '@/src/hooks/useDerivatives';
@@ -44,22 +44,17 @@ export default function SourcesScreen() {
             'prouvé seule : elles se croisent (cross-validation).'}
         </Text>
 
-        <Text style={styles.section}>Santé des sources</Text>
-        <SourceHealthCard />
+        <CosmicSourceHealth />
 
-        <Text style={styles.section}>Marchés prédictifs</Text>
-        <PolymarketCard
+        <CosmicPolymarket
           snapshot={polymarketState.snapshot}
           entityId={polymarketEntity}
           onEntityChange={setPolymarketEntity}
-          displayLimit={3}
-          marketsPerEvent={4}
           loading={polymarketState.loading}
           error={polymarketState.error}
         />
 
-        <Text style={styles.section}>Positionnement dérivés (BTC)</Text>
-        <DerivativesCard
+        <CosmicDerivatives
           snapshot={derivativesState.snapshot}
           loading={derivativesState.loading}
           error={derivativesState.error}
@@ -104,14 +99,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
     marginBottom: 2,
-  },
-  section: {
-    color: Cosmic.accent,
-    fontSize: 12,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-    marginTop: 8,
   },
   footer: {
     color: Cosmic.textFaint,
