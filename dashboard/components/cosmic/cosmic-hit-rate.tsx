@@ -29,8 +29,8 @@ const ENTITIES = ['BTC', 'GOLD'] as const;
 const HORIZONS = ['flash', 'swing', 'macro'] as const;
 
 const CX = 100;
-const CY = 92;
-const R = 76;
+const CY = 84;
+const R = 72;
 
 function polar(deg: number, r: number = R): { x: number; y: number } {
   const a = (deg * Math.PI) / 180;
@@ -93,22 +93,22 @@ export function CosmicHitRate({
       ) : (
         <>
           <View style={styles.gaugeWrap}>
-            <Svg width={200} height={104} viewBox="0 0 200 104">
+            <Svg width={200} height={92} viewBox="0 0 200 92">
               {/* Track */}
-              <Path d={arc(180, 360)} stroke="rgba(255,255,255,0.10)" strokeWidth={13} strokeLinecap="round" fill="none" />
+              <Path d={arc(180, 360)} stroke="rgba(255,255,255,0.10)" strokeWidth={12} strokeLinecap="round" fill="none" />
               {/* Remplissage = hit-rate */}
               <Path
                 d={arc(180, 180 + hr * 180)}
                 stroke={hitColor(hr)}
-                strokeWidth={13}
+                strokeWidth={12}
                 strokeLinecap="round"
                 fill="none"
               />
               {/* Repère baseline */}
               {baseline != null ? (
                 <Line
-                  x1={polar(180 + baseline * 180, R - 10).x}
-                  y1={polar(180 + baseline * 180, R - 10).y}
+                  x1={polar(180 + baseline * 180, R - 9).x}
+                  y1={polar(180 + baseline * 180, R - 9).y}
                   x2={polar(180 + baseline * 180, R + 6).x}
                   y2={polar(180 + baseline * 180, R + 6).y}
                   stroke={Cosmic.text}
@@ -116,10 +116,8 @@ export function CosmicHitRate({
                 />
               ) : null}
             </Svg>
-            <View style={styles.gaugeCenter}>
-              <Text style={[styles.gaugeValue, { color: hitColor(hr) }]}>{(hr * 100).toFixed(0)}%</Text>
-              <Text style={styles.gaugeSub}>{data!.n_evaluated} mesurés</Text>
-            </View>
+            <Text style={[styles.gaugeValue, { color: hitColor(hr) }]}>{(hr * 100).toFixed(0)}%</Text>
+            <Text style={styles.gaugeSub}>{data!.n_evaluated} mesurés</Text>
           </View>
 
           <View style={styles.baselineRow}>
@@ -188,18 +186,14 @@ const styles = StyleSheet.create({
   pillTextActive: { color: Cosmic.bgDeep },
   gaugeWrap: {
     alignItems: 'center',
-    justifyContent: 'flex-end',
-    position: 'relative',
-  },
-  gaugeCenter: {
-    position: 'absolute',
-    bottom: 0,
-    alignItems: 'center',
+    gap: 2,
+    marginTop: 2,
   },
   gaugeValue: {
     fontFamily: Fonts.mono,
-    fontSize: 32,
+    fontSize: 34,
     fontWeight: '800',
+    marginTop: 2,
   },
   gaugeSub: {
     color: Cosmic.textFaint,
