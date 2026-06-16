@@ -23,10 +23,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CosmicBackground } from '@/components/cosmic/cosmic-background';
 import { HitRateByVeracityCard } from '@/components/dashboard/hit-rate-by-veracity-card';
 import { HitRateCard } from '@/components/dashboard/hit-rate-card';
-import { SourceHealthCard } from '@/components/dashboard/source-health-card';
 import { StatsLLMCard } from '@/components/dashboard/stats-llm-card';
 import { Cosmic, TitleShadow, serifTitleFamily } from '@/constants/cosmic';
 import { Fonts } from '@/constants/theme';
+import { useAlerts } from '@/src/alerts/AlertsContext';
 import { useDashboardKpis } from '@/src/hooks/useDashboardKpis';
 import { useHitRate } from '@/src/hooks/useHitRate';
 import { useHitRateByVeracity } from '@/src/hooks/useHitRateByVeracity';
@@ -42,6 +42,7 @@ export default function PlusScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const kpis = useDashboardKpis();
+  const { unreadCount } = useAlerts();
 
   // Hero : hit-rate BTC swing 5j (l'horizon le plus exploitable). Mesure réelle.
   const heroHit = useHitRate('BTC', 'swing');
@@ -71,6 +72,7 @@ export default function PlusScreen() {
     label: string,
     onPress: (() => void) | null,
     note?: string,
+    badge?: number,
   ) => (
     <Pressable
       onPress={onPress ?? undefined}
@@ -78,6 +80,11 @@ export default function PlusScreen() {
       style={({ pressed }) => [styles.hubRow, { opacity: pressed && onPress ? 0.7 : 1 }]}>
       <Text style={styles.hubIcon}>{icon}</Text>
       <Text style={styles.hubLabel}>{label}</Text>
+      {badge && badge > 0 ? (
+        <View style={styles.hubBadge}>
+          <Text style={styles.hubBadgeText}>{badge}</Text>
+        </View>
+      ) : null}
       {note ? <Text style={styles.hubNote}>{note}</Text> : null}
       <Text style={styles.hubChevron}>{onPress ? '›' : ''}</Text>
     </Pressable>
@@ -162,16 +169,12 @@ export default function PlusScreen() {
         <Text style={styles.section}>Moteur LLM (Ollama)</Text>
         <StatsLLMCard stats={kpis.llmStatsToday} loading={kpis.loading} error={kpis.signals24hError} />
 
-        {/* Santé système */}
-        <Text style={styles.section}>Système</Text>
-        <SourceHealthCard />
-
-        {/* Hub d'accès */}
+        {/* Hub d'accès (santé des sources = onglet Sources, pas dupliquée ici) */}
         <Text style={styles.section}>Accès</Text>
         <View style={styles.hub}>
           {hubRow('★', 'Watchlist', () => router.push('/watchlist'))}
           {hubRow('📅', 'Calendrier macro', () => router.push('/macro'))}
-          {hubRow('🔔', 'Alertes', () => router.push('/alerts'))}
+          {hubRow('🔔', 'Alertes', () => router.push('/alerts'), undefined, unreadCount)}
           {hubRow('⚙', 'Configuration', () => router.push('/config'))}
           {hubRow('ℹ', 'À propos', () => router.push('/about'))}
           {hubRow('🤖', 'Bots', null, 'bientôt')}
@@ -328,6 +331,20 @@ const styles = StyleSheet.create({
     color: Cosmic.textFaint,
     fontSize: 11,
     fontFamily: Fonts.mono,
+  },
+  hubBadge: {
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    backgroundColor: Cosmic.short,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  hubBadgeText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '800',
   },
   hubChevron: {
     color: Cosmic.textDim,
