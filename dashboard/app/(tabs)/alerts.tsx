@@ -43,7 +43,7 @@ export default function AlertsScreen() {
         key={alert.id}
         onPress={() => {
           markAsRead(alert.id);
-          router.push(`/signal/${encodeURIComponent(alert.signalId)}`);
+          router.push(`/signal-cosmique/${encodeURIComponent(alert.signalId)}`);
         }}
         style={({ pressed }) => [
           styles.row,
