@@ -573,7 +573,7 @@ const styles = StyleSheet.create({
   },
   globalValue: {
     color: Cosmic.text,
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '700',
     fontFamily: serifTitleFamily,
     fontStyle: 'italic',
@@ -592,7 +592,7 @@ const styles = StyleSheet.create({
   },
   disciplineSub: {
     color: Cosmic.textFaint,
-    fontSize: 11,
+    fontSize: 12,
     fontStyle: 'italic',
     marginBottom: 2,
   },
@@ -609,8 +609,8 @@ const styles = StyleSheet.create({
   critText: {
     flex: 1,
     color: Cosmic.textDim,
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: 14,
+    lineHeight: 20,
   },
   sectionLabel: {
     color: Cosmic.accent,
@@ -677,7 +677,7 @@ const styles = StyleSheet.create({
   nextEventText: {
     flex: 1,
     color: Cosmic.text,
-    fontSize: 12,
+    fontSize: 13,
   },
   nextEventChevron: {
     color: Cosmic.textDim,

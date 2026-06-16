@@ -110,7 +110,7 @@ const styles = StyleSheet.create({
   },
   entity: {
     color: Cosmic.text,
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '700',
   },
   meta: {
@@ -121,7 +121,7 @@ const styles = StyleSheet.create({
   spacer: { flex: 1 },
   time: {
     color: Cosmic.textFaint,
-    fontSize: 11,
+    fontSize: 12,
   },
   chevron: {
     color: Cosmic.textDim,
@@ -136,7 +136,7 @@ const styles = StyleSheet.create({
   },
   metric: {
     color: Cosmic.textDim,
-    fontSize: 12,
+    fontSize: 13,
     fontFamily: Fonts.mono,
   },
   metricSep: {

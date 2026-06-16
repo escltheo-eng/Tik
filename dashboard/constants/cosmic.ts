@@ -19,9 +19,9 @@ export const Cosmic = {
   cardAlt: '#1d2539',
   border: 'rgba(255,255,255,0.11)',
   borderStrong: 'rgba(255,255,255,0.18)',
-  text: '#eef2fa',
-  textDim: 'rgba(236,240,250,0.78)',
-  textFaint: 'rgba(236,240,250,0.56)',
+  text: '#e8e4dc', // blanc crème chaud (choix maquettes) — doux pour les yeux sur OLED
+  textDim: 'rgba(232,228,220,0.74)',
+  textFaint: 'rgba(232,228,220,0.5)',
   accent: '#ffc15e', // ambre / safran (un peu plus lumineux pour le contraste)
   long: '#6ec5a2', // vert doux (haussier)
   short: '#e87a7a', // rouge doux (baissier)

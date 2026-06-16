@@ -254,7 +254,7 @@ const styles = StyleSheet.create({
   },
   conviction: {
     color: Cosmic.textDim,
-    fontSize: 13,
+    fontSize: 14,
     fontFamily: Fonts.mono,
   },
   statGrid: {
@@ -271,13 +271,13 @@ const styles = StyleSheet.create({
   },
   statLabel: {
     color: Cosmic.textFaint,
-    fontSize: 10,
+    fontSize: 11,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
   statValue: {
     color: Cosmic.text,
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '700',
     fontFamily: Fonts.mono,
   },
@@ -305,8 +305,8 @@ const styles = StyleSheet.create({
   driverText: {
     flex: 1,
     color: Cosmic.text,
-    fontSize: 13,
-    lineHeight: 19,
+    fontSize: 14,
+    lineHeight: 21,
   },
   sourceChip: {
     backgroundColor: 'rgba(125,158,211,0.14)',
@@ -336,13 +336,13 @@ const styles = StyleSheet.create({
   },
   counterName: {
     color: Cosmic.text,
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: 14,
+    lineHeight: 20,
   },
   counterMitigation: {
     color: Cosmic.textDim,
-    fontSize: 12,
-    lineHeight: 17,
+    fontSize: 13,
+    lineHeight: 19,
   },
   chevron: {
     color: Cosmic.textDim,
@@ -360,7 +360,7 @@ const styles = StyleSheet.create({
   disclaimer: {
     marginTop: 10,
     color: Cosmic.textFaint,
-    fontSize: 11,
+    fontSize: 12,
     fontStyle: 'italic',
     textAlign: 'center',
   },

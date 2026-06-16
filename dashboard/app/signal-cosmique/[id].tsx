@@ -758,12 +758,12 @@ const styles = StyleSheet.create({
   },
   bodyText: {
     color: Cosmic.text,
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 15,
+    lineHeight: 23,
   },
   emptyText: {
     color: Cosmic.textDim,
-    fontSize: 13,
+    fontSize: 14,
   },
   flagBox: {
     borderWidth: 1,
@@ -777,8 +777,8 @@ const styles = StyleSheet.create({
   },
   flagDesc: {
     color: Cosmic.textDim,
-    fontSize: 12,
-    lineHeight: 17,
+    fontSize: 13,
+    lineHeight: 19,
   },
   flagHint: {
     color: Cosmic.textFaint,
@@ -813,7 +813,7 @@ const styles = StyleSheet.create({
   },
   subName: {
     color: Cosmic.text,
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '600',
     flex: 1,
   },
@@ -824,8 +824,8 @@ const styles = StyleSheet.create({
   },
   subBody: {
     color: Cosmic.textDim,
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: 14,
+    lineHeight: 20,
   },
   llmCard: {
     backgroundColor: 'rgba(125,158,211,0.06)',
@@ -880,8 +880,8 @@ const styles = StyleSheet.create({
   },
   collapsibleNote: {
     color: Cosmic.textFaint,
-    fontSize: 12,
-    lineHeight: 17,
+    fontSize: 13,
+    lineHeight: 19,
     marginBottom: 6,
   },
   metaCard: {
