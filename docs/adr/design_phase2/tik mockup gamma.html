@@ -1,0 +1,1508 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tik — Mockup γ Cosmique Mobile</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600;9..144,700&family=JetBrains+Mono:wght@300;400;500;600;700&family=Manrope:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0a0c14;
+  --bg-deep: #06070d;
+  --bg-card: #131826;
+  --bg-card-elevated: #1a2030;
+  --border: rgba(255, 255, 255, 0.06);
+  --border-strong: rgba(255, 255, 255, 0.12);
+  --text: #e8e4dc;
+  --text-dim: rgba(232, 228, 220, 0.6);
+  --text-faint: rgba(232, 228, 220, 0.35);
+  --accent: #f5b042;
+  --accent-soft: rgba(245, 176, 66, 0.15);
+  --long: #6ec5a2;
+  --long-soft: rgba(110, 197, 162, 0.12);
+  --short: #e87a7a;
+  --short-soft: rgba(232, 122, 122, 0.12);
+  --neutral: #e8b86b;
+  --neutral-soft: rgba(232, 184, 107, 0.12);
+  --info: #7d9ed3;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: #050609;
+  color: var(--text);
+  font-family: 'Manrope', sans-serif;
+  font-weight: 400;
+  min-height: 100vh;
+  padding: 48px 24px 80px;
+  background-image:
+    radial-gradient(ellipse at 20% 10%, rgba(245, 176, 66, 0.04) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 90%, rgba(125, 158, 211, 0.03) 0%, transparent 50%);
+}
+
+.intro {
+  max-width: 1400px;
+  margin: 0 auto 56px;
+  text-align: center;
+}
+
+.intro-tag {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.4em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 12px;
+}
+
+.intro-title {
+  font-family: 'Fraunces', serif;
+  font-weight: 300;
+  font-size: 44px;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+  margin-bottom: 14px;
+  font-style: italic;
+}
+
+.intro-title em {
+  font-weight: 600;
+  font-style: normal;
+  color: var(--accent);
+}
+
+.intro-desc {
+  color: var(--text-dim);
+  font-size: 16px;
+  max-width: 680px;
+  margin: 0 auto;
+  line-height: 1.5;
+}
+
+.screens {
+  display: flex;
+  gap: 36px;
+  justify-content: center;
+  flex-wrap: wrap;
+  max-width: 1500px;
+  margin: 0 auto;
+}
+
+.screen-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+}
+
+.screen-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.screen-label-num {
+  color: var(--accent);
+  margin-right: 8px;
+}
+
+/* MOBILE FRAME */
+.frame {
+  width: 380px;
+  height: 800px;
+  background: linear-gradient(180deg, #1a1814 0%, #0d0e14 100%);
+  border-radius: 44px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow:
+    0 0 0 1px rgba(255, 200, 100, 0.04),
+    0 40px 100px -20px rgba(0, 0, 0, 0.7),
+    0 20px 40px -10px rgba(245, 176, 66, 0.05);
+  position: relative;
+}
+
+.screen {
+  width: 100%;
+  height: 100%;
+  background: var(--bg);
+  border-radius: 32px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+/* Stars background */
+.screen::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(1px 1px at 15% 25%, rgba(245, 176, 66, 0.4), transparent),
+    radial-gradient(1px 1px at 70% 15%, rgba(255, 255, 255, 0.3), transparent),
+    radial-gradient(1px 1px at 35% 60%, rgba(125, 158, 211, 0.3), transparent),
+    radial-gradient(0.5px 0.5px at 85% 40%, rgba(255, 255, 255, 0.5), transparent),
+    radial-gradient(1px 1px at 50% 85%, rgba(245, 176, 66, 0.25), transparent),
+    radial-gradient(0.5px 0.5px at 25% 90%, rgba(255, 255, 255, 0.4), transparent),
+    radial-gradient(1px 1px at 90% 75%, rgba(255, 255, 255, 0.2), transparent);
+  background-size: 100% 100%;
+  pointer-events: none;
+  opacity: 0.7;
+  z-index: 0;
+}
+
+/* STATUS BAR */
+.status-bar {
+  display: flex;
+  justify-content: space-between;
+  padding: 14px 24px 8px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text);
+  font-weight: 500;
+  position: relative;
+  z-index: 1;
+}
+
+/* HEADER */
+.header {
+  padding: 10px 24px 18px;
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  position: relative;
+  z-index: 1;
+}
+
+.brand {
+  font-family: 'Fraunces', serif;
+  font-weight: 300;
+  font-size: 28px;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  font-style: italic;
+  line-height: 0.9;
+}
+
+.brand-mark {
+  font-style: normal;
+  font-weight: 600;
+}
+
+.brand-sub {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-top: 4px;
+}
+
+.header-meta {
+  text-align: right;
+}
+
+.header-meta-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8px;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-bottom: 2px;
+}
+
+.header-meta-value {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text-dim);
+  font-weight: 500;
+}
+
+/* GLOBAL STRIP */
+.global-strip {
+  margin: 0 16px 18px;
+  padding: 14px 18px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  position: relative;
+  z-index: 1;
+  backdrop-filter: blur(10px);
+}
+
+.global-item { flex: 1; text-align: center; }
+
+.global-item:nth-child(2) {
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+}
+
+.global-item-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-bottom: 6px;
+}
+
+.global-item-value {
+  font-family: 'Fraunces', serif;
+  font-weight: 500;
+  font-size: 14px;
+  font-style: italic;
+  letter-spacing: 0.02em;
+}
+
+.global-item-value.warn { color: var(--neutral); }
+.global-item-value.pos { color: var(--long); }
+.global-item-value.neg { color: var(--short); }
+
+/* SCROLL AREA */
+.scroll-area {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  position: relative;
+  z-index: 1;
+  scrollbar-width: none;
+}
+
+.scroll-area::-webkit-scrollbar { display: none; }
+
+/* SIGNAL CARD with sun glow */
+.signal-card {
+  background: linear-gradient(180deg, var(--bg-card) 0%, var(--bg-card-elevated) 100%);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 18px;
+  position: relative;
+  overflow: hidden;
+}
+
+.signal-card::before {
+  content: '';
+  position: absolute;
+  top: -40px;
+  right: -40px;
+  width: 140px;
+  height: 140px;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.signal-card.btc::before {
+  background: radial-gradient(circle, rgba(245, 176, 66, 0.18) 0%, rgba(245, 176, 66, 0.04) 50%, transparent 70%);
+}
+
+.signal-card.gold::before {
+  background: radial-gradient(circle, rgba(232, 184, 107, 0.15) 0%, rgba(232, 184, 107, 0.04) 50%, transparent 70%);
+}
+
+.signal-card.silver::before {
+  background: radial-gradient(circle, rgba(180, 180, 200, 0.1) 0%, rgba(180, 180, 200, 0.02) 50%, transparent 70%);
+}
+
+.signal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  margin-bottom: 14px;
+  position: relative;
+  z-index: 2;
+}
+
+.signal-asset-block { display: flex; align-items: center; gap: 12px; }
+
+.signal-asset-orb {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.orb-btc {
+  background: radial-gradient(circle at 30% 30%, #ffba6b, #d97e1f 70%);
+  box-shadow: 0 0 16px rgba(245, 176, 66, 0.5);
+}
+
+.orb-gold {
+  background: radial-gradient(circle at 30% 30%, #ffe48a, #d4a01a 70%);
+  box-shadow: 0 0 16px rgba(232, 184, 107, 0.5);
+}
+
+.orb-silver {
+  background: radial-gradient(circle at 30% 30%, #e0e0e8, #9a9aac 70%);
+  box-shadow: 0 0 12px rgba(200, 200, 220, 0.3);
+}
+
+.signal-asset-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.signal-asset-name {
+  font-family: 'Fraunces', serif;
+  font-weight: 600;
+  font-size: 22px;
+  letter-spacing: -0.01em;
+  line-height: 1;
+}
+
+.signal-asset-price {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: 4px;
+}
+
+.signal-change-up { color: var(--long); }
+.signal-change-down { color: var(--short); }
+
+.signal-direction {
+  text-align: right;
+}
+
+.signal-tag {
+  display: inline-block;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.tag-long {
+  background: var(--long-soft);
+  color: var(--long);
+  border: 1px solid rgba(110, 197, 162, 0.3);
+}
+
+.tag-short {
+  background: var(--short-soft);
+  color: var(--short);
+  border: 1px solid rgba(232, 122, 122, 0.3);
+}
+
+.tag-neutral {
+  background: var(--neutral-soft);
+  color: var(--neutral);
+  border: 1px solid rgba(232, 184, 107, 0.3);
+}
+
+.tag-experimental {
+  background: rgba(180, 180, 200, 0.08);
+  color: rgba(200, 200, 220, 0.7);
+  border: 1px solid rgba(200, 200, 220, 0.2);
+  font-size: 8px;
+  letter-spacing: 0.15em;
+  margin-left: 8px;
+  padding: 3px 7px;
+}
+
+.signal-confidence {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.signal-confidence strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.signal-metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  margin-bottom: 14px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.signal-metric {
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.02);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.signal-metric-label {
+  font-size: 8px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-bottom: 3px;
+}
+
+.signal-metric-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.signal-section-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.signal-section-label::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(to right, var(--border), transparent);
+}
+
+.driver-list {
+  list-style: none;
+  padding: 0;
+  margin-bottom: 12px;
+}
+
+.driver-item {
+  display: flex;
+  align-items: start;
+  gap: 10px;
+  padding: 7px 0;
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.4;
+}
+
+.driver-icon {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  flex-shrink: 0;
+  margin-top: 1px;
+  width: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.driver-icon.positive { color: var(--long); }
+.driver-icon.negative { color: var(--short); }
+.driver-icon.neutral { color: var(--text-faint); }
+
+.driver-source {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  color: var(--accent);
+  opacity: 0.7;
+  margin-left: 3px;
+}
+
+.contre-scenario {
+  background: rgba(232, 184, 107, 0.06);
+  border-left: 2px solid var(--neutral);
+  padding: 9px 12px;
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  font-family: 'Manrope', sans-serif;
+}
+
+.contre-scenario-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--neutral);
+  margin-bottom: 4px;
+  font-style: normal;
+}
+
+.experimental-msg {
+  font-size: 11px;
+  color: var(--text-faint);
+  padding: 10px 12px;
+  background: rgba(180, 180, 200, 0.04);
+  border-radius: 6px;
+  line-height: 1.45;
+  font-style: italic;
+  font-family: 'Fraunces', serif;
+}
+
+/* ORBITAL VIEW BUTTON */
+.orbital-cta {
+  background:
+    radial-gradient(ellipse at 50% 50%, rgba(245, 176, 66, 0.08) 0%, transparent 70%),
+    linear-gradient(135deg, rgba(245, 176, 66, 0.05), transparent);
+  border: 1px solid rgba(245, 176, 66, 0.2);
+  border-radius: 14px;
+  padding: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  cursor: pointer;
+  margin-top: 4px;
+}
+
+.orbital-cta-icon {
+  font-size: 24px;
+  filter: drop-shadow(0 0 8px rgba(245, 176, 66, 0.4));
+}
+
+.orbital-cta-text { flex: 1; }
+
+.orbital-cta-title {
+  font-family: 'Fraunces', serif;
+  font-style: italic;
+  font-weight: 500;
+  font-size: 14px;
+  color: var(--accent);
+  margin-bottom: 2px;
+}
+
+.orbital-cta-sub {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: var(--text-faint);
+}
+
+.orbital-cta-arrow {
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--accent);
+  font-size: 16px;
+}
+
+/* SOURCES VIEW */
+.sources-tabs {
+  display: flex;
+  gap: 6px;
+  padding: 4px 16px 14px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  position: relative;
+  z-index: 1;
+}
+
+.sources-tabs::-webkit-scrollbar { display: none; }
+
+.source-tab {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  padding: 7px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  cursor: pointer;
+  flex-shrink: 0;
+  text-transform: uppercase;
+}
+
+.source-tab.active {
+  background: var(--accent-soft);
+  border-color: rgba(245, 176, 66, 0.4);
+  color: var(--accent);
+}
+
+.source-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 16px;
+}
+
+.source-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  margin-bottom: 12px;
+}
+
+.source-card-title {
+  font-family: 'Fraunces', serif;
+  font-weight: 500;
+  font-size: 16px;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+
+.source-card-subtitle {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  color: var(--text-faint);
+  margin-top: 3px;
+  letter-spacing: 0.1em;
+}
+
+.source-veracity {
+  text-align: right;
+}
+
+.veracity-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8px;
+  letter-spacing: 0.18em;
+  color: var(--text-faint);
+  text-transform: uppercase;
+}
+
+.veracity-value {
+  font-family: 'Fraunces', serif;
+  font-style: italic;
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--long);
+  margin-top: 2px;
+}
+
+.veracity-value.warn { color: var(--neutral); }
+.veracity-value.poor { color: var(--short); }
+
+.source-main-value {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 28px;
+  font-weight: 600;
+  margin: 14px 0 4px;
+  letter-spacing: -0.01em;
+}
+
+.value-positive { color: var(--long); }
+.value-negative { color: var(--short); }
+
+.sparkline {
+  height: 40px;
+  display: flex;
+  align-items: end;
+  gap: 3px;
+  margin: 10px 0;
+}
+
+.spark-bar {
+  flex: 1;
+  background: linear-gradient(to top, currentColor, transparent);
+  border-radius: 2px 2px 0 0;
+  opacity: 0.7;
+}
+
+.sparkline.positive { color: var(--long); }
+.sparkline.negative { color: var(--short); }
+
+.source-meta {
+  display: flex;
+  justify-content: space-between;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  color: var(--text-faint);
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  margin-top: 12px;
+  letter-spacing: 0.05em;
+}
+
+/* CALENDAR VIEW */
+.calendar-day {
+  margin-bottom: 22px;
+}
+
+.calendar-day-label {
+  font-family: 'Fraunces', serif;
+  font-weight: 400;
+  font-style: italic;
+  font-size: 13px;
+  color: var(--accent);
+  padding-bottom: 10px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.calendar-day-label-meta {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  font-style: normal;
+}
+
+.calendar-event {
+  display: grid;
+  grid-template-columns: 50px 1fr auto;
+  gap: 12px;
+  padding: 10px 4px;
+  align-items: center;
+}
+
+.calendar-event-time {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text-dim);
+  font-weight: 500;
+}
+
+.calendar-event-content {
+  font-family: 'Manrope', sans-serif;
+}
+
+.calendar-event-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  margin-bottom: 2px;
+  line-height: 1.3;
+}
+
+.calendar-event-detail {
+  font-size: 11px;
+  color: var(--text-faint);
+  line-height: 1.3;
+}
+
+.calendar-event-tag {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8px;
+  letter-spacing: 0.12em;
+  padding: 3px 7px;
+  border-radius: 4px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.tag-macro { background: rgba(125, 158, 211, 0.15); color: var(--info); }
+.tag-fed { background: rgba(232, 184, 107, 0.15); color: var(--neutral); }
+.tag-geo { background: rgba(232, 122, 122, 0.15); color: var(--short); }
+.tag-etf { background: rgba(110, 197, 162, 0.15); color: var(--long); }
+.tag-onchain { background: rgba(168, 85, 247, 0.15); color: #c08fff; }
+
+/* BOTTOM NAV */
+.bottom-nav {
+  display: flex;
+  border-top: 1px solid var(--border);
+  background: rgba(10, 12, 20, 0.95);
+  padding: 10px 0 calc(10px + env(safe-area-inset-bottom));
+  backdrop-filter: blur(20px);
+  position: relative;
+  z-index: 2;
+}
+
+.nav-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 4px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  cursor: pointer;
+  position: relative;
+}
+
+.nav-item.active { color: var(--accent); }
+
+.nav-item.active::before {
+  content: '';
+  position: absolute;
+  top: -10px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+}
+
+.nav-icon {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  opacity: 0.5;
+}
+
+.nav-item.active .nav-icon {
+  opacity: 1;
+}
+
+/* ANNOTATIONS */
+.annotations {
+  max-width: 1500px;
+  margin: 72px auto 0;
+  padding: 40px;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 20px;
+  border: 1px solid var(--border);
+}
+
+.annot-title {
+  font-family: 'Fraunces', serif;
+  font-style: italic;
+  font-weight: 400;
+  font-size: 32px;
+  letter-spacing: -0.02em;
+  margin-bottom: 8px;
+  color: var(--text);
+}
+
+.annot-title em {
+  font-style: normal;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.annot-subtitle {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-bottom: 32px;
+}
+
+.annot-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 40px;
+}
+
+.annot-block h3 {
+  font-family: 'Fraunces', serif;
+  font-weight: 500;
+  font-size: 20px;
+  margin-bottom: 14px;
+  color: var(--text);
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.annot-block h3 span {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--accent);
+  letter-spacing: 0.2em;
+}
+
+.annot-block ul {
+  list-style: none;
+  padding: 0;
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--text-dim);
+}
+
+.annot-block li {
+  padding-left: 18px;
+  position: relative;
+  margin-bottom: 8px;
+}
+
+.annot-block li::before {
+  content: '◦';
+  position: absolute;
+  left: 0;
+  color: var(--accent);
+  opacity: 0.6;
+}
+
+.annot-block li strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+@media (max-width: 1280px) {
+  .annot-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<header class="intro">
+  <div class="intro-tag">Mockup γ — Cosmique mais pragmatique</div>
+  <h1 class="intro-title">L'identité de la <em>cosmologie</em>,<br>la rigueur du <em>quotidien</em>.</h1>
+  <p class="intro-desc">
+    Esthétique distinctive avec mini-soleils BTC/Gold, étoiles, typographie Fraunces.
+    Structure pragmatique mobile pour décider en 30 secondes.
+  </p>
+</header>
+
+<section class="screens">
+
+  <!-- ========== SIGNALS ========== -->
+  <div class="screen-wrapper">
+    <div class="screen-label"><span class="screen-label-num">01.</span>SIGNALS</div>
+    <div class="frame">
+      <div class="screen">
+
+        <div class="status-bar">
+          <span>09:42</span>
+          <span>● ● ● 87%</span>
+        </div>
+
+        <div class="header">
+          <div>
+            <div class="brand"><span class="brand-mark">Tik</span><span style="font-style: italic; font-weight: 300;"> · signals</span></div>
+            <div class="brand-sub">Observatoire OSINT</div>
+          </div>
+          <div class="header-meta">
+            <div class="header-meta-label">17 Mai 2026</div>
+            <div class="header-meta-value">Vague 1</div>
+          </div>
+        </div>
+
+        <div class="global-strip">
+          <div class="global-item">
+            <div class="global-item-label">Régime</div>
+            <div class="global-item-value warn">Risk-off</div>
+          </div>
+          <div class="global-item">
+            <div class="global-item-label">Liquidité</div>
+            <div class="global-item-value pos">Expansion</div>
+          </div>
+          <div class="global-item">
+            <div class="global-item-label">Stress</div>
+            <div class="global-item-value warn">78</div>
+          </div>
+        </div>
+
+        <div class="scroll-area">
+
+          <!-- BTC -->
+          <div class="signal-card btc">
+            <div class="signal-header">
+              <div class="signal-asset-block">
+                <div class="signal-asset-orb orb-btc"></div>
+                <div class="signal-asset-info">
+                  <div class="signal-asset-name">Bitcoin</div>
+                  <div class="signal-asset-price">67,492 <span class="signal-change-down">−1.37%</span></div>
+                </div>
+              </div>
+              <div class="signal-direction">
+                <div class="signal-tag tag-long">LONG</div>
+                <div class="signal-confidence">conf. <strong>72%</strong></div>
+              </div>
+            </div>
+
+            <div class="signal-metrics">
+              <div class="signal-metric">
+                <div class="signal-metric-label">Veracity</div>
+                <div class="signal-metric-value">0.81</div>
+              </div>
+              <div class="signal-metric">
+                <div class="signal-metric-label">Horizon</div>
+                <div class="signal-metric-value">5J · Swing</div>
+              </div>
+            </div>
+
+            <div class="signal-section-label">Top drivers</div>
+            <ul class="driver-list">
+              <li class="driver-item">
+                <span class="driver-icon positive">↑</span>
+                <div>ETF inflows <strong style="color: var(--text);">+473M$</strong> · 24h <span class="driver-source">Farside</span></div>
+              </li>
+              <li class="driver-item">
+                <span class="driver-icon positive">↑</span>
+                <div>Whales accumulation +33% gros transferts <span class="driver-source">CoinGlass</span></div>
+              </li>
+              <li class="driver-item">
+                <span class="driver-icon positive">↑</span>
+                <div>DXY weakening −0.42% <span class="driver-source">FRED</span></div>
+              </li>
+            </ul>
+
+            <div class="contre-scenario">
+              <div class="contre-scenario-label">Contre-scénario</div>
+              Si DXY > 105.5 ET ETF flow net négatif 24h → flip vers NEUTRAL
+            </div>
+          </div>
+
+          <!-- GOLD -->
+          <div class="signal-card gold">
+            <div class="signal-header">
+              <div class="signal-asset-block">
+                <div class="signal-asset-orb orb-gold"></div>
+                <div class="signal-asset-info">
+                  <div class="signal-asset-name">Or</div>
+                  <div class="signal-asset-price">2,369 <span class="signal-change-up">+0.74%</span></div>
+                </div>
+              </div>
+              <div class="signal-direction">
+                <div class="signal-tag tag-neutral">NEUTRAL</div>
+                <div class="signal-confidence">conf. <strong>45%</strong></div>
+              </div>
+            </div>
+
+            <div class="signal-metrics">
+              <div class="signal-metric">
+                <div class="signal-metric-label">Veracity</div>
+                <div class="signal-metric-value">0.62</div>
+              </div>
+              <div class="signal-metric">
+                <div class="signal-metric-label">Horizon</div>
+                <div class="signal-metric-value">5J · Swing</div>
+              </div>
+            </div>
+
+            <div class="signal-section-label">Top drivers</div>
+            <ul class="driver-list">
+              <li class="driver-item">
+                <span class="driver-icon positive">↑</span>
+                <div>ETF Gold inflows <strong style="color: var(--text);">+1.2t</strong> <span class="driver-source">WGC</span></div>
+              </li>
+              <li class="driver-item">
+                <span class="driver-icon neutral">→</span>
+                <div>Real yields stables · DFII10 1.92% <span class="driver-source">FRED</span></div>
+              </li>
+              <li class="driver-item">
+                <span class="driver-icon negative">↓</span>
+                <div>Gold/Silver Ratio <strong style="color: var(--text);">88</strong> · zone stress <span class="driver-source">Yahoo</span></div>
+              </li>
+            </ul>
+          </div>
+
+          <!-- SILVER -->
+          <div class="signal-card silver">
+            <div class="signal-header">
+              <div class="signal-asset-block">
+                <div class="signal-asset-orb orb-silver"></div>
+                <div class="signal-asset-info">
+                  <div class="signal-asset-name">Argent <span class="signal-tag tag-experimental">EXP.</span></div>
+                  <div class="signal-asset-price">26.84 <span class="signal-change-down">−0.21%</span></div>
+                </div>
+              </div>
+              <div class="signal-direction">
+                <div class="signal-tag tag-neutral">NEUTRAL</div>
+                <div class="signal-confidence">conf. <strong>—</strong></div>
+              </div>
+            </div>
+            <div class="experimental-msg">
+              "Calibration en cours, signaux non fiables avant 60j de données accumulées."
+            </div>
+          </div>
+
+          <!-- Orbital view CTA -->
+          <div class="orbital-cta">
+            <div class="orbital-cta-icon">⊙</div>
+            <div class="orbital-cta-text">
+              <div class="orbital-cta-title">Vue d'ensemble orbitale</div>
+              <div class="orbital-cta-sub">Voir les flux structurels</div>
+            </div>
+            <div class="orbital-cta-arrow">→</div>
+          </div>
+
+        </div>
+
+        <div class="bottom-nav">
+          <div class="nav-item active">
+            <div class="nav-icon">✦</div>
+            Signals
+          </div>
+          <div class="nav-item">
+            <div class="nav-icon">◐</div>
+            Sources
+          </div>
+          <div class="nav-item">
+            <div class="nav-icon">◷</div>
+            Calendar
+          </div>
+          <div class="nav-item">
+            <div class="nav-icon">◯</div>
+            Profil
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== SOURCES ========== -->
+  <div class="screen-wrapper">
+    <div class="screen-label"><span class="screen-label-num">02.</span>SOURCES</div>
+    <div class="frame">
+      <div class="screen">
+
+        <div class="status-bar">
+          <span>09:42</span>
+          <span>● ● ● 87%</span>
+        </div>
+
+        <div class="header">
+          <div>
+            <div class="brand"><span class="brand-mark">Tik</span><span style="font-style: italic; font-weight: 300;"> · sources</span></div>
+            <div class="brand-sub">12 sources actives · Vague 1</div>
+          </div>
+          <div class="header-meta">
+            <div class="header-meta-label">Veracity moy.</div>
+            <div class="header-meta-value" style="color: var(--long);">0.84</div>
+          </div>
+        </div>
+
+        <div class="sources-tabs">
+          <div class="source-tab active">ETF Flows</div>
+          <div class="source-tab">On-chain</div>
+          <div class="source-tab">COT</div>
+          <div class="source-tab">Macro</div>
+          <div class="source-tab">News</div>
+        </div>
+
+        <div class="scroll-area">
+
+          <div class="source-card">
+            <div class="source-card-header">
+              <div>
+                <div class="source-card-title">BTC ETF Net Flow</div>
+                <div class="source-card-subtitle">FARSIDE · 24H</div>
+              </div>
+              <div class="source-veracity">
+                <div class="veracity-label">Veracity</div>
+                <div class="veracity-value">0.92</div>
+              </div>
+            </div>
+
+            <div class="source-main-value value-positive">+473.2 M$</div>
+
+            <div class="sparkline positive">
+              <div class="spark-bar" style="height: 30%"></div>
+              <div class="spark-bar" style="height: 45%"></div>
+              <div class="spark-bar" style="height: 22%"></div>
+              <div class="spark-bar" style="height: 60%"></div>
+              <div class="spark-bar" style="height: 75%"></div>
+              <div class="spark-bar" style="height: 38%"></div>
+              <div class="spark-bar" style="height: 88%"></div>
+              <div class="spark-bar" style="height: 95%"></div>
+              <div class="spark-bar" style="height: 70%"></div>
+              <div class="spark-bar" style="height: 100%"></div>
+            </div>
+
+            <div class="source-meta">
+              <span>10 derniers jours</span>
+              <span>MAJ 18 min</span>
+            </div>
+          </div>
+
+          <div class="source-card">
+            <div class="source-card-header">
+              <div>
+                <div class="source-card-title">Gold ETF Holdings</div>
+                <div class="source-card-subtitle">WGC · 24H</div>
+              </div>
+              <div class="source-veracity">
+                <div class="veracity-label">Veracity</div>
+                <div class="veracity-value">0.88</div>
+              </div>
+            </div>
+
+            <div class="source-main-value value-positive">+1.2 t</div>
+
+            <div class="sparkline positive">
+              <div class="spark-bar" style="height: 40%"></div>
+              <div class="spark-bar" style="height: 55%"></div>
+              <div class="spark-bar" style="height: 35%"></div>
+              <div class="spark-bar" style="height: 70%"></div>
+              <div class="spark-bar" style="height: 50%"></div>
+              <div class="spark-bar" style="height: 80%"></div>
+              <div class="spark-bar" style="height: 65%"></div>
+              <div class="spark-bar" style="height: 92%"></div>
+              <div class="spark-bar" style="height: 78%"></div>
+              <div class="spark-bar" style="height: 95%"></div>
+            </div>
+
+            <div class="source-meta">
+              <span>10 derniers jours</span>
+              <span>MAJ 2h</span>
+            </div>
+          </div>
+
+          <div class="source-card">
+            <div class="source-card-header">
+              <div>
+                <div class="source-card-title">ETH ETF Net Flow</div>
+                <div class="source-card-subtitle">FARSIDE · 24H</div>
+              </div>
+              <div class="source-veracity">
+                <div class="veracity-label">Veracity</div>
+                <div class="veracity-value warn">0.74</div>
+              </div>
+            </div>
+
+            <div class="source-main-value value-negative">−24.8 M$</div>
+
+            <div class="sparkline negative">
+              <div class="spark-bar" style="height: 60%"></div>
+              <div class="spark-bar" style="height: 45%"></div>
+              <div class="spark-bar" style="height: 80%"></div>
+              <div class="spark-bar" style="height: 35%"></div>
+              <div class="spark-bar" style="height: 50%"></div>
+              <div class="spark-bar" style="height: 25%"></div>
+              <div class="spark-bar" style="height: 40%"></div>
+              <div class="spark-bar" style="height: 20%"></div>
+              <div class="spark-bar" style="height: 30%"></div>
+              <div class="spark-bar" style="height: 15%"></div>
+            </div>
+
+            <div class="source-meta">
+              <span>10 derniers jours</span>
+              <span>MAJ 18 min</span>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="bottom-nav">
+          <div class="nav-item">
+            <div class="nav-icon">✦</div>
+            Signals
+          </div>
+          <div class="nav-item active">
+            <div class="nav-icon">◐</div>
+            Sources
+          </div>
+          <div class="nav-item">
+            <div class="nav-icon">◷</div>
+            Calendar
+          </div>
+          <div class="nav-item">
+            <div class="nav-icon">◯</div>
+            Profil
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== CALENDAR ========== -->
+  <div class="screen-wrapper">
+    <div class="screen-label"><span class="screen-label-num">03.</span>CALENDAR</div>
+    <div class="frame">
+      <div class="screen">
+
+        <div class="status-bar">
+          <span>09:42</span>
+          <span>● ● ● 87%</span>
+        </div>
+
+        <div class="header">
+          <div>
+            <div class="brand"><span class="brand-mark">Tik</span><span style="font-style: italic; font-weight: 300;"> · agenda</span></div>
+            <div class="brand-sub">8 événements · 7 jours</div>
+          </div>
+          <div class="header-meta">
+            <div class="header-meta-label">Prochain critique</div>
+            <div class="header-meta-value" style="color: var(--neutral);">FOMC J+2</div>
+          </div>
+        </div>
+
+        <div class="sources-tabs">
+          <div class="source-tab active">Tous</div>
+          <div class="source-tab">Macro</div>
+          <div class="source-tab">Fed/ECB</div>
+          <div class="source-tab">Géopol.</div>
+          <div class="source-tab">ETF</div>
+        </div>
+
+        <div class="scroll-area">
+
+          <div class="calendar-day">
+            <div class="calendar-day-label">
+              <span>Aujourd'hui · 17 mai</span>
+              <span class="calendar-day-label-meta">3 events</span>
+            </div>
+
+            <div class="calendar-event">
+              <div class="calendar-event-time">09:30</div>
+              <div class="calendar-event-content">
+                <div class="calendar-event-title">CPI US supérieur</div>
+                <div class="calendar-event-detail">3.5% vs 3.2% prévu</div>
+              </div>
+              <div class="calendar-event-tag tag-macro">MACRO</div>
+            </div>
+
+            <div class="calendar-event">
+              <div class="calendar-event-time">14:15</div>
+              <div class="calendar-event-content">
+                <div class="calendar-event-title">Bowman — Fed</div>
+                <div class="calendar-event-detail">Discours sur l'inflation</div>
+              </div>
+              <div class="calendar-event-tag tag-fed">FED</div>
+            </div>
+
+            <div class="calendar-event">
+              <div class="calendar-event-time">15:45</div>
+              <div class="calendar-event-content">
+                <div class="calendar-event-title">Transfert whale BTC</div>
+                <div class="calendar-event-detail">4,200 BTC → Coinbase</div>
+              </div>
+              <div class="calendar-event-tag tag-onchain">CHAIN</div>
+            </div>
+          </div>
+
+          <div class="calendar-day">
+            <div class="calendar-day-label">
+              <span>Demain · 18 mai</span>
+              <span class="calendar-day-label-meta">3 events</span>
+            </div>
+
+            <div class="calendar-event">
+              <div class="calendar-event-time">08:30</div>
+              <div class="calendar-event-content">
+                <div class="calendar-event-title">ECB Minutes</div>
+                <div class="calendar-event-detail">Réunion 25 avril</div>
+              </div>
+              <div class="calendar-event-tag tag-fed">ECB</div>
+            </div>
+
+            <div class="calendar-event">
+              <div class="calendar-event-time">16:00</div>
+              <div class="calendar-event-content">
+                <div class="calendar-event-title">Crude Oil Inventories</div>
+                <div class="calendar-event-detail">Est. +1.2M barils</div>
+              </div>
+              <div class="calendar-event-tag tag-macro">MACRO</div>
+            </div>
+
+            <div class="calendar-event">
+              <div class="calendar-event-time">22:00</div>
+              <div class="calendar-event-content">
+                <div class="calendar-event-title">Sommet Moyen-Orient</div>
+                <div class="calendar-event-detail">Tensions régionales</div>
+              </div>
+              <div class="calendar-event-tag tag-geo">GÉO</div>
+            </div>
+          </div>
+
+          <div class="calendar-day">
+            <div class="calendar-day-label">
+              <span>19 mai · J+2</span>
+              <span class="calendar-day-label-meta">2 events</span>
+            </div>
+
+            <div class="calendar-event">
+              <div class="calendar-event-time">14:30</div>
+              <div class="calendar-event-content">
+                <div class="calendar-event-title">FOMC Minutes</div>
+                <div class="calendar-event-detail">Compte-rendu mai</div>
+              </div>
+              <div class="calendar-event-tag tag-fed">FED</div>
+            </div>
+
+            <div class="calendar-event">
+              <div class="calendar-event-time">16:30</div>
+              <div class="calendar-event-content">
+                <div class="calendar-event-title">COT Report</div>
+                <div class="calendar-event-detail">Positionnement Gold</div>
+              </div>
+              <div class="calendar-event-tag tag-etf">COT</div>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="bottom-nav">
+          <div class="nav-item">
+            <div class="nav-icon">✦</div>
+            Signals
+          </div>
+          <div class="nav-item">
+            <div class="nav-icon">◐</div>
+            Sources
+          </div>
+          <div class="nav-item active">
+            <div class="nav-icon">◷</div>
+            Calendar
+          </div>
+          <div class="nav-item">
+            <div class="nav-icon">◯</div>
+            Profil
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+</section>
+
+<section class="annotations">
+  <div class="annot-subtitle">Détails design</div>
+  <h2 class="annot-title">Ce qui rend cette interface <em>distinctement Tik</em></h2>
+
+  <div class="annot-grid">
+    <div class="annot-block">
+      <h3><span>01</span>Identité cosmique</h3>
+      <ul>
+        <li><strong>Mini-soleils BTC/Gold</strong> dans chaque carte (orbes lumineuses)</li>
+        <li><strong>Glow d'arrière-plan</strong> diffus dans chaque carte de signal</li>
+        <li><strong>Étoiles subtiles</strong> sur tout le fond de l'écran</li>
+        <li><strong>Fraunces italique</strong> pour les états (Risk-off, Expansion) → caractère poétique</li>
+        <li><strong>Couleur ambre/safran</strong> évoque l'or, l'observatoire, le coucher</li>
+        <li><strong>Veracity en serif italique</strong> = quelque chose de jugé, pas mesuré</li>
+      </ul>
+    </div>
+
+    <div class="annot-block">
+      <h3><span>02</span>Pragmatisme mobile</h3>
+      <ul>
+        <li><strong>Signaux LONG/SHORT/NEUTRAL en haut à droite</strong> de chaque carte (premier coup d'œil)</li>
+        <li><strong>Bandeau global</strong> Régime / Liquidité / Stress en permanence</li>
+        <li><strong>3 drivers max</strong> par carte, sources nommées</li>
+        <li><strong>Contre-scénario explicite</strong>, jamais caché</li>
+        <li><strong>Bouton "Vue orbitale"</strong> en bas de Signals pour la métaphore visuelle complète</li>
+        <li><strong>Sources avec sparklines</strong> et veracity affichée</li>
+      </ul>
+    </div>
+
+    <div class="annot-block">
+      <h3><span>03</span>Hiérarchie de l'attention</h3>
+      <ul>
+        <li><strong>Signal directionnel</strong> = élément le plus contrasté</li>
+        <li><strong>Veracity</strong> = en serif italique pour souligner que c'est un jugement</li>
+        <li><strong>Sources</strong> = en mono pour le caractère technique/factuel</li>
+        <li><strong>État global</strong> = en italique poétique (sentiment du marché)</li>
+        <li><strong>Étoiles</strong> = présentes mais discrètes, jamais distractives</li>
+      </ul>
+    </div>
+
+    <div class="annot-block">
+      <h3><span>04</span>Choix techniques pour Expo</h3>
+      <ul>
+        <li>Le <strong>fond étoilé</strong> peut être une image SVG statique ou des dots CSS (perf OK)</li>
+        <li>Les <strong>orbes lumineuses</strong> = radial-gradient + box-shadow (natif RN)</li>
+        <li>La <strong>vue orbitale</strong> peut utiliser react-native-svg pour les positions</li>
+        <li><strong>Fraunces + JetBrains Mono</strong> = à charger via expo-font</li>
+        <li>Compatible <strong>mode sombre uniquement</strong> (par design)</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+</body>
+</html>
