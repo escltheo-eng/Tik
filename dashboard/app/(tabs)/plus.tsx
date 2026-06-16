@@ -96,9 +96,9 @@ export default function PlusScreen() {
         {/* En-tête profil */}
         <View style={styles.profilHeader}>
           <View style={styles.avatar}>
-            <Text style={styles.avatarLetter}>T</Text>
+            <Text style={styles.avatarLetter}>LT</Text>
           </View>
-          <Text style={styles.profilName}>Théa</Text>
+          <Text style={styles.profilName}>Lola &amp; Théo</Text>
           <Text style={styles.profilId}>tik-server-1 · Helsinki</Text>
         </View>
 

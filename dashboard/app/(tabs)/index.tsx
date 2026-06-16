@@ -16,8 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CosmicBackground } from '@/components/cosmic/cosmic-background';
 import { CosmicSignalCard } from '@/components/cosmic/cosmic-signal-card';
-import { BreakingNewsCard } from '@/components/dashboard/breaking-news-card';
-import { TopHeadlinesCard } from '@/components/dashboard/top-headlines-card';
+import { CosmicBreaking, CosmicHeadlines } from '@/components/cosmic/cosmic-news';
 import { Cosmic, TitleShadow, directionMeta, serifTitleFamily } from '@/constants/cosmic';
 import { Fonts } from '@/constants/theme';
 import { getHealth } from '@/src/api/endpoints';
@@ -218,14 +217,12 @@ export default function HomeScreen() {
         <Text style={styles.sectionLabel}>Dernier signal BTC</Text>
         <CosmicSignalCard entityId="BTC" signal={latestBtc} loading={kpis.loading} />
 
-        {/* Dernières infos : breaking (seulement si choc récent) + top headlines (bull/bear) */}
-        {breaking.items.length > 0 ? <BreakingNewsCard /> : null}
-        <Text style={styles.sectionLabel}>Dernières actus</Text>
-        <TopHeadlinesCard
+        {/* Dernières infos cosmiques : breaking (si choc) + top headlines (bull/bear) */}
+        <CosmicBreaking items={breaking.items} />
+        <CosmicHeadlines
           headlines={headlinesState.headlines}
           entityId={headlinesEntity}
           onEntityChange={setHeadlinesEntity}
-          displayLimit={5}
           loading={headlinesState.loading}
           error={headlinesState.error}
         />

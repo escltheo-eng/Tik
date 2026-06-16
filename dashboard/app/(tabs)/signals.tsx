@@ -33,7 +33,6 @@ import {
 } from 'react-native';
 
 import { CosmicBackground } from '@/components/cosmic/cosmic-background';
-import { CosmicSignalCard } from '@/components/cosmic/cosmic-signal-card';
 import { CosmicSignalRow } from '@/components/cosmic/cosmic-signal-row';
 import { InfoTooltip } from '@/components/ui/info-tooltip';
 import { Cosmic, TitleShadow, serifTitleFamily } from '@/constants/cosmic';
@@ -129,10 +128,6 @@ export default function SignalsScreen() {
     preloadLimit: duration.preloadLimit,
     maxSignals: duration.preloadLimit,
   });
-
-  // « À la une » (hybride) : dernier signal par actif, respecte le filtre courant.
-  const featuredBtc = useMemo(() => signals.find((s) => s.entity_id === 'BTC') ?? null, [signals]);
-  const featuredGold = useMemo(() => signals.find((s) => s.entity_id === 'GOLD') ?? null, [signals]);
 
   const [refreshing, setRefreshing] = useState(false);
   const onRefresh = useCallback(async () => {
@@ -252,7 +247,9 @@ export default function SignalsScreen() {
   const ListHeader = (
     <View style={styles.header}>
       <View style={styles.statusRow}>
-        <Text style={styles.title}>Signals</Text>
+        <Text style={styles.title}>
+          Tik<Text style={styles.brandSub}> · signals</Text>
+        </Text>
         <View style={styles.statusInline}>
           <View style={[styles.dot, { backgroundColor: connectionColor(connectionState) }]} />
           <Text style={[styles.statusText, { color: connectionColor(connectionState) }]}>
@@ -296,15 +293,6 @@ export default function SignalsScreen() {
         <Text style={styles.legendText}>horizon</Text>
         <InfoTooltip entryKey="horizon" />
       </View>
-
-      {/* À la une — cartes riches du dernier signal par actif (hybride) */}
-      {featuredBtc || featuredGold ? (
-        <View style={styles.featured}>
-          <Text style={styles.featuredLabel}>À la une</Text>
-          {featuredBtc ? <CosmicSignalCard entityId="BTC" signal={featuredBtc} /> : null}
-          {featuredGold ? <CosmicSignalCard entityId="GOLD" signal={featuredGold} /> : null}
-        </View>
-      ) : null}
 
       {error || preloadError ? (
         <View style={styles.errorBox}>
@@ -368,10 +356,15 @@ const styles = StyleSheet.create({
   title: {
     ...TitleShadow.glow,
     fontFamily: serifTitleFamily,
-    color: Cosmic.text,
-    fontSize: 28,
+    color: Cosmic.accent,
+    fontSize: 26,
+    fontStyle: 'italic',
     fontWeight: '700',
     letterSpacing: 0.3,
+  },
+  brandSub: {
+    color: Cosmic.text,
+    fontWeight: '400',
   },
   statusInline: {
     flexDirection: 'row',
@@ -452,18 +445,6 @@ const styles = StyleSheet.create({
   legendSep: {
     color: Cosmic.textFaint,
     fontSize: 12,
-  },
-  featured: {
-    gap: 4,
-    marginTop: 4,
-  },
-  featuredLabel: {
-    color: Cosmic.accent,
-    fontSize: 11,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    marginBottom: 2,
   },
   errorBox: {
     borderWidth: 1,
