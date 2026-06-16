@@ -90,16 +90,42 @@ Tap une ligne → page détail (encore en ancien style ; cosmique = bout 2).
   (`AntiFakeNewsBadge`, `NearMacroBadge`, `Collapsible`) dépendent du thème clair/sombre de
   l'appareil → ils jureraient sur le fond sombre forcé. Légère duplication de logique triviale, assumée.
 
-## Bouts RESTANTS (Passe 1)
+## Bout 3 (page Macro) — FAIT (validé 2026-06-16)
 
-3. **Page Macro** — les cartes liquidité Fed/mondiale **riches** (qui existent déjà sur
-   la Home actuelle) y déménagent ; un **bandeau contexte** compact en haut de Signals
-   tape vers cette page. (PAS d'index « Stress » : donnée absente.)
-4. **Vraies polices** Fraunces / JetBrains Mono / Manrope (expo-font installé).
-5. **Regrouper 8 → 5 onglets** (`Signals / Sources / Watch / Calendar / Profil`) +
-   **promouvoir** `cosmique.tsx` en vrai onglet Signals + retirer le bouton teaser.
-   (Profil = regrouper Config + About + stats.)
-6. **Sources / Calendar / Watch / Profil** en cosmique.
+Route dédiée `app/macro-cosmique.tsx` + 3 cartes cosmiques (`cosmic-macro-regime-card`,
+`cosmic-global-liquidity-card`, `cosmic-rate-probabilities-card`) réutilisant les hooks
+existants (`useMacroRegime`, `useRateProbabilities`) — zéro backend touché. **Bandeau
+contexte macro** compact en haut de la liste Signals → tape vers la page Macro. Lien vers
+le calendrier `/macro` (thémé) en bas. + polish visuel (cf. ci-dessous).
+
+## Polish visuel — FAIT (suite retour trader « pas lisible / titre pas envie »)
+
+`constants/cosmic.ts` : contraste des textes remonté (textDim 0.62→0.78, textFaint 0.38→0.56),
+accent plus lumineux (`#ffc15e`), cartes/bordures mieux définies. **Titres** en **serif système**
+(`serifTitleFamily`) + **halo ambré** (`TitleShadow.glow`) sur les gros titres (pages + héros).
+
+## Bout 5 (navigation) — FAIT (validé 2026-06-16, choix trader « garder mes 6 onglets, tout cosmique »)
+
+- L'écran cosmique est devenu le **vrai onglet Signals** : `app/cosmique.tsx` → `app/(tabs)/signals.tsx`
+  (ancien Signals thémé remplacé). Route d'aperçu `/cosmique` + **bouton teaser** du Home **retirés**.
+- **Barre d'onglets en sombre cosmique** (`app/(tabs)/_layout.tsx`, accent ambre). On a **gardé les 6
+  onglets** (Home / Signals / Watchlist / Carnet / Alerts / Config) — PAS le regroupement 8→5 du plan
+  initial (devenu inadapté depuis l'ajout du Carnet).
+- **Thème sombre forcé GLOBAL** (`hooks/use-color-scheme.ts` + `.web.ts` renvoient `'dark'`) +
+  **`Colors.dark` reteinté cosmique** (`constants/theme.ts`) → tous les écrans encore « thémés »
+  (Home/Watchlist/Carnet/Alerts/Config/login) adoptent la palette cosmique d'un coup, **sans réécrire
+  chaque composant**. ⚠ `tint` gardé **bleu** (pas ambre) : des boutons ont du texte blanc hardcodé
+  (blanc-sur-ambre = illisible). Réversible (restaurer les 2 hooks + le bloc `Colors.dark`).
+
+## Bouts RESTANTS
+
+4. **Vraies polices** Fraunces / JetBrains Mono / Manrope — **DIFFÉRÉ** (« on décide plus tard »).
+   ⚠ nécessite `npm install` + **redémarrage Metro** → l'URL du tunnel ngrok **anonyme** change →
+   rescan du QR dans Expo Go.
+6. **Polish cosmique par écran** (long tail) : Home/Watchlist/Carnet/Alerts/Config sont désormais
+   en dark cosmique (palette `Colors.dark`) mais gardent leur layout thémé — les passer au traitement
+   cosmique complet (fond dégradé `CosmicBackground`, cartes `Cosmic.card` distinctes, titres serif/halo)
+   reste à faire écran par écran selon ce que la trader veut prioriser. Le Home a ~14 cartes.
 
 ## Vérifications à relancer après toute modif UI
 

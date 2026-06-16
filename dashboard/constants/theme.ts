@@ -22,12 +22,17 @@ export const Colors = {
     tabIconDefault: '#687076',
     tabIconSelected: tintColorLight,
   },
+  // Mode sombre reteinté aux couleurs cosmiques (refonte γ, bout 5). L'app est
+  // forcée en sombre (cf. hooks/use-color-scheme) → ce thème pilote TOUS les
+  // écrans encore « thémés » (Home/Watchlist/Carnet/Alerts/Config). Le `tint`
+  // reste volontairement bleu (pas ambre) : des boutons portent du texte blanc
+  // hardcodé, et blanc-sur-ambre serait illisible (cf. note tintColorDark).
   dark: {
-    text: '#ECEDEE',
-    background: '#151718',
+    text: '#eef2fa',
+    background: '#0a0c14',
     tint: tintColorDark,
-    icon: '#9BA1A6',
-    tabIconDefault: '#9BA1A6',
+    icon: '#8893ad',
+    tabIconDefault: '#8893ad',
     tabIconSelected: tintColorDark,
   },
 };
