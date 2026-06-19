@@ -1,18 +1,20 @@
 /**
- * Page « Macro » cosmique (refonte γ, bout 3).
+ * Page « Macro » cosmique (refonte γ).
  *
- * Regroupe le CONTEXTE macro objectif — déménagé hors de la Home pour la
- * désencombrer (cf. problème « signal enterré » corrigé au bout 1) : régime macro
- * (Fed Net Liquidity + indicateurs FRED), liquidité mondiale (Fed+ECB+BoJ),
- * anticipations de taux Fed (CME FedWatch). Réutilise les MÊMES hooks data que la
- * Home (`useMacroRegime`, `useRateProbabilities`) — seul l'affichage est cosmique.
+ * Regroupe l'horloge de séances + le CONTEXTE macro objectif : « quand trader »
+ * (séances Sydney/Tokyo/Londres/NY + or COMEX), régime macro (Fed Net Liquidity +
+ * indicateurs FRED), liquidité mondiale (Fed+ECB+BoJ), anticipations de taux Fed
+ * (CME FedWatch). Réutilise les MÊMES hooks data que la Home (`useMacroRegime`,
+ * `useRateProbabilities`) — seul l'affichage est cosmique.
  *
  * Route DÉDIÉE `/macro-cosmique`, atteinte depuis le bandeau contexte en haut de
- * la liste Signals cosmique. L'ancienne page `/macro` (calendrier macro, thème
- * clair) reste intacte ; un lien en bas y renvoie.
+ * la liste Signals + le bandeau du Cockpit (pas un onglet : choix trader de garder
+ * 5 onglets propres, l'accès se fait par les bandeaux). L'ancienne page `/macro`
+ * (calendrier macro) reste distincte ; un lien en bas y renvoie.
  *
  * CONTEXTE STRICT : rien ici ne touche direction/veracity/combined_bias (NO-GO
- * directionnel inchangé). On affiche des séries datées, on n'affirme rien.
+ * directionnel inchangé). On affiche des séries datées + des horaires de place,
+ * on n'affirme rien sur le sens du prix.
  */
 
 import { useRouter } from 'expo-router';
@@ -23,6 +25,7 @@ import { CosmicBackground } from '@/components/cosmic/cosmic-background';
 import { CosmicGlobalLiquidityCard } from '@/components/cosmic/cosmic-global-liquidity-card';
 import { CosmicMacroRegimeCard } from '@/components/cosmic/cosmic-macro-regime-card';
 import { CosmicRateProbabilitiesCard } from '@/components/cosmic/cosmic-rate-probabilities-card';
+import { CosmicSessionClock } from '@/components/cosmic/cosmic-session-clock';
 import { Cosmic, TitleShadow, serifTitleFamily } from '@/constants/cosmic';
 import { useMacroRegime } from '@/src/hooks/useMacroRegime';
 import { useRateProbabilities } from '@/src/hooks/useRateProbabilities';
@@ -52,16 +55,14 @@ export default function MacroCosmicScreen() {
         <View style={styles.headerBlock}>
           <Text style={styles.title}>Macro</Text>
           <Text style={styles.subtitle}>
-            Contexte objectif (FRED + futures Fed). Ces chiffres ne touchent JAMAIS les signaux
-            Tik — ils servent à situer le décor, pas à prédire le prix.
+            Quand le marché bouge (séances) et dans quel décor (FRED + futures Fed). Rien ici ne
+            touche les signaux Tik : du contexte, pas une prédiction du prix.
           </Text>
         </View>
 
-        <CosmicMacroRegimeCard
-          regime={macro.regime}
-          loading={macro.loading}
-          error={macro.error}
-        />
+        <CosmicSessionClock />
+
+        <CosmicMacroRegimeCard regime={macro.regime} loading={macro.loading} error={macro.error} />
 
         <CosmicGlobalLiquidityCard
           globalLiquidity={macro.regime?.global_liquidity ?? null}
