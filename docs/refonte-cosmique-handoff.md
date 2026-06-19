@@ -7,12 +7,16 @@
 
 ---
 
-# ⭐ ÉTAT ACTUEL (2026-06-16) — LIRE EN PREMIER
+# ⭐ ÉTAT ACTUEL (2026-06-19) — LIRE EN PREMIER
 
-> La refonte UX cosmique est **structurellement complète**. Tout est sur la branche
-> **`refonte-cosmique`**, poussé sur `origin`, **commits `9a6bc9f` → `f9b420f`**.
+> La refonte UX cosmique est **structurellement complète ET polie** (tous les écrans
+> sont cosmiques, plus aucun écran « thémé »). Tout est sur la branche
+> **`refonte-cosmique`**, poussé sur `origin`, **commits `9a6bc9f` → `fe2b9d3`**.
 > `main` = ancien design intact (réversible : `git checkout main`, ou révoquer un commit isolé).
 > Les sections plus bas (« Décisions actées », bouts 1→6, audit veracity) sont l'**historique**.
+>
+> **Dernière session 2026-06-19 (validée trader)** — cf. la sous-section « 🗓 Session 2026-06-19 »
+> plus bas pour le détail + les bugs trouvés/corrigés (A13/A14/A15 + jauge sweep).
 
 ## Pourquoi cette refonte (le « pourquoi » à ne pas perdre)
 Le problème de départ n'était PAS la couleur mais l'**ergonomie** : signal de trading enterré en
@@ -26,14 +30,14 @@ faire passer conviction/accord pour des gages de fiabilité.
 ## Navigation = 5 onglets cosmiques (`app/(tabs)/_layout.tsx`)
 | Onglet | Fichier | Rôle |
 |---|---|---|
-| **Cockpit** | `app/(tabs)/index.tsx` | « Puis-je trader ? » : bandeau macro réel (liquidité/récession/taux) + **statut discipline F1** (4 critères ✓/⚠, « freins » ≠ achat) + **dernier signal BTC** (`CosmicSignalCard`) + **Breaking** (si choc) + **Top Headlines** (bull/bear, déroulable) + trades ouverts + prochain event |
-| **Signals** | `app/(tabs)/signals.tsx` | Liste filtrable (Tous/BTC/GOLD · Flash/Swing/Macro · 24h/5j/30j) + pastilles stabilité + statut Live. En-tête « Tik · signals ». Tap ligne → détail cosmique |
-| **Sources** | `app/(tabs)/sources.tsx` | **Constellation** santé sources + **Polymarket** (barres proba + échéance) + **dérivés** (bras de fer long/short) |
+| **Cockpit** | `app/(tabs)/index.tsx` | « Puis-je trader ? » : bandeau macro réel (liquidité/récession/taux) + **statut discipline F1** (4 critères ✓/⚠, « freins » ≠ achat) + **derniers signaux BTC + GOLD côte-à-côte** (tuiles compactes `SignalTile`, tap → détail) + **Breaking enrichi** (âge + réactions BTC/Or mesurées + mécanisme ↓/↑ par catégorie) + **Dernières actus** (bull/bear + dates + « voir toutes » → page dédiée) + trades ouverts + prochain event |
+| **Signals** | `app/(tabs)/signals.tsx` | Liste filtrable (Tous/BTC/GOLD · Flash/Swing/Macro · 24h/5j/30j) + **pastilles stabilité dépliables au tap** (BTC = carnet d'ordres + flux agressif + accord ; GOLD = stabilité swing, pas de microstructure flash) + statut Live. En-tête « Tik · signals » (safe-area corrigée). Tap ligne → détail cosmique |
+| **Sources** | `app/(tabs)/sources.tsx` | **Constellation** santé sources + **Polymarket** (barres proba + échéance + **volume/marché + volume total + fraîcheur**) + **dérivés** (bras de fer long/short) |
 | **Carnet** | `app/(tabs)/journal.tsx` | Journal de trades manuels (snapshot Tik à l'entrée) |
-| **Plus** | `app/(tabs)/plus.tsx` | Profil « Lola & Théo » + **hero hit-rate** + grille perf + **jauge hit-rate vs baseline** + hit-rate par tranche veracity + stats LLM + **hub** (Watchlist · Calendar · Alerts · Config · About · Bots placeholder, badge alertes non-lues) |
+| **Plus** | `app/(tabs)/plus.tsx` | Profil « Lola & Théo » + **hero hit-rate** + grille perf + **jauge hit-rate vs baseline** (demi-cercle SVG — sweep corrigé 2026-06-19) + **hit-rate par accord** (ex-« par veracity », cosmique) + **stats LLM** (cosmique) + **hub** (Watchlist · Calendar · Alerts · Config · About · Bots placeholder, badge alertes non-lues) |
 
 **Masqués de la barre** (`href:null`, atteints via le hub Plus) : `watchlist`, `alerts`, `config`, `bots`, `about`.
-**Routes hors-onglets** (Stack racine `app/_layout.tsx`, header sombre) : `signal-cosmique/[id]` (détail cosmique), `macro-cosmique` (page Régime/Liquidité/Taux Fed), `macro/index` (**calendrier cosmique** gamma 03). ⚠ L'ancien `signal/[id].tsx` (thémé) est **conservé mais orphelin** (plus rien ne le route — supprimable au besoin).
+**Routes hors-onglets** (Stack racine `app/_layout.tsx`, header sombre) : `signal-cosmique/[id]` (détail cosmique), `macro-cosmique` (page Régime/Liquidité/Taux Fed), `macro/index` (**calendrier cosmique** gamma 03), `headlines/[entityId]` (**page « Dernières actus » cosmique**, cap 25 + dates + pull-to-refresh — atteinte via « Voir toutes les actus » du Cockpit). ⚠ L'ancien `signal/[id].tsx` (thémé) est **conservé mais orphelin** (plus rien ne le route — supprimable au besoin).
 
 ## Design system cosmique (`constants/cosmic.ts`)
 - Palette `Cosmic` : fond `#0a0c14`/`#06070d`, carte `#141a2b`, **texte crème `#e8e4dc`** (chaud, doux OLED), accent ambre `#ffc15e`, long `#6ec5a2` / short `#e87a7a` / neutral `#e8b86b` / macro `#7d9ed3`.
@@ -41,17 +45,64 @@ faire passer conviction/accord pour des gages de fiabilité.
 - **Thème sombre FORCÉ global** : `hooks/use-color-scheme.ts` + `.web.ts` renvoient `'dark'`, et `Colors.dark` (`constants/theme.ts`) est reteinté cosmique → les rares écrans encore « thémés » (login, cartes veracity-buckets/LLM) rendent sombre. ⚠ `tint` gardé **bleu** (boutons à texte blanc en dur → blanc-sur-ambre illisible).
 
 ## Composants cosmiques (`components/cosmic/`)
-`cosmic-background` (fond étoilé SVG) · `cosmic-signal-card` (carte signal, prop `variant: summary|detail`) · `cosmic-signal-row` (ligne liste) · `cosmic-news` (**CosmicHeadlines** bull/bear + **CosmicBreaking** avec catégories + dérouler) · `cosmic-source-health` (**constellation**) · `cosmic-derivatives` (**bras de fer**) · `cosmic-polymarket` (**barres proba + échéance**) · `cosmic-hit-rate` (**jauge demi-cercle SVG** vs baseline) · `cosmic-macro-regime-card` / `cosmic-global-liquidity-card` / `cosmic-rate-probabilities-card` (cartes macro de `/macro-cosmique`).
+`cosmic-background` (fond étoilé SVG) · `cosmic-signal-card` (carte signal, prop `variant: summary|detail`) · `cosmic-signal-row` (ligne liste) · `cosmic-news` (**CosmicHeadlines** bull/bear + dates + `onSeeAll` ; **CosmicBreaking** catégories + âge + **réactions BTC/Or** + **mécanisme par catégorie**) · `cosmic-source-health` (**constellation**) · `cosmic-derivatives` (**bras de fer**) · `cosmic-polymarket` (**barres proba + échéance + volume**) · `cosmic-hit-rate` (**jauge demi-cercle SVG** vs baseline) · `cosmic-collapsible` (section dépliable cosmique partagée, évite le rectangle sombre du `Collapsible` thémé dans une carte) · `cosmic-macro-regime-card` / `cosmic-global-liquidity-card` / `cosmic-rate-probabilities-card` (cartes macro de `/macro-cosmique`).
 **Données 100 % réelles** (hooks existants réutilisés, zéro backend touché). **BTC + GOLD only.**
 
 ## EXCLU (ne pas réintroduire sans données / sans demande) — Axe #1
 **Silver** (entité inexistante), **index Stress** (donnée inexistante), **« influence » orbitale chiffrée** (contredit ADR-004 = moyenne NON pondérée → ce serait du vernis inventé). « veracity » est nommé **« accord »** dans l'UI.
 
+## 🗓 Session 2026-06-19 (validée trader, commits `c941ae7` → `fe2b9d3`)
+
+Deux temps : (A) finir le polish des écrans secondaires, (B) répondre à une liste de
+demandes trader + corriger des bugs trouvés en passant.
+
+**(A) Polish écrans secondaires (`c941ae7`)** — les 4 derniers écrans « thémés » du hub Plus
+passent au cosmique complet : **Alerts**, **Config** (formulaire/push/switch/glossaire ;
+boutons ambre **texte sombre** = lisible, pas de blanc-sur-ambre), **About** (abandon du
+parallax daté), **Bots** (placeholder). + les 2 cartes thémées de Plus (hit-rate par accord +
+stats LLM). Extraction du composant partagé **`cosmic-collapsible`** (le `Collapsible` thémé
+peignait un rectangle `#0a0c14` dans une carte `#141a2b`). « veracity » → « accord » (A9).
+
+**(B) Demandes trader + bugs (`020302d` + `fe2b9d3`)** :
+- **Cockpit** : dernier signal BTC **+ GOLD côte-à-côte** en tuiles compactes (`SignalTile`),
+  tap → détail. *Choix layout : 2 cartes riches côte-à-côte ne tiennent pas en largeur tél →
+  tuiles ; le « pourquoi » riche reste à 1 tap. Validé trader.*
+- **Breaking enrichi** : port fidèle de l'ex-`breaking-news-card.tsx` (orpheline) → âge
+  (`source · il y a X`), **réactions mesurées BTC + Or**, **mécanisme ↓/↑ par catégorie**.
+  Bug **A14** : `breaking.reactions` était produit par `useBreakingNews` mais **jamais passé**
+  au composant cosmique → corrigé.
+- **Signals — détail stabilité au tap** : les pastilles « court terme BTC/GOLD » se **déplient**
+  (avant = `Alert`). BTC = carnet d'ordres + flux agressif + accord (via
+  `computeFlashStability().cross`). ⚠ **GOLD n'a PAS de carnet/flux** (pas de moteur flash,
+  Yahoo +15 min) — donc équivalent honnête = stabilité **swing** (la demande « GOLD avec
+  carnet/flux comme avant » reposait sur une prémisse fausse : l'ancienne carte était BTC-only).
+- **Dernières actus** : **date par ligne** + bouton « Voir toutes les actus » qui **navigue**
+  vers `/headlines/[entity]` (route cosmétisée). Avant = expand inline.
+- **Polymarket** : bug **A15** = `question` en `numberOfLines={1}` (tronquée) → 2 lignes ;
+  ajout **volume/marché + volume total + fraîcheur** du snapshot.
+- **Titre « Tik · signals » coupé** : bug **A13** = `signals.tsx` était le **seul** écran cosmique
+  sans `insets.top` → titre sous l'encoche. Ajout safe-area.
+- **Jauge hit-rate « mal affichée »** (`fe2b9d3`) : le demi-cercle SVG avait **sweep-flag 0**
+  depuis sa création (`058c77e`) → arc dessiné **par le bas** (milieu y=156, hors viewBox 92,
+  coupé) + remplissage sur un **autre cercle** + repère baseline déconnecté. **Fix = sweep
+  0→1** (vérifié par la paramétrisation centre de la spec SVG : track milieu y=12 = haut,
+  remplissage recentré sur (100,84)). **Validé trader.**
+
+**Anomalies trackées** : A13 (safe-area Signals), A14 (`breaking.reactions` non câblé),
+A15 (Polymarket question tronquée), + jauge sweep-flag. Toutes corrigées.
+
+**Non fait délibérément** : aucun claim marché ajouté par recherche web (texte mécanisme =
+**validé existant** réutilisé ; cf. mémoire `macro-reading-removed-2026-05-30` — des claims
+WebSearch précédents étaient faux 2/4 → vernis Axe #1).
+
+**Non vérifié** : rendu pixel sur device (je valide tsc/eslint/bundle, pas le pixel — la trader
+a confirmé visuellement GOLD tiles, Breaking, stabilité, Polymarket, titre Signals, et la jauge).
+
 ## Reste à faire (OPTIONNEL — rien de bloquant)
 1. **Polices custom** Fraunces / JetBrains Mono / Manrope (« bout 4 ») — DIFFÉRÉ : `npm install @expo-google-fonts/*` + `useFonts` ⇒ **redémarrage Metro** ⇒ l'URL du **tunnel ngrok anonyme change** ⇒ la trader doit **rescanner** le QR dans Expo Go. À faire en prévenant.
 2. **Sparklines par source** (Sources) — IMPOSSIBLE en l'état : pas de série historique par source exposée → exigerait un **ajout backend** (soumis à « pas d'ajout sans manque mesuré »).
 3. **Cartes Macro** (régime/liquidité/taux) encore en **cartes** — pourraient passer en jauges si demandé.
-4. **Plus** : la carte « hit-rate par tranche veracity » + « stats LLM » sont encore les **composants thémés** (rendus sombres) — elles ont déjà leur design dans la maquette enrichi 06 si on veut les cosmétiser.
+4. ~~**Plus** : cartes « hit-rate par tranche veracity » + « stats LLM » thémées~~ → **FAIT 2026-06-19** (cosmétisées, tokens Cosmic ; « par veracity » → « par accord »).
 5. **Vue orbitale** : à faire en version **qualitative** (sans chiffres d'influence). Maquettes `tik orbital view.html` + `tik toggle orbital relations.html` non encore lues.
 6. **Polymarket journalier** : l'ingester exclut volontairement l'intraday « up or down » (5 min = bruit) → marchés **swing** seulement (échéance affichée). Le journalier = **ajout backend assumé** si un jour demandé.
 
