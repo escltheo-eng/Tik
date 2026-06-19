@@ -1,9 +1,14 @@
-import { StyleSheet } from 'react-native';
+/**
+ * StatsLLMCard — taux de signaux portant une sortie LLM (vs fallback template).
+ *
+ * Refonte cosmique : View/Text + tokens Cosmic (rendue uniquement dans l'onglet
+ * Plus, fond sombre forcé). Données 100 % réelles, zéro backend touché.
+ */
 
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { StyleSheet, Text, View } from 'react-native';
+
+import { Cosmic } from '@/constants/cosmic';
+import { Fonts } from '@/constants/theme';
 import { LlmStats } from '@/src/hooks/useDashboardKpis';
 import { timeAgo } from '@/src/utils/time';
 
@@ -14,69 +19,66 @@ export interface StatsLLMCardProps {
 }
 
 function colorForPercent(percent: number | null): string {
-  if (percent === null) return '#7f8c8d';
-  if (percent >= 80) return '#27ae60';
-  if (percent >= 60) return '#e67e22';
-  return '#c0392b';
+  if (percent === null) return Cosmic.textFaint;
+  if (percent >= 80) return Cosmic.long;
+  if (percent >= 60) return Cosmic.neutral;
+  return Cosmic.short;
 }
 
 export function StatsLLMCard({ stats, loading, error }: StatsLLMCardProps) {
-  const scheme = useColorScheme() ?? 'light';
-  const palette = Colors[scheme];
   const color = colorForPercent(stats.percentOk);
-  const percentLabel =
-    stats.percentOk === null ? '—' : `${stats.percentOk.toFixed(0)}%`;
+  const percentLabel = stats.percentOk === null ? '—' : `${stats.percentOk.toFixed(0)}%`;
+  const ok = stats.lastSignal?.isLlmOk ?? false;
+  const badgeColor = ok ? Cosmic.long : Cosmic.neutral;
 
   return (
-    <ThemedView style={[styles.card, { borderColor: palette.icon }]}>
-      <ThemedView style={[styles.header, { backgroundColor: 'transparent' }]}>
-        <ThemedText type="defaultSemiBold">Stats LLM</ThemedText>
-        <ThemedText style={styles.periodLabel}>aujourd&apos;hui (00 h UTC)</ThemedText>
-      </ThemedView>
+    <View style={styles.card}>
+      <View style={styles.header}>
+        <Text style={styles.title}>Stats LLM</Text>
+        <Text style={styles.periodLabel}>aujourd&apos;hui (00 h UTC)</Text>
+      </View>
 
       {error ? (
-        <ThemedText style={styles.errorText}>Indisponible : {error}</ThemedText>
+        <Text style={styles.errorText}>Indisponible : {error}</Text>
       ) : stats.total === 0 ? (
-        <ThemedText style={styles.emptyLabel}>
+        <Text style={styles.emptyLabel}>
           {loading ? 'Calcul en cours…' : 'Pas encore de signal aujourd’hui'}
-        </ThemedText>
+        </Text>
       ) : (
         <>
-          <ThemedView style={[styles.percentRow, { backgroundColor: 'transparent' }]}>
-            <ThemedText type="title" style={[styles.percent, { color }]}>
-              {percentLabel}
-            </ThemedText>
-            <ThemedText style={styles.counter}>
+          <View style={styles.percentRow}>
+            <Text style={[styles.percent, { color }]}>{percentLabel}</Text>
+            <Text style={styles.counter}>
               {stats.llmOk} / {stats.total} signaux avec sortie LLM
-            </ThemedText>
-          </ThemedView>
+            </Text>
+          </View>
 
           {stats.lastSignal ? (
-            <ThemedView style={[styles.lastRow, { backgroundColor: 'transparent' }]}>
-              <ThemedText style={styles.lastLabel}>
+            <View style={styles.lastRow}>
+              <Text style={styles.lastLabel}>
                 Dernier signal {timeAgo(stats.lastSignal.timestamp)}
-              </ThemedText>
-              <ThemedView
+              </Text>
+              <View
                 style={[
                   styles.badge,
-                  {
-                    backgroundColor: stats.lastSignal.isLlmOk ? '#27ae60' : '#7f8c8d',
-                  },
+                  { backgroundColor: badgeColor + '22', borderColor: badgeColor + '66' },
                 ]}>
-                <ThemedText style={styles.badgeLabel}>
-                  {stats.lastSignal.isLlmOk ? 'LLM ✓' : 'fallback'}
-                </ThemedText>
-              </ThemedView>
-            </ThemedView>
+                <Text style={[styles.badgeLabel, { color: badgeColor }]}>
+                  {ok ? 'LLM ✓' : 'fallback'}
+                </Text>
+              </View>
+            </View>
           ) : null}
         </>
       )}
-    </ThemedView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   card: {
+    backgroundColor: Cosmic.card,
+    borderColor: Cosmic.border,
     borderWidth: 1,
     borderRadius: 12,
     padding: 16,
@@ -89,9 +91,15 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 4,
   },
+  title: {
+    color: Cosmic.text,
+    fontSize: 15,
+    fontWeight: '700',
+  },
   periodLabel: {
+    color: Cosmic.textFaint,
     fontSize: 12,
-    opacity: 0.6,
+    fontFamily: Fonts.mono,
   },
   percentRow: {
     flexDirection: 'row',
@@ -103,10 +111,11 @@ const styles = StyleSheet.create({
     fontSize: 36,
     lineHeight: 40,
     fontWeight: '700',
+    fontFamily: Fonts.mono,
   },
   counter: {
+    color: Cosmic.textDim,
     fontSize: 13,
-    opacity: 0.75,
   },
   lastRow: {
     flexDirection: 'row',
@@ -117,26 +126,26 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   lastLabel: {
+    color: Cosmic.textDim,
     fontSize: 12,
-    opacity: 0.7,
   },
   badge: {
+    borderWidth: 1,
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: 4,
+    borderRadius: 6,
   },
   badgeLabel: {
-    color: '#ffffff',
     fontSize: 11,
-    fontWeight: '600',
+    fontWeight: '700',
     letterSpacing: 0.4,
   },
   emptyLabel: {
-    opacity: 0.6,
+    color: Cosmic.textDim,
     marginTop: 4,
   },
   errorText: {
-    color: '#c0392b',
+    color: Cosmic.short,
     fontSize: 13,
   },
 });
