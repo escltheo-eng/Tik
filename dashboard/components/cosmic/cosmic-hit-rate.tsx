@@ -37,12 +37,20 @@ function polar(deg: number, r: number = R): { x: number; y: number } {
   return { x: CX + r * Math.cos(a), y: CY + r * Math.sin(a) };
 }
 
-/** Arc du demi-cercle haut : 180° (gauche) → 360° (droite) via 270° (haut). */
+/**
+ * Arc du demi-cercle HAUT : 180° (gauche) → 360° (droite) via 270° (haut).
+ *
+ * sweep-flag = 1 (et NON 0) : en SVG (y vers le bas), un parcours gauche→droite
+ * PAR LE HAUT est horaire à l'écran → sweep 1. Avec sweep 0 l'arc passait par le
+ * bas (milieu en y=156, hors du viewBox de 92 → demi-cercle « mal affiché »), et
+ * le remplissage tombait même sur un autre cercle. Vérifié par la paramétrisation
+ * centre de la spec SVG (track milieu y=12 = haut ; remplissage centré sur (100,84)).
+ */
 function arc(fromDeg: number, toDeg: number): string {
   const s = polar(fromDeg);
   const e = polar(toDeg);
   const large = Math.abs(toDeg - fromDeg) > 180 ? 1 : 0;
-  return `M ${s.x} ${s.y} A ${R} ${R} 0 ${large} 0 ${e.x} ${e.y}`;
+  return `M ${s.x} ${s.y} A ${R} ${R} 0 ${large} 1 ${e.x} ${e.y}`;
 }
 
 function hitColor(rate: number): string {
