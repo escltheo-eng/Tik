@@ -2,8 +2,10 @@
  * CosmicPolymarket — marchés prédictifs en « barres de probabilité » (γ, bout 6).
  *
  * Chaque marché de seuil = une barre remplie à la probabilité implicite (argent
- * en jeu). Remplace la carte thémée `PolymarketCard`. Données réelles (snapshot
- * shadow). CONTEXTE, pas un signal (Axe #1).
+ * en jeu). Affiche aussi le VOLUME par marché (combien d'argent est misé = à quel
+ * point le pari est « pris au sérieux ») + l'échéance, et en tête le volume total
+ * du snapshot et sa fraîcheur. Remplace la carte thémée `PolymarketCard`. Données
+ * réelles (snapshot shadow). CONTEXTE, pas un signal (Axe #1).
  */
 
 import { useMemo } from 'react';
@@ -12,6 +14,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Cosmic } from '@/constants/cosmic';
 import { Fonts } from '@/constants/theme';
 import type { PolymarketSnapshot } from '@/src/api/types';
+import { timeAgo } from '@/src/utils/time';
 
 interface Props {
   snapshot: PolymarketSnapshot | null;
@@ -37,6 +40,15 @@ function fmtDue(iso: string | null): string | null {
   return m ? `${m[3]}/${m[2]}/${m[1].slice(2)}` : null;
 }
 
+/** Volume USD compact : 1234567 → "1,2 M$". */
+function fmtVol(v: number | null | undefined): string | null {
+  if (v == null || v <= 0) return null;
+  if (v >= 1e9) return `${(v / 1e9).toFixed(1).replace('.', ',')} Md$`;
+  if (v >= 1e6) return `${(v / 1e6).toFixed(1).replace('.', ',')} M$`;
+  if (v >= 1e3) return `${Math.round(v / 1e3)} k$`;
+  return `${Math.round(v)} $`;
+}
+
 export function CosmicPolymarket({
   snapshot,
   entityId,
@@ -53,6 +65,9 @@ export function CosmicPolymarket({
       .sort((a, b) => (b.volume ?? 0) - (a.volume ?? 0))
       .slice(0, displayLimit);
   }, [snapshot, displayLimit]);
+
+  const totalVol = fmtVol(snapshot?.total_volume);
+  const freshness = snapshot?.fetched_at ? timeAgo(snapshot.fetched_at) : null;
 
   return (
     <View style={styles.card}>
@@ -73,6 +88,14 @@ export function CosmicPolymarket({
         </View>
       </View>
 
+      {markets.length > 0 && (totalVol || freshness) ? (
+        <Text style={styles.subtitle}>
+          {markets.length} marché{markets.length > 1 ? 's' : ''}
+          {totalVol ? ` · vol. total ${totalVol}` : ''}
+          {freshness ? ` · maj ${freshness}` : ''}
+        </Text>
+      ) : null}
+
       {error ? (
         <Text style={styles.empty}>Indisponible : {error}</Text>
       ) : loading && markets.length === 0 ? (
@@ -83,16 +106,19 @@ export function CosmicPolymarket({
         markets.map((m, i) => {
           const p = m.yes_prob ?? 0;
           const color = probColor(p);
+          const due = fmtDue(m.end_date);
+          const vol = fmtVol(m.volume);
           return (
             <View key={`${m.clob_token_id ?? m.question}-${i}`} style={styles.row}>
-              <View style={styles.qRow}>
-                <Text style={styles.question} numberOfLines={1}>
-                  {m.question}
-                </Text>
-                {fmtDue(m.end_date) ? (
-                  <Text style={styles.due}>éch. {fmtDue(m.end_date)}</Text>
-                ) : null}
-              </View>
+              <Text style={styles.question} numberOfLines={2}>
+                {m.question}
+              </Text>
+              {due || vol ? (
+                <View style={styles.metaRow}>
+                  {due ? <Text style={styles.meta}>éch. {due}</Text> : null}
+                  {vol ? <Text style={styles.meta}>vol. {vol}</Text> : null}
+                </View>
+              ) : null}
               <View style={styles.barRow}>
                 <View style={styles.track}>
                   <View
@@ -107,8 +133,9 @@ export function CosmicPolymarket({
       )}
 
       <Text style={styles.note}>
-        Probabilités implicites des paris (argent en jeu) à atteindre AVANT l&apos;échéance —
-        horizon swing, contexte.
+        Probabilité implicite (« oui ») des paris à atteindre AVANT l&apos;échéance — argent en jeu,
+        horizon swing. Le volume = combien est misé (plus il est élevé, plus le marché est pris au
+        sérieux). Contexte, pas un signal.
       </Text>
     </View>
   );
@@ -135,6 +162,12 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.6,
   },
+  subtitle: {
+    color: Cosmic.textFaint,
+    fontSize: 11,
+    fontFamily: Fonts.mono,
+    marginTop: -4,
+  },
   toggle: { flexDirection: 'row', gap: 4 },
   tog: {
     paddingHorizontal: 10,
@@ -146,10 +179,10 @@ const styles = StyleSheet.create({
   togActive: { backgroundColor: Cosmic.accent, borderColor: Cosmic.accent },
   togText: { color: Cosmic.textDim, fontSize: 11, fontWeight: '700' },
   togTextActive: { color: Cosmic.bgDeep },
-  row: { gap: 4 },
-  qRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
-  question: { flex: 1, color: Cosmic.text, fontSize: 13, lineHeight: 17 },
-  due: { color: Cosmic.textFaint, fontSize: 10, fontFamily: Fonts.mono },
+  row: { gap: 5 },
+  question: { color: Cosmic.text, fontSize: 13, lineHeight: 18 },
+  metaRow: { flexDirection: 'row', gap: 12 },
+  meta: { color: Cosmic.textFaint, fontSize: 10, fontFamily: Fonts.mono },
   barRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   track: {
     flex: 1,
@@ -170,6 +203,7 @@ const styles = StyleSheet.create({
     color: Cosmic.textFaint,
     fontSize: 11,
     fontStyle: 'italic',
+    lineHeight: 15,
   },
   empty: {
     color: Cosmic.textDim,

@@ -15,10 +15,10 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CosmicBackground } from '@/components/cosmic/cosmic-background';
-import { CosmicSignalCard } from '@/components/cosmic/cosmic-signal-card';
 import { CosmicBreaking, CosmicHeadlines } from '@/components/cosmic/cosmic-news';
-import { Cosmic, TitleShadow, directionMeta, serifTitleFamily } from '@/constants/cosmic';
+import { Cosmic, TitleShadow, directionMeta, serifTitleFamily, sunColor } from '@/constants/cosmic';
 import { Fonts } from '@/constants/theme';
+import { horizonLabel } from '@/src/utils/amplitude';
 import { getHealth } from '@/src/api/endpoints';
 import { TikError } from '@/src/api/errors';
 import { Health, Signal } from '@/src/api/types';
@@ -30,7 +30,7 @@ import { useTick } from '@/src/hooks/use-tick';
 import { useTopHeadlines } from '@/src/hooks/useTopHeadlines';
 import { useTrades } from '@/src/journal/useTrades';
 import { useUpcomingMacroEvents } from '@/src/hooks/useUpcomingMacroEvents';
-import { formatLocal, parseUtcIso } from '@/src/utils/time';
+import { formatLocal, parseUtcIso, timeAgo } from '@/src/utils/time';
 
 const HEALTH_REFRESH_INTERVAL_MS = 30_000;
 const MACRO_WINDOW_MS = 4 * 3600 * 1000; // ±4h discipline (Garde-fou 2-bis)
@@ -49,6 +49,61 @@ function regimeView(r: string | null | undefined): { label: string; color: strin
   if (r === 'contraction') return { label: 'Contraction', color: Cosmic.neutral };
   if (r === 'neutral') return { label: 'Stable', color: Cosmic.textDim };
   return { label: '—', color: Cosmic.textFaint };
+}
+
+/**
+ * Tuile signal compacte (cockpit) : sens + conviction + accord + âge, d'un coup
+ * d'œil. Deux tuiles côte-à-côte (BTC | GOLD). Le « pourquoi » riche (evidence,
+ * contre-scénario) reste à un tap, sur la page détail. Données 100 % réelles.
+ */
+function SignalTile({
+  entityId,
+  signal,
+  loading,
+  onPress,
+}: {
+  entityId: string;
+  signal: Signal | null;
+  loading?: boolean;
+  onPress?: () => void;
+}) {
+  const sun = sunColor(entityId);
+  if (!signal) {
+    return (
+      <View style={styles.tile}>
+        <View style={styles.tileHead}>
+          <View style={[styles.tileSun, { backgroundColor: sun }]} />
+          <Text style={styles.tileEntity}>{entityId}</Text>
+        </View>
+        <Text style={styles.tileEmpty}>{loading ? 'Chargement…' : 'Aucun signal sur 24 h'}</Text>
+      </View>
+    );
+  }
+  const dir = directionMeta(signal.direction);
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.tile,
+        { borderColor: dir.color + '55', opacity: pressed ? 0.85 : 1 },
+      ]}>
+      <View style={styles.tileHead}>
+        <View style={[styles.tileSun, { backgroundColor: sun }]} />
+        <Text style={styles.tileEntity}>{entityId}</Text>
+        <View style={styles.tileHorizon}>
+          <Text style={styles.tileHorizonText}>{horizonLabel(signal.horizon)}</Text>
+        </View>
+      </View>
+      <Text style={[styles.tileDir, { color: dir.color }]}>{dir.label}</Text>
+      <Text style={styles.tileMeta}>
+        conv {Math.round(signal.confidence * 100)}% · accord {Math.round(signal.veracity * 100)}%
+      </Text>
+      <View style={styles.tileFoot}>
+        <Text style={styles.tileAge}>{timeAgo(signal.timestamp)}</Text>
+        <Text style={styles.tileChevron}>›</Text>
+      </View>
+    </Pressable>
+  );
 }
 
 export default function HomeScreen() {
@@ -106,6 +161,7 @@ export default function HomeScreen() {
 
   // --- Données dérivées du cockpit (100 % réelles) ---
   const latestBtc: Signal | null = kpis.lastSignalByEntity['BTC'] ?? null;
+  const latestGold: Signal | null = kpis.lastSignalByEntity['GOLD'] ?? null;
 
   const latestBtcSwing = useMemo(
     () =>
@@ -213,18 +269,43 @@ export default function HomeScreen() {
           ))}
         </View>
 
-        {/* Dernier signal BTC (priorité) */}
-        <Text style={styles.sectionLabel}>Dernier signal BTC</Text>
-        <CosmicSignalCard entityId="BTC" signal={latestBtc} loading={kpis.loading} />
+        {/* Derniers signaux BTC + GOLD côte-à-côte (tap → détail complet) */}
+        <Text style={styles.sectionLabel}>Derniers signaux</Text>
+        <View style={styles.tilesRow}>
+          <SignalTile
+            entityId="BTC"
+            signal={latestBtc}
+            loading={kpis.loading}
+            onPress={
+              latestBtc
+                ? () => router.push(`/signal-cosmique/${encodeURIComponent(latestBtc.id)}`)
+                : undefined
+            }
+          />
+          <SignalTile
+            entityId="GOLD"
+            signal={latestGold}
+            loading={kpis.loading}
+            onPress={
+              latestGold
+                ? () => router.push(`/signal-cosmique/${encodeURIComponent(latestGold.id)}`)
+                : undefined
+            }
+          />
+        </View>
+        <Text style={styles.tilesDisclaimer}>
+          Contexte, pas un ordre · aucun edge prouvé · sizing 1 % · touche une carte pour le détail
+        </Text>
 
         {/* Dernières infos cosmiques : breaking (si choc) + top headlines (bull/bear) */}
-        <CosmicBreaking items={breaking.items} />
+        <CosmicBreaking items={breaking.items} reactions={breaking.reactions} />
         <CosmicHeadlines
           headlines={headlinesState.headlines}
           entityId={headlinesEntity}
           onEntityChange={setHeadlinesEntity}
           loading={headlinesState.loading}
           error={headlinesState.error}
+          onSeeAll={() => router.push(`/headlines/${encodeURIComponent(headlinesEntity)}`)}
         />
 
         {/* Trades ouverts → Carnet */}
@@ -443,5 +524,84 @@ const styles = StyleSheet.create({
   nextEventChevron: {
     color: Cosmic.textDim,
     fontSize: 18,
+  },
+  tilesRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  tile: {
+    flex: 1,
+    backgroundColor: Cosmic.card,
+    borderColor: Cosmic.border,
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 13,
+    gap: 6,
+  },
+  tileHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  tileSun: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+  },
+  tileEntity: {
+    flex: 1,
+    color: Cosmic.text,
+    fontSize: 16,
+    fontWeight: '700',
+    fontFamily: serifTitleFamily,
+    fontStyle: 'italic',
+  },
+  tileHorizon: {
+    backgroundColor: Cosmic.cardAlt,
+    borderRadius: 999,
+    paddingVertical: 2,
+    paddingHorizontal: 8,
+    borderWidth: 1,
+    borderColor: Cosmic.border,
+  },
+  tileHorizonText: {
+    color: Cosmic.textDim,
+    fontSize: 10,
+    fontFamily: Fonts.mono,
+  },
+  tileDir: {
+    ...TitleShadow.strong,
+    fontSize: 24,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    marginTop: 2,
+  },
+  tileMeta: {
+    color: Cosmic.textDim,
+    fontSize: 12,
+    fontFamily: Fonts.mono,
+  },
+  tileFoot: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  tileAge: {
+    color: Cosmic.textFaint,
+    fontSize: 11,
+  },
+  tileChevron: {
+    color: Cosmic.textDim,
+    fontSize: 18,
+  },
+  tileEmpty: {
+    color: Cosmic.textDim,
+    fontSize: 12,
+  },
+  tilesDisclaimer: {
+    color: Cosmic.textFaint,
+    fontSize: 11,
+    fontStyle: 'italic',
+    textAlign: 'center',
   },
 });

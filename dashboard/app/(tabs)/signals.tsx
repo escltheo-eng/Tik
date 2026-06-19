@@ -19,7 +19,7 @@
  */
 
 import { useRouter } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -31,6 +31,7 @@ import {
   View,
   type ListRenderItem,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CosmicBackground } from '@/components/cosmic/cosmic-background';
 import { CosmicSignalRow } from '@/components/cosmic/cosmic-signal-row';
@@ -103,18 +104,50 @@ function macroBannerInfo(regime: MacroRegime | null): { text: string; color: str
   return { text: 'voir le contexte', color: Cosmic.textDim };
 }
 
+// --- Libellés du détail de stabilité (carnet d'ordres / flux agressif) ---
+const BIAS_LABEL: Record<string, string> = {
+  bull: 'haussier',
+  bear: 'baissier',
+  neutral: 'neutre',
+  unknown: '—',
+};
+function biasColor(b: string): string {
+  if (b === 'bull') return Cosmic.long;
+  if (b === 'bear') return Cosmic.short;
+  return Cosmic.textDim;
+}
+const AGREEMENT_TEXT: Record<string, { label: string; color: string }> = {
+  agree: { label: "✓ les 2 sources s'accordent", color: Cosmic.long },
+  conflict: { label: '✗ elles se contredisent — signal peu fiable', color: Cosmic.short },
+  partial: { label: '~ accord partiel (une source neutre)', color: Cosmic.neutral },
+  unknown: { label: 'croisement indisponible', color: Cosmic.textFaint },
+};
+function dirLabel(d: string): string {
+  return d === 'long' ? 'LONG' : d === 'short' ? 'SHORT' : 'NEUTRE';
+}
+function flashVerdict(state: string, flips: number, win: number, held: number | null): string {
+  if (state === 'choppy') return `⚠ INSTABLE — ${flips} bascules long↔short en ${win} min · reste à l'écart`;
+  if (state === 'stable')
+    return held != null ? `✓ STABLE — direction tenue depuis ${held} min` : '✓ STABLE — direction tenue';
+  if (state === 'indecisive') return "~ INDÉCIS — attends une confirmation avant d'agir";
+  return 'Pas assez de signaux flash récents';
+}
+
 interface Pastille {
   icon: string;
   color: string;
   label: string;
   hint: string;
-  onPress?: () => void;
 }
 
 export default function SignalsScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const macro = useMacroRegime();
   const macroBanner = macroBannerInfo(macro.regime);
+
+  // Pastille de stabilité dépliée (carnet d'ordres / flux agressif au tap).
+  const [openStab, setOpenStab] = useState<null | 'btc' | 'gold'>(null);
 
   const [entity, setEntity] = useState<string | undefined>(undefined);
   const [horizon, setHorizon] = useState<string | undefined>(undefined);
@@ -174,38 +207,27 @@ export default function SignalsScreen() {
     );
   }, []);
 
-  const openGoldExplain = useCallback(() => {
-    Alert.alert(
-      'GOLD swing : stabilité de la direction',
-      'GOLD n’a pas de moteur « flash » (Yahoo a 15 min de retard). On regarde donc si la ' +
-        'direction de ses signaux SWING tient (stable) ou bascule long↔short (hésitante) ' +
-        'sur les dernières 48 h. Aide à repérer une direction nette vs un marché qui hésite. ' +
-        'Ce n’est pas une garantie de sens (aucun edge prouvé).',
-      [{ text: 'OK', style: 'default' }],
-    );
-  }, []);
-
   const showFlashBanner = entity === undefined || entity === 'BTC';
   const flashPastille: Pastille = useMemo(() => {
     if (flashStability.state === 'choppy') {
-      return { icon: '🔀', color: '#a79bff', label: 'Court terme BTC : haché', hint: 'la direction flip souvent — mauvais moment pour du court terme', onPress: openChoppyExplain };
+      return { icon: '🔀', color: '#a79bff', label: 'Court terme BTC : haché', hint: 'la direction flip souvent — mauvais moment pour du court terme' };
     }
     if (flashStability.state === 'no_data') {
-      return { icon: '•', color: Cosmic.textDim, label: 'Court terme BTC : pas assez de données', hint: 'peu de signaux flash récents', onPress: openChoppyExplain };
+      return { icon: '•', color: Cosmic.textDim, label: 'Court terme BTC : pas assez de données', hint: 'peu de signaux flash récents' };
     }
-    return { icon: '✓', color: Cosmic.long, label: 'Court terme BTC : calme', hint: 'direction du court terme lisible (~45 min)', onPress: openChoppyExplain };
-  }, [flashStability.state, openChoppyExplain]);
+    return { icon: '✓', color: Cosmic.long, label: 'Court terme BTC : calme', hint: 'direction du court terme lisible (~45 min)' };
+  }, [flashStability.state]);
 
   const showGoldBanner = entity === undefined || entity === 'GOLD';
   const goldPastille: Pastille = useMemo(() => {
     if (goldStability.state === 'stable') {
-      return { icon: '✓', color: Cosmic.long, label: 'GOLD swing : direction stable', hint: 'pas de bascule sur 48 h', onPress: openGoldExplain };
+      return { icon: '✓', color: Cosmic.long, label: 'GOLD swing : direction stable', hint: 'pas de bascule sur 48 h' };
     }
     if (goldStability.state === 'hesitant') {
-      return { icon: '🔀', color: Cosmic.neutral, label: 'GOLD swing : hésitante', hint: 'la direction a basculé récemment', onPress: openGoldExplain };
+      return { icon: '🔀', color: Cosmic.neutral, label: 'GOLD swing : hésitante', hint: 'la direction a basculé récemment' };
     }
-    return { icon: '•', color: Cosmic.textDim, label: 'GOLD swing : pas assez de données', hint: 'peu de signaux swing GOLD récents', onPress: openGoldExplain };
-  }, [goldStability.state, openGoldExplain]);
+    return { icon: '•', color: Cosmic.textDim, label: 'GOLD swing : pas assez de données', hint: 'peu de signaux swing GOLD récents' };
+  }, [goldStability.state]);
 
   const renderItem: ListRenderItem<Signal> = useCallback(
     ({ item }) => (
@@ -234,15 +256,103 @@ export default function SignalsScreen() {
     </Pressable>
   );
 
-  const renderPastille = (p: Pastille, show: boolean) =>
-    show ? (
-      <Pressable onPress={p.onPress} style={[styles.pastille, { borderColor: p.color + '66' }]}>
-        <Text style={[styles.pastilleLabel, { color: p.color }]}>
-          {p.icon} {p.label}
+  const renderPastille = (key: 'btc' | 'gold', p: Pastille, show: boolean, detail: ReactNode) => {
+    if (!show) return null;
+    const open = openStab === key;
+    return (
+      <View>
+        <Pressable
+          onPress={() => setOpenStab(open ? null : key)}
+          style={[styles.pastille, { borderColor: p.color + '66' }]}>
+          <View style={styles.pastilleTop}>
+            <Text style={[styles.pastilleLabel, { color: p.color }]}>
+              {p.icon} {p.label}
+            </Text>
+            <Text style={styles.pastilleChevron}>{open ? '⌄' : '›'}</Text>
+          </View>
+          <Text style={styles.pastilleHint}>{p.hint} · touche pour le détail</Text>
+        </Pressable>
+        {open ? detail : null}
+      </View>
+    );
+  };
+
+  // Détail dépliable BTC : verdict + croisement carnet d'ordres / flux agressif.
+  const btcStabDetail = (
+    <View style={styles.stabDetail}>
+      <Text style={[styles.stabVerdict, { color: flashPastille.color }]}>
+        {flashVerdict(
+          flashStability.state,
+          flashStability.flips,
+          flashStability.windowMinutes,
+          flashStability.directionHeldMinutes,
+        )}
+      </Text>
+      {flashStability.state !== 'no_data' ? (
+        <Text style={styles.stabMeta}>
+          Direction actuelle : {dirLabel(flashStability.currentDirection)} · {flashStability.count}{' '}
+          signaux / {flashStability.windowMinutes} min
         </Text>
-        <Text style={styles.pastilleHint}>{p.hint}</Text>
-      </Pressable>
-    ) : null;
+      ) : null}
+      {flashStability.cross ? (
+        <View style={styles.crossBox}>
+          <Text style={styles.crossTitle}>Croisement des 2 sources · dernier signal</Text>
+          <View style={styles.crossRow}>
+            <Text style={styles.crossName}>Carnet d&apos;ordres</Text>
+            <Text
+              style={[styles.crossBias, { color: biasColor(flashStability.cross.orderbook.bias) }]}
+              numberOfLines={1}>
+              {BIAS_LABEL[flashStability.cross.orderbook.bias] ?? '—'}
+              {flashStability.cross.orderbook.detail
+                ? ` · ${flashStability.cross.orderbook.detail}`
+                : ''}
+            </Text>
+          </View>
+          <View style={styles.crossRow}>
+            <Text style={styles.crossName}>Flux agressif</Text>
+            <Text
+              style={[styles.crossBias, { color: biasColor(flashStability.cross.aggression.bias) }]}
+              numberOfLines={1}>
+              {BIAS_LABEL[flashStability.cross.aggression.bias] ?? '—'}
+              {flashStability.cross.aggression.detail
+                ? ` · ${flashStability.cross.aggression.detail}`
+                : ''}
+            </Text>
+          </View>
+          <Text
+            style={[
+              styles.crossAgreement,
+              { color: AGREEMENT_TEXT[flashStability.cross.agreement].color },
+            ]}>
+            {AGREEMENT_TEXT[flashStability.cross.agreement].label}
+          </Text>
+        </View>
+      ) : null}
+      <Text style={styles.stabFoot}>
+        Le flash dérive de 2 sources microstructure (carnet d&apos;ordres + flux agressif) ; il est
+        bruité, sans edge prouvé. Idéal : direction stable ET sources d&apos;accord — sinon ne trade
+        pas le court terme.
+      </Text>
+    </View>
+  );
+
+  // Détail dépliable GOLD : stabilité swing (pas de microstructure flash sur GOLD).
+  const goldStabDetail = (
+    <View style={styles.stabDetail}>
+      {goldStability.state !== 'no_data' ? (
+        <Text style={styles.stabMeta}>
+          Direction actuelle : {dirLabel(goldStability.currentDirection)} · {goldStability.flips}{' '}
+          bascule(s) sur {goldStability.windowHours} h · {goldStability.count} signaux swing
+        </Text>
+      ) : null}
+      <Text style={styles.stabFoot}>
+        GOLD n&apos;a pas de moteur « flash » (Yahoo a 15 min de retard) — donc pas de carnet
+        d&apos;ordres ni de flux agressif comme le BTC. On regarde si la direction de ses signaux
+        SWING tient (stable) ou bascule long↔short (hésitante) sur 48 h. Pas une garantie de sens
+        (aucun edge prouvé).
+      </Text>
+    </View>
+  );
 
   const ListHeader = (
     <View style={styles.header}>
@@ -280,8 +390,8 @@ export default function SignalsScreen() {
         {HORIZON_FILTERS.map((f) => filterPill(f.label, horizon === f.value, () => setHorizon(f.value)))}
       </View>
 
-      {renderPastille(flashPastille, showFlashBanner)}
-      {renderPastille(goldPastille, showGoldBanner)}
+      {renderPastille('btc', flashPastille, showFlashBanner, btcStabDetail)}
+      {renderPastille('gold', goldPastille, showGoldBanner, goldStabDetail)}
 
       <View style={styles.legendRow}>
         <Text style={styles.legendText}>conv</Text>
@@ -305,7 +415,7 @@ export default function SignalsScreen() {
   return (
     <CosmicBackground>
       {preloadLoading && signals.length === 0 ? (
-        <View style={styles.center}>
+        <View style={[styles.center, { paddingTop: insets.top + 12 }]}>
           {ListHeader}
           <ActivityIndicator size="large" color={Cosmic.accent} />
           <Text style={styles.emptyText}>Chargement des derniers signaux…</Text>
@@ -313,7 +423,7 @@ export default function SignalsScreen() {
       ) : (
         <FlatList
           data={signals}
-          extraData={`${tick}-${flashChoppy}`}
+          extraData={`${tick}-${flashChoppy}-${openStab}`}
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
           ListHeaderComponent={ListHeader}
@@ -322,7 +432,7 @@ export default function SignalsScreen() {
               Aucun signal pour l’instant. Le flux est ouvert, les nouveaux signaux apparaîtront ici.
             </Text>
           }
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[styles.listContent, { paddingTop: insets.top + 12 }]}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Cosmic.accent} />
           }
@@ -424,13 +534,80 @@ const styles = StyleSheet.create({
     backgroundColor: Cosmic.card,
     gap: 2,
   },
+  pastilleTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   pastilleLabel: {
     fontSize: 13,
     fontWeight: '700',
+    flex: 1,
+  },
+  pastilleChevron: {
+    color: Cosmic.textDim,
+    fontSize: 16,
+    marginLeft: 6,
   },
   pastilleHint: {
     color: Cosmic.textFaint,
     fontSize: 11,
+  },
+  stabDetail: {
+    marginTop: 6,
+    borderWidth: 1,
+    borderColor: Cosmic.border,
+    borderRadius: 10,
+    padding: 11,
+    backgroundColor: Cosmic.cardAlt,
+    gap: 6,
+  },
+  stabVerdict: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  stabMeta: {
+    color: Cosmic.textDim,
+    fontSize: 12,
+  },
+  crossBox: {
+    marginTop: 2,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: Cosmic.border,
+    gap: 4,
+  },
+  crossTitle: {
+    color: Cosmic.textDim,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  crossRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  crossName: {
+    color: Cosmic.text,
+    fontSize: 13,
+  },
+  crossBias: {
+    fontSize: 13,
+    fontWeight: '600',
+    flexShrink: 1,
+    textAlign: 'right',
+  },
+  crossAgreement: {
+    fontSize: 13,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  stabFoot: {
+    color: Cosmic.textFaint,
+    fontSize: 11,
+    lineHeight: 16,
+    fontStyle: 'italic',
   },
   legendRow: {
     flexDirection: 'row',
