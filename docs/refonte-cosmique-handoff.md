@@ -130,8 +130,8 @@ macro prédictif** : les IC non-nuls sont de la **colinéarité de niveau** / du
 contexte) **+ NO-GO**. Re-mesurer après un changement de régime. Mémoire
 `macro-predictive-measurement-2026-06-19`.
 
-**En attente trader** : (1) convention **Europe 16:00 UTC** (standard été = Londres locale 17:00,
-BST) vs l'élargir à 17:00 ; (2) **polish pixel** de la page Macro (besoin du retour visuel).
+**Décisions trader (2026-06-19, RÉSOLUES)** : (1) **Europe 16:00 UTC** = on garde le standard été
+(Londres locale 17:00 BST, ne pas l'élargir) ; (2) **rendu pixel** de la page Macro **validé**.
 
 **Vérifs** : tsc + eslint + bundle iOS verts ; **50 assertions** de logique pure (sessions 36 +
 discipline 14) prouvées ; script macro tourné + **ruff (config repo) « All checks passed »**.
