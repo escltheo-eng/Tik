@@ -98,6 +98,44 @@ WebSearch précédents étaient faux 2/4 → vernis Axe #1).
 **Non vérifié** : rendu pixel sur device (je valide tsc/eslint/bundle, pas le pixel — la trader
 a confirmé visuellement GOLD tiles, Breaking, stabilité, Polymarket, titre Signals, et la jauge).
 
+## 🗓 Session 2026-06-19 (soir) — Page Macro : horloge de séances + discipline + mesure macro
+
+Demande trader : « un onglet de signaux émis **grâce au macro** » + « **triangulation**
+Europe/Asie/US pour trader au **bon moment de la plage horaire** » (BTC + GOLD).
+
+**Reframe honnête (Axe #1 / ADR-028)** : des « signaux macro » directionnels = **INTERDIT**
+(le macro est `context_only`, ne touche jamais la direction) **et** jamais mesuré → refusé.
+La vraie intention (« bons moments de plage horaire ») = faisable comme **CONTEXTE/DISCIPLINE**.
+
+**Livré sur la page Macro** (`/macro-cosmique`, accès via le bandeau Signals/Cockpit — **PAS un
+onglet** : un onglet a été testé puis **abandonné**, choix trader « garder 5 onglets ») :
+- **Horloge de séances** — `components/cosmic/cosmic-session-clock.tsx` + logique **pure**
+  `src/macro/sessions.ts` : Sydney/Tokyo/Londres/NY ouvert/fermé selon l'heure d'été (règles
+  UE/US/AU calculées, **sans `Intl`**), chevauchement Londres–NY, « creux quotidien » NY→Sydney,
+  or COMEX (pause quotidienne + jours fériés via `US_MARKET_HOLIDAYS`). **36 assertions** prouvées
+  par exécution. Commit `f91dea5`.
+- **Fenêtres de discipline** — `cosmic-discipline-window.tsx` + `src/macro/discipline.ts` :
+  prochains events HIGH (FOMC/NFP/CPI/BCE/BoJ) + alerte **±4 h** (Garde-fou 2-bis). **14 assertions**.
+  Commit `46f5c9a`.
+- **Triangulation Europe/Asie/US = DÉJÀ couverte** par la carte *Liquidité mondiale* (Fed/ECB/BoJ
+  côte à côte, barre de composition) → **aucun « Bout C » construit** (aurait été redondant). Le
+  régime PROPRE de chaque région exigerait un ajout backend (gaté « pas d'ajout sans manque mesuré »).
+
+**Chantier mesure (« les deux ») — `core/src/tik_core/scripts/measure_macro_predictive.py`**
+(lecture seule) : teste si la liquidité (net + mondiale) et les taux réels **précèdent** BTC/GOLD
+(IC Spearman, fenêtres non chevauchantes, vs Always SHORT). **Résultat 2026-06-19 = AUCUN edge
+macro prédictif** : les IC non-nuls sont de la **colinéarité de niveau** / du **mauvais signe**
+(taux réel→BTC +0.43 non-chev mais hypothèse inverse) / des **artefacts du régime haussier**
+2023-26. La variation Δ4 sem (le vrai signal) ≈ 0 ; GOLD ~0 partout. **Confirme ADR-028** (macro =
+contexte) **+ NO-GO**. Re-mesurer après un changement de régime. Mémoire
+`macro-predictive-measurement-2026-06-19`.
+
+**En attente trader** : (1) convention **Europe 16:00 UTC** (standard été = Londres locale 17:00,
+BST) vs l'élargir à 17:00 ; (2) **polish pixel** de la page Macro (besoin du retour visuel).
+
+**Vérifs** : tsc + eslint + bundle iOS verts ; **50 assertions** de logique pure (sessions 36 +
+discipline 14) prouvées ; script macro tourné + **ruff (config repo) « All checks passed »**.
+
 ## Reste à faire (OPTIONNEL — rien de bloquant)
 1. **Polices custom** Fraunces / JetBrains Mono / Manrope (« bout 4 ») — DIFFÉRÉ : `npm install @expo-google-fonts/*` + `useFonts` ⇒ **redémarrage Metro** ⇒ l'URL du **tunnel ngrok anonyme change** ⇒ la trader doit **rescanner** le QR dans Expo Go. À faire en prévenant.
 2. **Sparklines par source** (Sources) — IMPOSSIBLE en l'état : pas de série historique par source exposée → exigerait un **ajout backend** (soumis à « pas d'ajout sans manque mesuré »).
