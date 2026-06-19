@@ -22,6 +22,7 @@ import { useCallback, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { CosmicBackground } from '@/components/cosmic/cosmic-background';
+import { CosmicDisciplineWindow } from '@/components/cosmic/cosmic-discipline-window';
 import { CosmicGlobalLiquidityCard } from '@/components/cosmic/cosmic-global-liquidity-card';
 import { CosmicMacroRegimeCard } from '@/components/cosmic/cosmic-macro-regime-card';
 import { CosmicRateProbabilitiesCard } from '@/components/cosmic/cosmic-rate-probabilities-card';
@@ -61,6 +62,8 @@ export default function MacroCosmicScreen() {
         </View>
 
         <CosmicSessionClock />
+
+        <CosmicDisciplineWindow />
 
         <CosmicMacroRegimeCard regime={macro.regime} loading={macro.loading} error={macro.error} />
 
