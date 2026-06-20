@@ -29,6 +29,16 @@ export function CosmicSessionClock() {
   const now = new Date();
   const snap = computeSessions(now, usMarketHolidayName(now));
 
+  // Le BTC ne ferme jamais, mais sa liquidité/volatilité SUIT les séances : on
+  // affiche QUAND il bouge le plus (≠ direction — cf. caveat en bas de carte).
+  const btcLiquidity = snap.weekend
+    ? { text: 'liquidité faible (week-end)', color: Cosmic.textFaint }
+    : snap.dailyLull
+      ? { text: 'liquidité creuse (creux quotidien)', color: Cosmic.textFaint }
+      : snap.overlapActive
+        ? { text: '🔥 pic de liquidité (Londres–NY)', color: Cosmic.accent }
+        : { text: 'liquidité normale', color: Cosmic.textDim };
+
   return (
     <View style={styles.card}>
       <View style={styles.headerRow}>
@@ -81,7 +91,8 @@ export function CosmicSessionClock() {
         </View>
         <View style={styles.asset}>
           <Text style={styles.assetLabel}>₿ BTC</Text>
-          <Text style={[styles.assetState, { color: Cosmic.long }]}>24/7</Text>
+          <Text style={[styles.assetState, { color: Cosmic.long }]}>24/7 — jamais fermé</Text>
+          <Text style={[styles.assetSub, { color: btcLiquidity.color }]}>{btcLiquidity.text}</Text>
         </View>
       </View>
 
@@ -184,6 +195,10 @@ const styles = StyleSheet.create({
   assetState: {
     fontSize: 13,
     fontWeight: '600',
+  },
+  assetSub: {
+    fontSize: 11,
+    marginTop: 1,
   },
   caveat: {
     color: Cosmic.textFaint,
