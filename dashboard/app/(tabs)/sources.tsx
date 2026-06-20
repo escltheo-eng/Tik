@@ -10,8 +10,9 @@
  * Honnêteté (Axe #1) : aucune source n'a d'edge prouvé seule — elles se croisent.
  */
 
+import { router } from 'expo-router';
 import { useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CosmicBackground } from '@/components/cosmic/cosmic-background';
@@ -43,6 +44,16 @@ export default function SourcesScreen() {
           {"Les sources qui alimentent les signaux — état, fraîcheur, contexte. Aucune n'a d'edge " +
             'prouvé seule : elles se croisent (cross-validation).'}
         </Text>
+
+        {/* Accès à la vue orbitale (observatoire) — les sources comme un système */}
+        <Pressable
+          onPress={() => router.push('/observatoire')}
+          style={({ pressed }) => [styles.orbitalBtn, { opacity: pressed ? 0.7 : 1 }]}
+          accessibilityRole="button"
+          accessibilityLabel="Ouvrir la vue orbitale des sources">
+          <Text style={styles.orbitalBtnText}>✦ Vue orbitale — les sources comme un système</Text>
+          <Text style={styles.orbitalChevron}>›</Text>
+        </Pressable>
 
         <CosmicSourceHealth />
 
@@ -105,5 +116,28 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontStyle: 'italic',
     marginTop: 8,
+  },
+  orbitalBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(255,193,94,0.10)',
+    borderColor: 'rgba(255,193,94,0.30)',
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+  },
+  orbitalBtnText: {
+    color: Cosmic.accent,
+    fontSize: 13,
+    fontWeight: '700',
+    flexShrink: 1,
+  },
+  orbitalChevron: {
+    color: Cosmic.accent,
+    fontSize: 18,
+    fontWeight: '700',
+    marginLeft: 8,
   },
 });
