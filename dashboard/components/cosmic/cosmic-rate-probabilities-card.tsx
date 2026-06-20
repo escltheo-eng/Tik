@@ -11,6 +11,8 @@ import { StyleSheet, Text, View } from 'react-native';
 import { Cosmic, TitleShadow, serifTitleFamily } from '@/constants/cosmic';
 import type { RateMeeting, RateProbabilities } from '@/src/api/types';
 
+import { CosmicGauge } from './cosmic-gauge';
+
 export interface CosmicRateProbabilitiesCardProps {
   rates: RateProbabilities | null;
   loading?: boolean;
@@ -44,6 +46,8 @@ export function CosmicRateProbabilitiesCard({
 }: CosmicRateProbabilitiesCardProps) {
   const hasData = rates?.available && (rates.meetings?.length ?? 0) > 0;
   const meetings = (rates?.meetings ?? []).slice(0, displayLimit);
+  const nextMeeting = meetings[0] ?? null;
+  const nextDom = nextMeeting ? dominant(nextMeeting) : null;
 
   const renderMeeting = (m: RateMeeting) => {
     const dom = dominant(m);
@@ -91,6 +95,18 @@ export function CosmicRateProbabilitiesCard({
             <Text style={styles.currentRange}>
               Taux cible actuel : {rates.current_range.replace('-', '–')} %
             </Text>
+          ) : null}
+
+          {/* Jauge headline : proba dominante de la PROCHAINE réunion FOMC */}
+          {nextMeeting && nextDom ? (
+            <CosmicGauge
+              value={nextDom.prob}
+              min={0}
+              max={1}
+              color={nextDom.color}
+              centerLabel={`${Math.round(nextDom.prob * 100)}%`}
+              caption={`Prochaine réunion ${fmtDate(nextMeeting.date)} · ${nextDom.label}`}
+            />
           ) : null}
 
           <View style={styles.legend}>

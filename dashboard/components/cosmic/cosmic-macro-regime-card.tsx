@@ -12,6 +12,8 @@ import { StyleSheet, Text, View } from 'react-native';
 import { Cosmic, TitleShadow, serifTitleFamily } from '@/constants/cosmic';
 import type { MacroIndicator, MacroRegime } from '@/src/api/types';
 
+import { CosmicGauge } from './cosmic-gauge';
+
 export interface CosmicMacroRegimeCardProps {
   regime: MacroRegime | null;
   loading?: boolean;
@@ -91,6 +93,19 @@ export function CosmicMacroRegimeCard({ regime, loading, error }: CosmicMacroReg
         </Text>
       ) : (
         <View style={styles.body}>
+          {/* Jauge headline : z-score 52 sem de la liquidité Fed (contraction ↔ expansion) */}
+          {nl!.zscore_52w != null ? (
+            <CosmicGauge
+              value={nl!.zscore_52w}
+              min={-2.5}
+              max={2.5}
+              markerValue={0}
+              color={regimeBg(nl!.regime)}
+              centerLabel={`${nl!.zscore_52w >= 0 ? '+' : ''}${nl!.zscore_52w.toFixed(1)}σ`}
+              caption={`${regimeLabel(nl!.regime)} · vs moyenne 52 sem`}
+            />
+          ) : null}
+
           {/* Fed Net Liquidity — bloc mis en avant */}
           <View style={styles.netliqBlock}>
             <View style={styles.netliqHead}>

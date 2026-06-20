@@ -11,6 +11,8 @@ import { StyleSheet, Text, View } from 'react-native';
 import { Cosmic, TitleShadow, serifTitleFamily } from '@/constants/cosmic';
 import type { GlobalLiquidity } from '@/src/api/types';
 
+import { CosmicGauge } from './cosmic-gauge';
+
 export interface CosmicGlobalLiquidityCardProps {
   globalLiquidity: GlobalLiquidity | null;
   loading?: boolean;
@@ -96,6 +98,19 @@ export function CosmicGlobalLiquidityCard({
         </Text>
       ) : (
         <View style={styles.body}>
+          {/* Jauge headline : z-score 52 sem de la liquidité mondiale (contraction ↔ expansion) */}
+          {gl!.zscore_52w != null ? (
+            <CosmicGauge
+              value={gl!.zscore_52w}
+              min={-2.5}
+              max={2.5}
+              markerValue={0}
+              color={regimeBg(gl!.regime)}
+              centerLabel={`${gl!.zscore_52w >= 0 ? '+' : ''}${gl!.zscore_52w.toFixed(1)}σ`}
+              caption={`${regimeLabel(gl!.regime)} · vs moyenne 52 sem`}
+            />
+          ) : null}
+
           <View style={styles.headRow}>
             <Text style={styles.bigValue}>{gl!.global_liquidity_tusd!.toFixed(2)} T$</Text>
             <View style={[styles.badge, { backgroundColor: regimeBg(gl!.regime) }]}>
