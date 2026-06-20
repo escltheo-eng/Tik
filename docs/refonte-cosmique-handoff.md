@@ -154,16 +154,52 @@ discipline 14) prouvées ; script macro tourné + **ruff (config repo) « All ch
 - **« Toutes séances fermées » = PAS un bug** : c'était le week-end (samedi). La carte affiche
   bien le bandeau « 🌙 Week-end — forex & or fermés (BTC 24/7) ». Code `sessions.ts` juste.
 
+## 🗓 Session 2026-06-20 (soir) — Observatoire : vue orbitale honnête des sources (commit `e092eb8`)
+
+Reprise du « reste à faire » #5 (vue orbitale). Les 2 maquettes orbitales ont été **lues**
+pour la 1re fois : elles affichent des **« % d'influence »** par source + des sources que Tik
+**n'a pas** (Whales/CoinGlass payant, ETF Gold, Silver, satellites DXY/US10Y/CPI séparés). La
+trader a explicitement validé une **version honnête** (le « % d'influence » serait un chiffre
+**inventé** : la veracity est une moyenne **non pondérée** ADR-004 → aucune source ne pèse plus
+qu'une autre).
+
+**Livré — page dédiée `/observatoire`** (atteinte via un bouton « ✦ Vue orbitale » en haut de
+l'onglet **Sources** ; PAS un onglet — vue de contexte « prendre du recul ») :
+- **Un soleil central = l'actif** (bascule **BTC / GOLD**) + sa **direction** et son **accord**
+  (= veracity) du dernier signal **swing**.
+- **Sources en orbite** = les vrais overlays OSINT de l'actif. Couleur = **santé** (🟢 vivante /
+  🟠 en retard / 🔴 muette / ⚫ désactivée). Tap → panneau détail : **texte verbatim** de la source
+  (`evidence[].fact`, ex. « FG=23 (Extreme Fear) »), fraîcheur, et **raison** si éteinte
+  (Reddit banni, CryptoCompare quota, DXY/COT désactivés ADR-018 P2).
+- **Honnêteté (Axe #1)** : rappel « **toutes les sources à parts égales** », « accord ≠ fiabilité »,
+  **zéro % d'influence**. Vue = **contexte**, pas edge (NO-GO intact).
+
+**Données 100 % réelles, zéro backend touché** : `source_health` + `signals24h` (dernier swing)
+via les hooks existants `useSourceHealth` + `useDashboardKpis`.
+
+**Fichiers** : `src/sources/orbital.ts` (modèle PUR roster + `buildOrbitalModel`, **19 assertions
+prouvées par exécution**) · `components/cosmic/cosmic-orbital.tsx` (soleil + orbite + satellites en
+positions absolues sur carré FIXE 320×320, pas de SVG → rendu stable mobile) · `app/observatoire.tsx`
+(page + bascule) · `app/_layout.tsx` (route enregistrée, header sombre) · `app/(tabs)/sources.tsx`
+(bouton d'entrée). tsc + eslint + bundle iOS verts.
+
+**Note débogage** : la trader « ne voyait pas la page » au 1er essai = **cache Expo Go** (Reload
+complet / kill+relance a réglé) — pas un bug. Rendu device **validé** par la trader.
+
+**Reste possible (NON fait)** : **v2 « deux soleils »** (BTC + GOLD ensemble, Google News au milieu
+comme source partagée — façon maquette « relations ») ; satellites flash (carnet/flux) volontairement
+**exclus** (l'orbite montre le système OSINT swing, pas la microstructure « hachée »).
+
 ## Reste à faire (OPTIONNEL — rien de bloquant)
 1. **Polices custom** Fraunces / JetBrains Mono / Manrope (« bout 4 ») — DIFFÉRÉ : `npm install @expo-google-fonts/*` + `useFonts` ⇒ **redémarrage Metro** ⇒ l'URL du **tunnel ngrok anonyme change** ⇒ la trader doit **rescanner** le QR dans Expo Go. À faire en prévenant.
 2. **Sparklines par source** (Sources) — IMPOSSIBLE en l'état : pas de série historique par source exposée → exigerait un **ajout backend** (soumis à « pas d'ajout sans manque mesuré »).
 3. ~~**Cartes Macro** (régime/liquidité/taux) encore en **cartes** — pourraient passer en jauges~~ → **FAIT 2026-06-20** : composant réutilisable `components/cosmic/cosmic-gauge.tsx` (reprend la géométrie corrigée sweep-flag 1 de `cosmic-hit-rate`) + jauge demi-cercle ajoutée en headline des 3 cartes (régime = z-score liquidité Fed ; mondiale = z-score global ; taux Fed = proba dominante prochaine réunion FOMC). Détail chiffré conservé dessous. Honnête (Axe #1 : visualise un chiffre objectif, aucune prédiction). tsc/eslint/bundle verts.
 4. ~~**Plus** : cartes « hit-rate par tranche veracity » + « stats LLM » thémées~~ → **FAIT 2026-06-19** (cosmétisées, tokens Cosmic ; « par veracity » → « par accord »).
-5. **Vue orbitale** : à faire en version **qualitative** (sans chiffres d'influence). Maquettes `tik orbital view.html` + `tik toggle orbital relations.html` non encore lues.
+5. ~~**Vue orbitale** : version **qualitative** (sans chiffres d'influence)~~ → **BOUT 1 FAIT 2026-06-20 (soir)** : page `/observatoire` (cf. session dédiée ci-dessous). Reste possible : **v2 « deux soleils »** (BTC + GOLD ensemble + source partagée Google News au milieu, façon maquette « relations »).
 6. **Polymarket journalier** : l'ingester exclut volontairement l'intraday « up or down » (5 min = bruit) → marchés **swing** seulement (échéance affichée). Le journalier = **ajout backend assumé** si un jour demandé.
 
 ## Maquettes HTML (vérité visuelle) — `docs/adr/design_phase2/`
-`tik mockup gamma.html` (Signals/Sources/Calendar — **lue**) · `tik mockup enrichi.html` (Orbital/Watchlist/Profil — **lue**) · `tik orbital view.html` + `tik toggle orbital relations.html` (orbital — **non lues**, à lire avant de faire l'orbitale). Tokens CSS = `:root` (déjà transposés dans `cosmic.ts`).
+`tik mockup gamma.html` (Signals/Sources/Calendar — **lue**) · `tik mockup enrichi.html` (Orbital/Watchlist/Profil — **lue**) · `tik orbital view.html` + `tik toggle orbital relations.html` (orbital — **lues 2026-06-20** ; ⚠ elles contiennent des « % d'influence » + des sources que Tik n'a pas (Whales/CoinGlass payant, ETF Gold, Silver) → **version livrée volontairement honnête**, cf. session Observatoire). Tokens CSS = `:root` (déjà transposés dans `cosmic.ts`).
 
 ## Prévisualisation
 **Metro tourne sur le VPS** en tunnel **ngrok** (`npx expo start --tunnel`, port 8081, URL **anonyme** `…exp.direct` — change à chaque restart). La trader : **Expo Go → secouer → Reload**. Pas besoin de commit pour prévisualiser (Metro sert le working tree).
