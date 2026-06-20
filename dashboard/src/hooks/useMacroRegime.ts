@@ -17,6 +17,8 @@ import { TikError } from '@/src/api/errors';
 import { MacroRegime } from '@/src/api/types';
 import { useAuth } from '@/src/auth/AuthContext';
 
+import { useAppForeground } from './use-app-foreground';
+
 const REFRESH_INTERVAL_MS = 15 * 60_000; // 15 min — données macro lentes (hebdo/quotid)
 
 export interface UseMacroRegimeResult {
@@ -70,6 +72,8 @@ export function useMacroRegime(refreshIntervalMs: number = REFRESH_INTERVAL_MS):
       clearInterval(id);
     };
   }, [refresh, apiKey, refreshIntervalMs]);
+
+  useAppForeground(refresh);
 
   return { regime, loading, error, refresh };
 }

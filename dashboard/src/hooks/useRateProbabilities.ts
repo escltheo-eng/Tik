@@ -16,6 +16,8 @@ import { TikError } from '@/src/api/errors';
 import { RateProbabilities } from '@/src/api/types';
 import { useAuth } from '@/src/auth/AuthContext';
 
+import { useAppForeground } from './use-app-foreground';
+
 const REFRESH_INTERVAL_MS = 15 * 60_000; // 15 min — futures lents
 
 export interface UseRateProbabilitiesResult {
@@ -71,6 +73,8 @@ export function useRateProbabilities(
       clearInterval(id);
     };
   }, [refresh, apiKey, refreshIntervalMs]);
+
+  useAppForeground(refresh);
 
   return { rates, loading, error, refresh };
 }

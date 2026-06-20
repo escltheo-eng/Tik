@@ -17,6 +17,8 @@ import { TikError } from '@/src/api/errors';
 import { MacroEvent } from '@/src/api/types';
 import { useAuth } from '@/src/auth/AuthContext';
 
+import { useAppForeground } from './use-app-foreground';
+
 const REFRESH_INTERVAL_MS = 5 * 60_000; // 5 min — cohérent TTL cache Redis
 
 export interface UseUpcomingMacroEventsResult {
@@ -87,6 +89,8 @@ export function useUpcomingMacroEvents(
       clearInterval(id);
     };
   }, [refresh, apiKey, refreshIntervalMs]);
+
+  useAppForeground(refresh);
 
   return { events, loading, error, refresh };
 }

@@ -20,6 +20,8 @@ import { useAuth } from '@/src/auth/AuthContext';
 import { isSignalLlmEnriched } from '@/src/utils/llm';
 import { parseUtcIso } from '@/src/utils/time';
 
+import { useAppForeground } from './use-app-foreground';
+
 const REFRESH_INTERVAL_MS = 60_000;
 const DEFAULT_TRACKED_ENTITIES = ['BTC', 'GOLD'] as const;
 export type TrackedHorizon = 'flash' | 'swing' | 'macro';
@@ -203,6 +205,8 @@ export function useDashboardKpis(options: UseDashboardKpisOptions = {}): Dashboa
   );
   const veracitySeries = useMemo(() => deriveVeracitySeries(signals24h, 12), [signals24h]);
   const llmStatsToday = useMemo(() => deriveLlmStats(signals24h, new Date()), [signals24h]);
+
+  useAppForeground(refresh);
 
   return {
     veracity,

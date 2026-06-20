@@ -136,6 +136,24 @@ contexte) **+ NO-GO**. Re-mesurer après un changement de régime. Mémoire
 **Vérifs** : tsc + eslint + bundle iOS verts ; **50 assertions** de logique pure (sessions 36 +
 discipline 14) prouvées ; script macro tourné + **ruff (config repo) « All checks passed »**.
 
+## 🗓 Session 2026-06-20 — Jauges macro + rafraîchissement auto au premier plan
+
+- **Jauges macro** (cf. « Reste à faire » #3 ci-dessous, marqué FAIT) : commit `76495b0`.
+- **Rafraîchissement auto sans reload** (demande trader « je ne veux pas avoir besoin de
+  toujours recharger ») : nouveau hook partagé `src/hooks/use-app-foreground.ts` qui appelle
+  un callback au retour au premier plan (AppState non-active → active). Branché sur **`useTick`**
+  (horloge de séances + tous les « il y a X min » se rafraîchissent à la reprise) et sur **les 12
+  hooks de données** (`useMacroRegime`, `useRateProbabilities`, `useDerivatives`, `usePolymarket`,
+  `useTopHeadlines`, `useUpcomingMacroEvents`, `useHitRate`, `useHitRateByVeracity`,
+  `useDashboardKpis` via `refresh` ; `useSourceHealth`, `useBreakingNews`, `useSignalFreshness`
+  via un listener AppState inline car leur `run` n'est pas exposé). `useSignalStream` gérait DÉJÀ
+  le retour au premier plan (rien à changer). **Cause racine** : l'OS gèle `setInterval` en
+  arrière-plan → au retour il fallait attendre le prochain tick (jusqu'à 15 min pour la macro).
+  ⚠ Pour tout NOUVEAU hook de poll : penser à `useAppForeground(refresh)`. Mémoire
+  `dashboard-foreground-refresh`.
+- **« Toutes séances fermées » = PAS un bug** : c'était le week-end (samedi). La carte affiche
+  bien le bandeau « 🌙 Week-end — forex & or fermés (BTC 24/7) ». Code `sessions.ts` juste.
+
 ## Reste à faire (OPTIONNEL — rien de bloquant)
 1. **Polices custom** Fraunces / JetBrains Mono / Manrope (« bout 4 ») — DIFFÉRÉ : `npm install @expo-google-fonts/*` + `useFonts` ⇒ **redémarrage Metro** ⇒ l'URL du **tunnel ngrok anonyme change** ⇒ la trader doit **rescanner** le QR dans Expo Go. À faire en prévenant.
 2. **Sparklines par source** (Sources) — IMPOSSIBLE en l'état : pas de série historique par source exposée → exigerait un **ajout backend** (soumis à « pas d'ajout sans manque mesuré »).
