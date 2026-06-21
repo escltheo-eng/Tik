@@ -64,6 +64,15 @@ SERIES_LATEST = {
     "DGS10": "nominal_10y",  # taux nominal 10Y, quotidien
 }
 
+# Régime de RISQUE (ADR-030) — volatilité actions + tension crédit, séries FRED
+# quotidiennes. Famille NON-sentiment, CONTEXTE strict (ne touche jamais direction).
+RISK_SERIES = {
+    "VIXCLS": "vix",  # CBOE VIX (volatilité implicite S&P 500), quotidien, points
+    "BAMLH0A0HYM2": "hy_oas",  # ICE BofA US High Yield OAS (spread, % pts), quotidien
+    "BAMLC0A0CM": "ig_oas",  # ICE BofA US Corporate (Investment Grade) OAS (% pts), quotidien
+}
+RISK_WINDOW = 252  # ~1 an de jours ouvrés pour le rang centile / z-score
+
 REDIS_KEY = "tik.macro.regime"
 
 
@@ -256,6 +265,96 @@ def compute_global_regime(series: list[tuple[str, float]], zscore_window: int = 
 
 
 # ---------------------------------------------------------------------------
+# Régime de RISQUE (ADR-030) — VIX + spreads de crédit. PUR, unit-testable.
+# ---------------------------------------------------------------------------
+
+
+def _series_metrics(obs: dict[str, float], window: int = RISK_WINDOW) -> dict | None:
+    """Métriques de CONTEXTE d'une série quotidienne (VIX / spread de crédit) :
+    dernière valeur + date, variation ~1 mois (20 jours ouvrés), rang centile et
+    z-score sur la fenêtre glissante `window`.
+
+    Rang centile = fraction des points de la fenêtre ≤ dernière valeur. Pour le VIX
+    et les spreads (séries ASYMÉTRIQUES, bornées à gauche, longues queues à droite),
+    le centile est plus honnête que le seul z-score : un centile élevé = stress élevé
+    par rapport à la dernière année. Retourne None si aucune observation valide.
+    """
+    lv = latest_valid(obs)
+    if lv is None:
+        return None
+    values = [obs[d] for d in sorted(obs)]
+    latest_date, latest = lv
+    out: dict = {"value": round(latest, 2), "date": latest_date, "n": len(values)}
+    out["delta_20d"] = round(latest - values[-21], 2) if len(values) > 20 else None
+    win = values[-window:]
+    if len(win) >= 30:
+        below = sum(1 for v in win if v <= latest)
+        out["pct_rank_1y"] = round(below / len(win), 2)
+        mu = statistics.mean(win)
+        sd = statistics.pstdev(win)
+        out["zscore_1y"] = round((latest - mu) / sd, 2) if sd > 0 else 0.0
+    else:
+        out["pct_rank_1y"] = None
+        out["zscore_1y"] = None
+    return out
+
+
+def compute_risk_regime(
+    vix: dict[str, float],
+    hy_oas: dict[str, float],
+    ig_oas: dict[str, float],
+    window: int = RISK_WINDOW,
+) -> dict:
+    """Régime de risque CONTEXTUEL à partir du VIX + spreads de crédit (FRED).
+
+    `risk_state` ∈ {risk_on, risk_off, neutral, unknown} décrit l'ENVIRONNEMENT de
+    risque actuel (volatilité actions implicite + tension du crédit corporate),
+    JAMAIS une prédiction du prix BTC/GOLD — le macro ne prédit pas BTC (mesuré le
+    2026-06-19, cf. measure_macro_predictive.py + NO-GO). Fondé sur le rang centile
+    sur ~1 an du VIX et du High-Yield OAS (les deux jauges de stress les plus
+    directes), moyenné sur celles disponibles :
+      - ≥ 0.70 → risk_off (stress élevé : volatilité/crédit tendus vs l'année)
+      - ≤ 0.30 → risk_on (marché calme)
+      - sinon  → neutral
+    L'Investment-Grade OAS est exposé comme détail de soutien (pas dans le label).
+    """
+    vm = _series_metrics(vix, window)
+    hm = _series_metrics(hy_oas, window)
+    im = _series_metrics(ig_oas, window)
+    if vm is None and hm is None and im is None:
+        return {"available": False}
+
+    out: dict = {"available": True, "context_only": True}
+    if vm:
+        vm["series_id"] = "VIXCLS"
+        out["vix"] = vm
+    if hm:
+        hm["series_id"] = "BAMLH0A0HYM2"
+        out["hy_oas"] = hm
+    if im:
+        im["series_id"] = "BAMLC0A0CM"
+        out["ig_oas"] = im
+
+    dates = [m["date"] for m in (vm, hm, im) if m and m.get("date")]
+    out["as_of"] = max(dates) if dates else None
+
+    ranks = [m["pct_rank_1y"] for m in (vm, hm) if m and m.get("pct_rank_1y") is not None]
+    if ranks:
+        avg = sum(ranks) / len(ranks)
+        out["stress_percentile"] = round(avg, 2)
+        if avg >= 0.70:
+            out["risk_state"] = "risk_off"
+        elif avg <= 0.30:
+            out["risk_state"] = "risk_on"
+        else:
+            out["risk_state"] = "neutral"
+    else:
+        out["stress_percentile"] = None
+        out["risk_state"] = "unknown"
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Ingester (I/O FRED + Redis)
 # ---------------------------------------------------------------------------
 
@@ -402,6 +501,22 @@ class MacroRegimeIngester(BaseIngester):
                 indicators[key] = {"value": lv[1], "date": lv[0], "series_id": series_id}
         blob["indicators"] = indicators
 
+        # --- Régime de risque (VIX + spreads de crédit) — ADR-030, CONTEXTE strict ---
+        try:
+            risk_obs: dict[str, dict[str, float]] = {}
+            for series_id, key in RISK_SERIES.items():
+                risk_obs[key] = parse_observations(
+                    await self._fetch_obs(client, series_id, 300)
+                )
+            blob["risk_regime"] = compute_risk_regime(
+                risk_obs.get("vix", {}),
+                risk_obs.get("hy_oas", {}),
+                risk_obs.get("ig_oas", {}),
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.warning("macro_regime.risk_regime.error", error=str(exc))
+            blob["risk_regime"] = {"available": False}
+
         return blob
 
     async def _run(self) -> None:
@@ -416,6 +531,7 @@ class MacroRegimeIngester(BaseIngester):
                         net_liquidity_tusd=nl.get("net_liquidity_tusd"),
                         regime=nl.get("regime"),
                         indicators=len(blob.get("indicators", {})),
+                        risk_state=blob.get("risk_regime", {}).get("risk_state"),
                     )
                 except Exception as exc:  # noqa: BLE001
                     log.warning("macro_regime.cycle.error", error=str(exc))

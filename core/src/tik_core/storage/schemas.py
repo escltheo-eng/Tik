@@ -706,6 +706,45 @@ class GlobalLiquidityOut(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
 
+class RiskSeriesOut(BaseModel):
+    """Métriques de contexte d'une série de risque (VIX ou spread de crédit, ADR-030).
+
+    `pct_rank_1y` = rang centile de la dernière valeur sur ~1 an (0..1) ; pour le VIX
+    et les spreads, un centile élevé = stress élevé. CONTEXTE strict.
+    """
+
+    value: float | None = None
+    date: str | None = None
+    n: int | None = None
+    delta_20d: float | None = None
+    pct_rank_1y: float | None = None
+    zscore_1y: float | None = None
+    series_id: str | None = None
+
+    model_config = ConfigDict(extra="ignore")
+
+
+class RiskRegimeOut(BaseModel):
+    """Régime de RISQUE objectif (VIX + spreads de crédit FRED, ADR-030, CONTEXTE).
+
+    `risk_state` ∈ {risk_on, risk_off, neutral, unknown} décrit l'ENVIRONNEMENT de
+    risque (volatilité actions + tension crédit), JAMAIS une prédiction du prix
+    BTC/GOLD (le macro ne prédit pas BTC — mesuré 2026-06-19). Ne touche jamais
+    direction/veracity/combined_bias.
+    """
+
+    available: bool = False
+    as_of: str | None = None
+    risk_state: str | None = None
+    stress_percentile: float | None = None
+    vix: RiskSeriesOut | None = None
+    hy_oas: RiskSeriesOut | None = None
+    ig_oas: RiskSeriesOut | None = None
+    context_only: bool = True
+
+    model_config = ConfigDict(extra="ignore")
+
+
 class MacroRegimeOut(BaseModel):
     """Blob régime macro objectif publié par `MacroRegimeIngester` (CONTEXTE strict).
 
@@ -719,6 +758,7 @@ class MacroRegimeOut(BaseModel):
     net_liquidity: NetLiquidityOut | None = None
     global_liquidity: GlobalLiquidityOut | None = None
     indicators: dict[str, MacroIndicatorOut] = Field(default_factory=dict)
+    risk_regime: RiskRegimeOut | None = None
     context_only: bool = True
 
     model_config = ConfigDict(extra="ignore")

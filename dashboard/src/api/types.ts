@@ -409,6 +409,30 @@ export interface GlobalLiquidity {
   context_only?: boolean;
 }
 
+export interface RiskSeries {
+  value: number | null;
+  date: string | null;
+  n?: number | null;
+  delta_20d: number | null;
+  pct_rank_1y: number | null; // rang centile sur ~1 an (0..1) — élevé = stress élevé
+  zscore_1y: number | null;
+  series_id?: string | null;
+}
+
+// Régime de RISQUE (ADR-030) : VIX + spreads de crédit FRED. `risk_state` décrit
+// l'environnement de risque (volatilité actions + tension crédit), JAMAIS une
+// prédiction du prix BTC/GOLD. CONTEXTE strict (ne touche pas direction/veracity).
+export interface RiskRegime {
+  available: boolean;
+  as_of: string | null;
+  risk_state: string | null; // risk_on | risk_off | neutral | unknown
+  stress_percentile: number | null; // moyenne centile VIX + HY (0..1)
+  vix: RiskSeries | null;
+  hy_oas: RiskSeries | null; // spread High Yield (% pts)
+  ig_oas: RiskSeries | null; // spread Investment Grade (% pts)
+  context_only?: boolean;
+}
+
 export interface MacroRegime {
   available: boolean;
   source?: string;
@@ -416,6 +440,7 @@ export interface MacroRegime {
   net_liquidity: NetLiquidity | null;
   global_liquidity?: GlobalLiquidity | null;
   indicators: Record<string, MacroIndicator>;
+  risk_regime?: RiskRegime | null;
   context_only?: boolean;
 }
 

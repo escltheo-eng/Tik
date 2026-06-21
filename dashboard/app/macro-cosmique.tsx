@@ -26,6 +26,7 @@ import { CosmicDisciplineWindow } from '@/components/cosmic/cosmic-discipline-wi
 import { CosmicGlobalLiquidityCard } from '@/components/cosmic/cosmic-global-liquidity-card';
 import { CosmicMacroRegimeCard } from '@/components/cosmic/cosmic-macro-regime-card';
 import { CosmicRateProbabilitiesCard } from '@/components/cosmic/cosmic-rate-probabilities-card';
+import { CosmicRiskRegimeCard } from '@/components/cosmic/cosmic-risk-regime-card';
 import { CosmicSessionClock } from '@/components/cosmic/cosmic-session-clock';
 import { Cosmic, TitleShadow, serifTitleFamily } from '@/constants/cosmic';
 import { useMacroRegime } from '@/src/hooks/useMacroRegime';
@@ -69,6 +70,12 @@ export default function MacroCosmicScreen() {
 
         <CosmicGlobalLiquidityCard
           globalLiquidity={macro.regime?.global_liquidity ?? null}
+          loading={macro.loading}
+          error={macro.error}
+        />
+
+        <CosmicRiskRegimeCard
+          risk={macro.regime?.risk_regime ?? null}
           loading={macro.loading}
           error={macro.error}
         />
