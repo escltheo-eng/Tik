@@ -17,16 +17,20 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CosmicBackground } from '@/components/cosmic/cosmic-background';
 import { CosmicOrbital } from '@/components/cosmic/cosmic-orbital';
+import { CosmicRelations } from '@/components/cosmic/cosmic-relations';
 import { Cosmic, TitleShadow, serifTitleFamily } from '@/constants/cosmic';
 import { Fonts } from '@/constants/theme';
 import { useDashboardKpis } from '@/src/hooks/useDashboardKpis';
 import { useSourceHealth } from '@/src/hooks/useSourceHealth';
 import { buildOrbitalModel, type OrbitalEntity } from '@/src/sources/orbital';
+import { buildRelationsModel } from '@/src/sources/relations';
 
 const ENTITIES: OrbitalEntity[] = ['BTC', 'GOLD'];
+type ViewMode = 'orbital' | 'relations';
 
 export default function ObservatoireScreen() {
   const insets = useSafeAreaInsets();
+  const [mode, setMode] = useState<ViewMode>('orbital');
   const [entity, setEntity] = useState<OrbitalEntity>('BTC');
 
   const { signals24h, loading: signalsLoading } = useDashboardKpis();
@@ -35,6 +39,10 @@ export default function ObservatoireScreen() {
   const model = useMemo(
     () => buildOrbitalModel(entity, signals24h, health),
     [entity, signals24h, health],
+  );
+  const relations = useMemo(
+    () => buildRelationsModel(signals24h, health),
+    [signals24h, health],
   );
 
   const loading = signalsLoading && healthLoading;
@@ -48,18 +56,19 @@ export default function ObservatoireScreen() {
         </View>
 
         <Text style={styles.intro}>
-          Chaque actif est un soleil ; ses sources OSINT gravitent autour. La couleur dit leur
-          santé, le tap révèle ce qu&apos;elles disent vraiment — sans aucun « poids » inventé.
+          {mode === 'orbital'
+            ? 'Chaque actif est un soleil ; ses sources OSINT gravitent autour. La couleur dit leur santé, le tap révèle ce qu’elles disent vraiment — sans aucun « poids » inventé.'
+            : 'BTC et GOLD vus ensemble : les sources propres à chacun, et au centre celle(s) qui alimentent les deux (le « pont »). La couleur d’un trait dit la santé de la source.'}
         </Text>
 
-        {/* Bascule actif */}
+        {/* Bascule de vue : Orbital (un soleil) / Relations (deux soleils) */}
         <View style={styles.toggleRow}>
-          {ENTITIES.map((e) => {
-            const active = entity === e;
+          {(['orbital', 'relations'] as ViewMode[]).map((m) => {
+            const active = mode === m;
             return (
               <Pressable
-                key={e}
-                onPress={() => setEntity(e)}
+                key={m}
+                onPress={() => setMode(m)}
                 style={({ pressed }) => [
                   styles.pill,
                   active ? styles.pillActive : null,
@@ -67,13 +76,42 @@ export default function ObservatoireScreen() {
                 ]}
                 accessibilityRole="button"
                 accessibilityState={{ selected: active }}>
-                <Text style={[styles.pillText, active ? styles.pillTextActive : null]}>{e}</Text>
+                <Text style={[styles.pillText, active ? styles.pillTextActive : null]}>
+                  {m === 'orbital' ? '◐ Par actif' : '✦ Relations'}
+                </Text>
               </Pressable>
             );
           })}
         </View>
 
-        <CosmicOrbital model={model} />
+        {mode === 'orbital' ? (
+          <>
+            {/* Bascule actif (mode orbital seulement) */}
+            <View style={styles.toggleRow}>
+              {ENTITIES.map((e) => {
+                const active = entity === e;
+                return (
+                  <Pressable
+                    key={e}
+                    onPress={() => setEntity(e)}
+                    style={({ pressed }) => [
+                      styles.pill,
+                      active ? styles.pillActive : null,
+                      { opacity: pressed ? 0.7 : 1 },
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: active }}>
+                    <Text style={[styles.pillText, active ? styles.pillTextActive : null]}>{e}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            <CosmicOrbital model={model} />
+          </>
+        ) : (
+          <CosmicRelations model={relations} />
+        )}
 
         {loading ? <Text style={styles.loading}>Sondage des sources…</Text> : null}
 
