@@ -444,6 +444,32 @@ export interface MacroRegime {
   context_only?: boolean;
 }
 
+// Stablecoins (ADR-031) : masse totale + tendance (DefiLlama). « Poudre sèche »
+// crypto-native. `trend` = sens du flux de capital, JAMAIS une prédiction de prix.
+// CONTEXTE strict (ne touche pas direction/veracity).
+export interface StablecoinBreakdown {
+  symbol: string | null;
+  name: string | null;
+  circulating_busd: number | null;
+  share: number | null; // part de la masse USD-pegged totale (0..1)
+}
+export interface Stablecoins {
+  available: boolean;
+  source?: string;
+  fetched_at: string | null;
+  as_of: string | null;
+  total_busd: number | null;
+  total_tusd: number | null;
+  n_days?: number | null;
+  delta_7d_busd: number | null;
+  delta_30d_busd: number | null;
+  pct_30d: number | null;
+  trend: string | null; // expansion | contraction | neutral | unknown
+  zscore_90d: number | null;
+  breakdown: StablecoinBreakdown[];
+  context_only?: boolean;
+}
+
 export interface RateMeeting {
   date: string;
   probabilities: Record<string, number>;

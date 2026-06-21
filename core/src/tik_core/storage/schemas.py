@@ -817,3 +817,40 @@ class MacroCockpitOut(BaseModel):
     next_macro_event: dict[str, Any] | None = None
 
     model_config = ConfigDict(extra="ignore")
+
+
+class StablecoinBreakdownOut(BaseModel):
+    """Un stablecoin du top par capitalisation (ADR-031)."""
+
+    symbol: str | None = None
+    name: str | None = None
+    circulating_busd: float | None = None
+    share: float | None = None  # part de la masse USD-pegged totale (0..1)
+
+    model_config = ConfigDict(extra="ignore")
+
+
+class StablecoinsOut(BaseModel):
+    """Masse de stablecoins + tendance (DefiLlama, ADR-031, CONTEXTE strict).
+
+    Liquidité crypto-native (« poudre sèche »). `trend` ∈ {expansion, contraction,
+    neutral, unknown} décrit le sens du flux de capital vers les rails crypto, JAMAIS
+    une prédiction du prix BTC. Ne touche jamais direction/veracity/combined_bias.
+    """
+
+    available: bool = False
+    source: str = "defillama_stablecoins"
+    fetched_at: str | None = None
+    as_of: str | None = None
+    total_busd: float | None = None
+    total_tusd: float | None = None
+    n_days: int | None = None
+    delta_7d_busd: float | None = None
+    delta_30d_busd: float | None = None
+    pct_30d: float | None = None
+    trend: str | None = None
+    zscore_90d: float | None = None
+    breakdown: list[StablecoinBreakdownOut] = Field(default_factory=list)
+    context_only: bool = True
+
+    model_config = ConfigDict(extra="ignore")

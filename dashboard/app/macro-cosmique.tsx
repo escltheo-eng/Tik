@@ -28,24 +28,27 @@ import { CosmicMacroRegimeCard } from '@/components/cosmic/cosmic-macro-regime-c
 import { CosmicRateProbabilitiesCard } from '@/components/cosmic/cosmic-rate-probabilities-card';
 import { CosmicRiskRegimeCard } from '@/components/cosmic/cosmic-risk-regime-card';
 import { CosmicSessionClock } from '@/components/cosmic/cosmic-session-clock';
+import { CosmicStablecoinsCard } from '@/components/cosmic/cosmic-stablecoins-card';
 import { Cosmic, TitleShadow, serifTitleFamily } from '@/constants/cosmic';
 import { useMacroRegime } from '@/src/hooks/useMacroRegime';
 import { useRateProbabilities } from '@/src/hooks/useRateProbabilities';
+import { useStablecoins } from '@/src/hooks/useStablecoins';
 
 export default function MacroCosmicScreen() {
   const router = useRouter();
   const macro = useMacroRegime();
   const rateProb = useRateProbabilities();
+  const stablecoins = useStablecoins();
 
   const [refreshing, setRefreshing] = useState(false);
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await Promise.all([macro.refresh(), rateProb.refresh()]);
+      await Promise.all([macro.refresh(), rateProb.refresh(), stablecoins.refresh()]);
     } finally {
       setRefreshing(false);
     }
-  }, [macro, rateProb]);
+  }, [macro, rateProb, stablecoins]);
 
   return (
     <CosmicBackground>
@@ -78,6 +81,12 @@ export default function MacroCosmicScreen() {
           risk={macro.regime?.risk_regime ?? null}
           loading={macro.loading}
           error={macro.error}
+        />
+
+        <CosmicStablecoinsCard
+          stablecoins={stablecoins.stablecoins}
+          loading={stablecoins.loading}
+          error={stablecoins.error}
         />
 
         <CosmicRateProbabilitiesCard

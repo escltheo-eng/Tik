@@ -28,6 +28,7 @@ from tik_core.aggregator.news_classifier import build_news_classifier
 from tik_core.aggregator.polymarket_ingester import PolymarketIngester
 from tik_core.aggregator.rate_probabilities_ingester import RateProbabilitiesIngester
 from tik_core.aggregator.reddit_ingester import RedditIngester
+from tik_core.aggregator.stablecoins_ingester import StablecoinsIngester
 from tik_core.aggregator.yahoo_ingester import YahooPoller
 from tik_core.config import get_settings
 
@@ -215,6 +216,12 @@ async def main() -> None:
         # Polling 6 h (les flux ETF sont quotidiens, pas intra-day). Retrait =
         # retirer cette ligne.
         BtcEtfFlowsIngester(redis, entity="BTC", interval_s=6 * 3600),
+        # Masse de stablecoins + tendance (DefiLlama, sans clé) — CONTEXTE strict
+        # (ADR-031). Liquidité crypto-native (« poudre sèche ») : 3e famille macro de
+        # contexte. Publie tik.macro.stablecoins, exposé via /macro/stablecoins. NE
+        # touche jamais le combined_bias (pas d'overlay, pas de toggle). Polling 6 h
+        # (données quotidiennes). Joignabilité VPS vérifiée 2026-06-21 (HTTP 200).
+        StablecoinsIngester(redis, interval_s=6 * 3600),
     ]
 
     # Breaking-news alerting (ADR-027) — gaté par toggle (défaut OFF). Capte les

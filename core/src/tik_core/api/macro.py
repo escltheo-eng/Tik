@@ -32,6 +32,7 @@ from tik_core.storage.schemas import (
     MacroCockpitOut,
     MacroRegimeOut,
     RateProbabilitiesOut,
+    StablecoinsOut,
 )
 from tik_core.utils.time import iso_utc
 
@@ -41,6 +42,7 @@ router = APIRouter(prefix="/macro")
 
 REGIME_KEY = "tik.macro.regime"
 RATE_PROB_KEY = "tik.macro.rate_probabilities"
+STABLECOINS_KEY = "tik.macro.stablecoins"
 FEAR_GREED_KEY = "tik.sentiment.fear_greed"
 DERIV_KEY = "tik.deriv.binance.btc"
 ETF_KEY = "tik.etf.btc"
@@ -118,6 +120,23 @@ async def get_rate_probabilities(
             return RateProbabilitiesOut(available=False)
         payload.setdefault("available", True)
         return RateProbabilitiesOut(**payload)
+    finally:
+        await redis.aclose()
+
+
+@router.get("/stablecoins", response_model=StablecoinsOut)
+async def get_stablecoins(
+    _ctx: AuthContext = Depends(require_scope("read:signals")),
+) -> StablecoinsOut:
+    """Masse de stablecoins + tendance (DefiLlama, CONTEXTE). Vide si pas encore publié."""
+    settings = get_settings()
+    redis = aioredis.from_url(settings.redis_url, decode_responses=True)
+    try:
+        payload = await _read_json(redis, STABLECOINS_KEY)
+        if not payload:
+            return StablecoinsOut(available=False)
+        payload.setdefault("available", True)
+        return StablecoinsOut(**payload)
     finally:
         await redis.aclose()
 
