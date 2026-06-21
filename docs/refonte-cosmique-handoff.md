@@ -186,16 +186,46 @@ positions absolues sur carré FIXE 320×320, pas de SVG → rendu stable mobile)
 **Note débogage** : la trader « ne voyait pas la page » au 1er essai = **cache Expo Go** (Reload
 complet / kill+relance a réglé) — pas un bug. Rendu device **validé** par la trader.
 
-**Reste possible (NON fait)** : **v2 « deux soleils »** (BTC + GOLD ensemble, Google News au milieu
-comme source partagée — façon maquette « relations ») ; satellites flash (carnet/flux) volontairement
-**exclus** (l'orbite montre le système OSINT swing, pas la microstructure « hachée »).
+**Reste possible (NON fait)** : satellites flash (carnet/flux) volontairement **exclus** (l'orbite
+montre le système OSINT swing, pas la microstructure « hachée »). [La **v2 « deux soleils »** a été
+livrée le 2026-06-21 → cf. session dédiée ci-dessous.]
+
+## 🗓 Session 2026-06-21 — Observatoire v2 « relations » : deux soleils (commit `be86711`)
+
+Reprise du « reste possible » de la session Observatoire : la **v2 « deux soleils »** (façon
+maquette `tik toggle orbital relations.html`, **lue** pour l'occasion).
+
+**Livré** — un **toggle « ◐ Par actif / ✦ Relations »** en haut de `/observatoire` :
+- **Vue Relations** : **BTC (soleil haut) + GOLD (soleil bas) ensemble**. Sources propres à chaque
+  actif de son côté, et au **centre le « pont »** = la/les source(s) qui alimentent les DEUX. Aujourd'hui
+  **une seule source partagée : Google News** (seule présente dans les deux rosters). Chaque **trait**
+  relie une source à son/ses soleil(s), **couleur = santé** de la source. Tap → texte verbatim.
+- **Fait structurel honnête mis en avant** : Google News a **deux faces indépendantes** (santé + texte
+  propres par actif : `google_news_btc` vs `google_news_gold`) → montrées **côte à côte** au tap, et
+  les **deux traits** du pont portent chacun la santé de leur face. Pastille du pont en **bleu neutre**
+  (pas une face arbitraire).
+- **Honnêteté (Axe #1)** : la maquette « relations » montrait des sources que Tik **n'a pas** (Whales/
+  ETF/Stables, DXY-CPI-US10Y comme « partagées ») + des « % d'influence » → **version restreinte au
+  vrai roster, zéro % inventé**, rappel « parts égales », « accord ≠ fiabilité ».
+
+**Fichiers** : `src/sources/relations.ts` (modèle PUR par-dessus `buildOrbitalModel` : partition
+btcOnly/goldOnly/shared, **18 assertions prouvées par exécution** via `npx tsx` — dont l'indépendance
+des deux faces du pont, l'invariant `btcOnly+shared=sources`, le flash ignoré) · `components/cosmic/
+cosmic-relations.tsx` (deux soleils + traits SVG `Line` + nœuds en coordonnées **fixes 320×480** calés
+sur les mêmes points → rendu stable mobile + panneau détail/pont au tap) · `app/observatoire.tsx`
+(toggle de vue). **Données 100 % réelles** (mêmes hooks `useDashboardKpis` + `useSourceHealth`), **zéro
+backend touché**, réversible (`main` intact). tsc + eslint + bundle iOS verts.
+
+**Non vérifié** : rendu pixel sur device (validé tsc/eslint/bundle/18 assertions, pas le pixel — à
+confirmer par la trader : Expo Go → Reload → onglet **Sources** → bouton « ✦ Vue orbitale » → toggle
+**✦ Relations**).
 
 ## Reste à faire (OPTIONNEL — rien de bloquant)
 1. **Polices custom** Fraunces / JetBrains Mono / Manrope (« bout 4 ») — DIFFÉRÉ : `npm install @expo-google-fonts/*` + `useFonts` ⇒ **redémarrage Metro** ⇒ l'URL du **tunnel ngrok anonyme change** ⇒ la trader doit **rescanner** le QR dans Expo Go. À faire en prévenant.
 2. **Sparklines par source** (Sources) — IMPOSSIBLE en l'état : pas de série historique par source exposée → exigerait un **ajout backend** (soumis à « pas d'ajout sans manque mesuré »).
 3. ~~**Cartes Macro** (régime/liquidité/taux) encore en **cartes** — pourraient passer en jauges~~ → **FAIT 2026-06-20** : composant réutilisable `components/cosmic/cosmic-gauge.tsx` (reprend la géométrie corrigée sweep-flag 1 de `cosmic-hit-rate`) + jauge demi-cercle ajoutée en headline des 3 cartes (régime = z-score liquidité Fed ; mondiale = z-score global ; taux Fed = proba dominante prochaine réunion FOMC). Détail chiffré conservé dessous. Honnête (Axe #1 : visualise un chiffre objectif, aucune prédiction). tsc/eslint/bundle verts.
 4. ~~**Plus** : cartes « hit-rate par tranche veracity » + « stats LLM » thémées~~ → **FAIT 2026-06-19** (cosmétisées, tokens Cosmic ; « par veracity » → « par accord »).
-5. ~~**Vue orbitale** : version **qualitative** (sans chiffres d'influence)~~ → **BOUT 1 FAIT 2026-06-20 (soir)** : page `/observatoire` (cf. session dédiée ci-dessous). Reste possible : **v2 « deux soleils »** (BTC + GOLD ensemble + source partagée Google News au milieu, façon maquette « relations »).
+5. ~~**Vue orbitale** : version **qualitative** (sans chiffres d'influence)~~ → **BOUT 1 FAIT 2026-06-20 (soir)** : page `/observatoire`. **v2 « deux soleils » FAIT 2026-06-21** (toggle Relations : BTC+GOLD + pont Google News, commit `be86711` — cf. session dédiée). Vue orbitale **complète**.
 6. **Polymarket journalier** : l'ingester exclut volontairement l'intraday « up or down » (5 min = bruit) → marchés **swing** seulement (échéance affichée). Le journalier = **ajout backend assumé** si un jour demandé.
 
 ## Maquettes HTML (vérité visuelle) — `docs/adr/design_phase2/`
