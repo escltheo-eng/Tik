@@ -7,11 +7,14 @@ Vérifie qu'un signal externe 'micro' POSTé sur /api/v1/signals/ingest est :
 - doté d'une veracity conservatrice par défaut (0.70) si non fournie.
 
 Skippe proprement sans Postgres de test (héritage auth_client → db_session →
-db_engine, garde anti-prod du conftest). Redis est stubbé pour ne pas exiger
-de broker réel (l'endpoint réutilise publisher._publish_signal qui publie).
+db_engine, garde anti-prod du conftest). Redis est stubbé (publish no-op) pour
+ne pas exiger de broker. L'entité BTC est seedée AVANT le POST : `signals` a une
+FK vers `entities` (cf. test_publisher_timezone_db.py / CLAUDE.md Bug 9 contexte).
 """
 
 import pytest
+
+from tik_core.storage.models import Entity
 
 
 class _FakeRedis:
@@ -24,11 +27,21 @@ class _FakeRedis:
         return None
 
 
+async def _seed_btc_entity(db_session):
+    """Garantit l'entité BTC (FK signals→entities) dans la transaction de test."""
+    if await db_session.get(Entity, "BTC") is None:
+        db_session.add(Entity(id="BTC", domain="crypto", namespace="binance"))
+        await db_session.flush()
+
+
 @pytest.mark.asyncio
-async def test_ingest_micro_creates_degraded_micro_signal(auth_client, monkeypatch):
+async def test_ingest_micro_creates_degraded_micro_signal(
+    auth_client, db_session, monkeypatch
+):
     import tik_core.api.signals as signals_mod
 
     monkeypatch.setattr(signals_mod.aioredis, "from_url", lambda *a, **k: _FakeRedis())
+    await _seed_btc_entity(db_session)
 
     payload = {
         "entity_id": "btc",  # minuscule → doit être normalisé en BTC
