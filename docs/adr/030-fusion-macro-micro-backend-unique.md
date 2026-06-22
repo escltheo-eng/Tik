@@ -199,6 +199,13 @@ Avant tout enrôlement du micro dans une décision :
   micro a bien besoin de son propre flux L2. **Confirmé.**
 - **Doublons** (§2.3) : `grep` sur `Tik/core/src` → seul `macro_regime` est un vrai doublon ;
   `risk_engine`/`source_confidence`/`signal_card` **n'existent pas** dans Tik. **Corrigé ci-dessus.**
+- **Noyau labo importable** : venv avec `requirements.txt` du labo → **14/14 modules du noyau
+  micro importés, 0 échec**, sur `pandas 3.0.3` + `numpy 2.4.6` + `gplearn 0.4.3`. **Import OK.**
+- **`dashboard.py` headless** : s'importe sans écran ; la machinerie asyncio (`background_loop` →
+  `async main()` → `asyncio.gather(stream, run_all_pollers, *_loop)`) **démarre via un thread démon
+  au niveau module** (ligne 453), le serveur Dash ne se lance que sous `__main__`. Seul blocage
+  observé = `HTTP 403` Binance (**politique réseau du bac à sable de dev, pas le code**). ➡️ un
+  lanceur headless = importer la machinerie sans servir Dash. **Étape 1 dé-risquée.**
 
 ### ⚠️ NON encore vérifié (à lever avant les étapes concernées)
 - [ ] **pandas 3.0 vs code labo** : le test a tiré pandas **3.0.3** (version majeure). Le labo est
