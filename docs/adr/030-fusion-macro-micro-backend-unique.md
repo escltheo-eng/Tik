@@ -74,10 +74,23 @@ Il **ne touche jamais** le `combined_bias` des moteurs swing/flash existants. Le
 - **Données nécessaires au noyau** : flux Binance WS klines `1s…1d` + `@trade` + **`@depth20@100ms`**
   (carnet L2 temps réel) — plus riche que ce que l'ingester Tik capture aujourd'hui.
 
-### 2.3 Recouvrements à réconcilier (les deux les ont déjà)
-`macro_regime`, `orderbook`, `risk_engine`, `source_confidence`, `signal_card` existent **des deux
-côtés** avec des implémentations différentes. La fusion devra **choisir une source de vérité** par
-concept (ne pas empiler deux régimes macro).
+### 2.3 Recouvrements à réconcilier — VÉRIFIÉ (correction post-audit 2026-06-22)
+
+> ⚠️ **Mea culpa** : une 1re version de cet ADR affirmait que `macro_regime`, `orderbook`,
+> `risk_engine`, `source_confidence`, `signal_card` existaient « des deux côtés ». Vérification par
+> `grep` sur `Tik/core/src` : **c'était surévalué.** État réel :
+
+| Concept | Labo (btc-research-lab) | Tik (core/src) | Recouvrement réel ? |
+|---|---|---|---|
+| **macro_regime** | `macro_regime.py` | `api/macro.py` + `macro_regime_ingester.py` (ADR-028) | ✅ **Oui** — vrai doublon, à réconcilier (ne pas empiler 2 régimes). |
+| **orderbook** | `orderbook.py` (L2 live) | overlay `_enrich_with_orderbook` dans `flash_engine.py` (REST `/depth`) | ⚠️ **Partiel** — même concept, profondeur différente (live L2 vs REST ponctuel). |
+| **source_confidence** | `source_confidence.py` | **absent** — Tik a `source_credibility.py` (analogue, pas identique) | ⚠️ **Analogue**, pas doublon strict. |
+| **risk_engine** | `risk_engine.py` | **absent** — seule une *référence* au risk_engine de **Zeta** dans `adapters/trading.py` | ❌ **Pas de doublon** dans Tik. |
+| **signal_card** | `signal_card.py` (rendu Dash) | **absent** — Tik rend dans l'UI Expo | ❌ **Pas de doublon** (et `signal_card` Dash non porté de toute façon). |
+
+**Conséquence corrigée** : le **seul vrai doublon à réconcilier** est `macro_regime` (choisir une
+source de vérité). `orderbook` demande une décision de profondeur de données (L2 live vs REST).
+Le reste n'est **pas** un conflit. Cette correction **réduit** la dette de réconciliation annoncée.
 
 ---
 
@@ -175,18 +188,28 @@ Avant tout enrôlement du micro dans une décision :
 
 ---
 
-## 7. Ce que je n'ai PAS encore vérifié (transparence)
+## 7. État de vérification (transparence) — MAJ audit 2026-06-22
 
-- [ ] **Résolution pip réelle** d'un environnement commun (Tik + `lightgbm`/`scikit-learn`/`river`)
-      sous Python 3.11 / numpy 2.x — risque point dur #2 **non levé** (pas de `pip install` exécuté).
-- [ ] Si le labo **tourne réellement** dans ce conteneur (jamais exécuté ici ; pas de Docker côté labo).
+### ✅ Vérifié
+- **numpy 2 / river** (point dur #2, le plus redouté) : `pip install` réel exécuté dans un venv
+  Python 3.11.15 → `numpy 2.4.6` + `lightgbm 4.6.0` + `scikit-learn 1.9.0` + `river 0.25.0` +
+  `duckdb 1.5.4` + `pandas 3.0.3` **co-résolus ET importés** sans erreur (exit 0). **Risque levé.**
+- **Flux L2** (point dur #6) : `grep` confirme que l'ingester Binance de Tik se connecte à
+  `wss://stream.binance.com:9443/ws/btcusdt@trade` (**trades seulement**), pas au `@depth20`. Le
+  micro a bien besoin de son propre flux L2. **Confirmé.**
+- **Doublons** (§2.3) : `grep` sur `Tik/core/src` → seul `macro_regime` est un vrai doublon ;
+  `risk_engine`/`source_confidence`/`signal_card` **n'existent pas** dans Tik. **Corrigé ci-dessus.**
+
+### ⚠️ NON encore vérifié (à lever avant les étapes concernées)
+- [ ] **pandas 3.0 vs code labo** : le test a tiré pandas **3.0.3** (version majeure). Le labo est
+      écrit pour pandas 2 → **compat runtime à tester** (épingler `pandas<3` côté image micro si besoin).
+- [ ] **Co-résolution avec la pile COMPLÈTE de Tik** (fastapi/sqlalchemy/asyncpg/pydantic + ML) :
+      seul un sous-ensemble a été testé. **Critique pour F1 uniquement** (en F2 l'image micro est isolée).
+- [ ] Si le labo **tourne réellement** dans un conteneur (jamais exécuté ici ; pas de Docker côté labo).
 - [ ] Taille / santé réelle de `history.duckdb` et comportement exact au redémarrage (replay confirmé
       par lecture de code, pas par exécution).
-- [ ] Si l'ingester Binance de Tik peut être **étendu** au flux `@depth20@100ms` sans régression
-      (pour F1), ou s'il faut garder l'ingest L2 du labo.
 - [ ] Compat des secrets / clés (Binance optionnel côté labo) avec la config Tik.
-- [ ] Réconciliation des **doublons** (§2.3) : quelle implémentation de `macro_regime`/`orderbook`
-      devient la source de vérité.
+- [ ] Profondeur de données `orderbook` à retenir (L2 live du labo vs REST `/depth` de Tik).
 
 ## 8. Risques & mitigations
 
