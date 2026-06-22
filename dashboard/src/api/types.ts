@@ -470,6 +470,26 @@ export interface Stablecoins {
   context_only?: boolean;
 }
 
+// Corrélations cross-asset (ADR-032) : avec quoi le BTC co-bouge (actions/or/dollar).
+// `behavior` est DESCRIPTIF (co-mouvement récent), JAMAIS une prédiction ni une
+// causalité. CONTEXTE strict (ne touche pas direction/veracity).
+export interface CrossAssetCorr {
+  key: string | null;
+  label: string | null;
+  corr_recent: number | null; // [-1, 1] sur ~30 j ouvrés
+  corr_full: number | null; // [-1, 1] sur ~3 mois
+  n?: number | null;
+}
+export interface CrossAsset {
+  available: boolean;
+  source?: string;
+  fetched_at: string | null;
+  as_of: string | null;
+  behavior: string | null; // risk_asset | digital_gold | decoupled | mixed
+  assets: CrossAssetCorr[];
+  context_only?: boolean;
+}
+
 export interface RateMeeting {
   date: string;
   probabilities: Record<string, number>;

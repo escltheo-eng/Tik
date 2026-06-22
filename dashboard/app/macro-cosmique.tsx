@@ -22,6 +22,7 @@ import { useCallback, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { CosmicBackground } from '@/components/cosmic/cosmic-background';
+import { CosmicCrossAssetCard } from '@/components/cosmic/cosmic-cross-asset-card';
 import { CosmicDisciplineWindow } from '@/components/cosmic/cosmic-discipline-window';
 import { CosmicGlobalLiquidityCard } from '@/components/cosmic/cosmic-global-liquidity-card';
 import { CosmicMacroRegimeCard } from '@/components/cosmic/cosmic-macro-regime-card';
@@ -30,6 +31,7 @@ import { CosmicRiskRegimeCard } from '@/components/cosmic/cosmic-risk-regime-car
 import { CosmicSessionClock } from '@/components/cosmic/cosmic-session-clock';
 import { CosmicStablecoinsCard } from '@/components/cosmic/cosmic-stablecoins-card';
 import { Cosmic, TitleShadow, serifTitleFamily } from '@/constants/cosmic';
+import { useCrossAsset } from '@/src/hooks/useCrossAsset';
 import { useMacroRegime } from '@/src/hooks/useMacroRegime';
 import { useRateProbabilities } from '@/src/hooks/useRateProbabilities';
 import { useStablecoins } from '@/src/hooks/useStablecoins';
@@ -39,16 +41,22 @@ export default function MacroCosmicScreen() {
   const macro = useMacroRegime();
   const rateProb = useRateProbabilities();
   const stablecoins = useStablecoins();
+  const crossAsset = useCrossAsset();
 
   const [refreshing, setRefreshing] = useState(false);
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await Promise.all([macro.refresh(), rateProb.refresh(), stablecoins.refresh()]);
+      await Promise.all([
+        macro.refresh(),
+        rateProb.refresh(),
+        stablecoins.refresh(),
+        crossAsset.refresh(),
+      ]);
     } finally {
       setRefreshing(false);
     }
-  }, [macro, rateProb, stablecoins]);
+  }, [macro, rateProb, stablecoins, crossAsset]);
 
   return (
     <CosmicBackground>
@@ -87,6 +95,12 @@ export default function MacroCosmicScreen() {
           stablecoins={stablecoins.stablecoins}
           loading={stablecoins.loading}
           error={stablecoins.error}
+        />
+
+        <CosmicCrossAssetCard
+          crossAsset={crossAsset.crossAsset}
+          loading={crossAsset.loading}
+          error={crossAsset.error}
         />
 
         <CosmicRateProbabilitiesCard

@@ -16,6 +16,7 @@ from tik_core.aggregator.breaking_news_ingester import BreakingNewsIngester
 from tik_core.aggregator.btc_etf_flows_ingester import BtcEtfFlowsIngester
 from tik_core.aggregator.cftc_cot_ingester import CftcCotIngester
 from tik_core.aggregator.coingecko_sentiment_ingester import CoinGeckoSentimentIngester
+from tik_core.aggregator.cross_asset_ingester import CrossAssetIngester
 from tik_core.aggregator.cryptocompare_ingester import CryptoCompareIngester
 from tik_core.aggregator.fear_greed_ingester import FearGreedIngester
 from tik_core.aggregator.fred_calendar_ingester import FredCalendarIngester
@@ -222,6 +223,13 @@ async def main() -> None:
         # touche jamais le combined_bias (pas d'overlay, pas de toggle). Polling 6 h
         # (données quotidiennes). Joignabilité VPS vérifiée 2026-06-21 (HTTP 200).
         StablecoinsIngester(redis, interval_s=6 * 3600),
+        # Corrélations cross-asset BTC ↔ actions/or/dollar (Yahoo) — CONTEXTE strict
+        # (ADR-032). « Le BTC bouge-t-il comme un actif risqué, comme l'or, ou seul ? »
+        # 4e/dernière famille macro de contexte. Publie tik.macro.cross_asset, exposé
+        # via /macro/cross_asset. Une corrélation N'EST NI prédiction NI causalité — ne
+        # touche jamais le combined_bias. Polling 6 h (cours quotidiens). Joignabilité
+        # Yahoo vérifiée 2026-06-21 (HTTP 200 sur les 5 symboles).
+        CrossAssetIngester(redis, interval_s=6 * 3600),
     ]
 
     # Breaking-news alerting (ADR-027) — gaté par toggle (défaut OFF). Capte les

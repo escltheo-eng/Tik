@@ -854,3 +854,34 @@ class StablecoinsOut(BaseModel):
     context_only: bool = True
 
     model_config = ConfigDict(extra="ignore")
+
+
+class CrossAssetCorrOut(BaseModel):
+    """Corrélation BTC ↔ un actif (ADR-032). `corr` ∈ [-1, 1]. CONTEXTE strict."""
+
+    key: str | None = None
+    label: str | None = None
+    corr_recent: float | None = None  # corrélation des rendements récents (~30 j ouvrés)
+    corr_full: float | None = None  # corrélation sur toute la fenêtre (~3 mois)
+    n: int | None = None
+
+    model_config = ConfigDict(extra="ignore")
+
+
+class CrossAssetOut(BaseModel):
+    """Corrélations cross-asset du BTC (Yahoo, ADR-032, CONTEXTE strict).
+
+    Avec quoi le BTC co-bouge (actions/or/dollar). `behavior` ∈ {risk_asset,
+    digital_gold, decoupled, mixed} est DESCRIPTIF (co-mouvement récent), JAMAIS une
+    prédiction ni une causalité. Ne touche jamais direction/veracity/combined_bias.
+    """
+
+    available: bool = False
+    source: str = "yahoo_cross_asset"
+    fetched_at: str | None = None
+    as_of: str | None = None
+    behavior: str | None = None
+    assets: list[CrossAssetCorrOut] = Field(default_factory=list)
+    context_only: bool = True
+
+    model_config = ConfigDict(extra="ignore")
