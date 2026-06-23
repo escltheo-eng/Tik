@@ -56,6 +56,10 @@ const HORIZON_FILTERS: { label: string; value: string | undefined }[] = [
   { label: 'Flash', value: 'flash' },
   { label: 'Swing', value: 'swing' },
   { label: 'Macro', value: 'macro' },
+  // « Micro » = couche ML btc-research-lab (fusion macro+micro, ADR-033). Signaux
+  // en SHADOW (circuit_breaker_status='degraded'). Vide tant que le conteneur
+  // micro n'est pas activé sur le VPS.
+  { label: 'Micro', value: 'micro' },
 ];
 
 const DURATION_FILTERS: { label: string; sinceHours: number | undefined; preloadLimit: number }[] = [

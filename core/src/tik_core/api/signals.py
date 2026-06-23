@@ -1,24 +1,51 @@
-"""Endpoints signals : récupération des signaux émis par Tik."""
+"""Endpoints signals : récupération des signaux émis par Tik + ingestion micro."""
 
-from datetime import timedelta
+from dataclasses import dataclass
+from datetime import datetime, timedelta
 
+import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tik_core.auth import AuthContext, require_scope
+from tik_core.config import get_settings
+from tik_core.scoring.publisher import _publish_signal
 from tik_core.storage.database import get_session
 from tik_core.storage.models import Signal
-from tik_core.storage.schemas import SignalOut
-from tik_core.utils.time import now_utc_naive
+from tik_core.storage.schemas import MicroSignalIn, SignalOut
+from tik_core.utils.time import now_utc, now_utc_naive
 
 router = APIRouter(prefix="/signals")
+
+
+@dataclass
+class _IngestedMicroDecision:
+    """Objet décision minimal pour réutiliser `publisher._publish_signal`.
+
+    Expose exactement les attributs que le publisher lit (entity_id, timestamp,
+    direction, confidence, veracity, hypothesis, counter_scenarios, evidence,
+    triggers, advisory, circuit_breaker_status). Pas un SwingDecision/FlashDecision
+    mais duck-typé — le publisher ne dépend que de ces champs.
+    """
+
+    entity_id: str
+    timestamp: datetime
+    direction: str
+    confidence: float
+    veracity: float
+    hypothesis: str | None
+    counter_scenarios: list[dict]
+    evidence: list[dict]
+    triggers: list[dict]
+    advisory: dict
+    circuit_breaker_status: str = "degraded"
 
 
 @router.get("/latest", response_model=list[SignalOut])
 async def get_latest_signals(
     entity: str | None = Query(None, description="Filter by entity id (ex: BTC)"),
-    horizon: str | None = Query(None, pattern="^(flash|swing|macro)$"),
+    horizon: str | None = Query(None, pattern="^(flash|swing|macro|micro)$"),
     limit: int = Query(20, ge=1, le=200),
     session: AsyncSession = Depends(get_session),
     _ctx: AuthContext = Depends(require_scope("read:signals")),
@@ -52,7 +79,7 @@ async def get_signal(
 @router.get("", response_model=list[SignalOut])
 async def search_signals(
     entity: str | None = None,
-    horizon: str | None = Query(None, pattern="^(flash|swing|macro)$"),
+    horizon: str | None = Query(None, pattern="^(flash|swing|macro|micro)$"),
     direction: str | None = Query(None, pattern="^(long|short|neutral)$"),
     min_confidence: float = Query(0.0, ge=0, le=1),
     min_veracity: float = Query(0.0, ge=0, le=1),
@@ -79,3 +106,43 @@ async def search_signals(
         stmt = stmt.where(Signal.direction == direction)
     result = await session.execute(stmt)
     return list(result.scalars().all())
+
+
+@router.post("/ingest", response_model=SignalOut, status_code=201)
+async def ingest_micro_signal(
+    payload: MicroSignalIn,
+    session: AsyncSession = Depends(get_session),
+    _ctx: AuthContext = Depends(require_scope("write:signals")),
+) -> Signal:
+    """Ingère un signal externe 'micro' (couche ML btc-research-lab) — SHADOW.
+
+    Fusion macro+micro (ADR-030), Étape 2. Le signal est TOUJOURS persisté en
+    `horizon='micro'` et marqué `circuit_breaker_status='degraded'` (shadow strict) :
+    l'appelant ne peut PAS injecter un faux signal swing/flash. Il est stocké et
+    publié sur Redis (`tik.signal.{entity}.micro`) comme tout signal, donc visible
+    via l'API et le WebSocket — mais n'alimente AUCUN moteur OSINT (NO-GO inchangé).
+
+    Réutilise `publisher._publish_signal` (mêmes garanties timezone/DB/Redis que
+    les signaux internes). La veracity n'est PAS gonflée : défaut conservateur
+    0.70 si l'appelant n'en fournit pas (Axe #1 — pas de vernis de certitude).
+    """
+    decision = _IngestedMicroDecision(
+        entity_id=payload.entity_id.upper(),
+        timestamp=now_utc(),
+        direction=payload.direction,
+        confidence=payload.confidence,
+        veracity=payload.veracity if payload.veracity is not None else 0.70,
+        hypothesis=payload.hypothesis,
+        counter_scenarios=[cs.model_dump() for cs in payload.counter_scenarios],
+        evidence=[e.model_dump() for e in payload.evidence],
+        triggers=[t.model_dump() for t in payload.triggers],
+        advisory=dict(payload.advisory),
+        circuit_breaker_status="degraded",  # shadow strict — non négociable
+    )
+    settings = get_settings()
+    redis = aioredis.from_url(settings.redis_url, decode_responses=True)
+    try:
+        signal = await _publish_signal(session, redis, decision, "micro")
+    finally:
+        await redis.aclose()
+    return signal

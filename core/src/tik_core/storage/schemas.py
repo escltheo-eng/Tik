@@ -125,6 +125,31 @@ class SignalOut(BaseModel):
         return iso_utc(value)
 
 
+class MicroSignalIn(BaseModel):
+    """Signal externe 'micro' ingéré depuis la couche ML btc-research-lab.
+
+    Fusion macro+micro (ADR-033), Étape 2 — SHADOW STRICT. Le serveur force
+    TOUJOURS horizon='micro' et circuit_breaker_status='degraded' : l'appelant
+    ne choisit ni l'horizon ni le statut (impossible d'injecter un faux signal
+    swing/flash). Le signal n'influence jamais les moteurs OSINT (NO-GO inchangé).
+
+    `direction` est restreint à long/short/neutral (le moteur micro est long-only :
+    le pont mappe GO_LONG→long, WAIT/NO_GO→neutral). `veracity` est optionnelle
+    (défaut conservateur 0.70 côté serveur si absente) — on NE fabrique PAS de
+    fausse certitude (Axe #1).
+    """
+
+    entity_id: str = Field(default="BTC", min_length=1, max_length=64)
+    direction: str = Field(pattern="^(long|short|neutral)$")
+    confidence: float = Field(ge=0, le=1)
+    veracity: float | None = Field(default=None, ge=0, le=1)
+    hypothesis: str | None = Field(default=None, max_length=4000)
+    counter_scenarios: list[CounterScenario] = Field(default_factory=list)
+    evidence: list[Evidence] = Field(default_factory=list)
+    triggers: list[Trigger] = Field(default_factory=list)
+    advisory: dict[str, Any] = Field(default_factory=dict)
+
+
 # ----- Feedback -----
 
 
