@@ -36,6 +36,10 @@ const HORIZON_FILTERS: { label: string; value: string | undefined }[] = [
   { label: 'Flash', value: 'flash' },
   { label: 'Swing', value: 'swing' },
   { label: 'Macro', value: 'macro' },
+  // « Micro » = couche ML btc-research-lab (fusion macro+micro, ADR-030). Signaux
+  // en SHADOW (circuit_breaker_status='degraded') → le badge AFN orange les marque
+  // déjà comme dégradés. Vide tant que le conteneur micro n'est pas activé sur le VPS.
+  { label: 'Micro', value: 'micro' },
 ];
 
 // Fenêtres temporelles pour le preload signaux historiques.
