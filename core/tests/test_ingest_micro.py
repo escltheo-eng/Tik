@@ -1,4 +1,4 @@
-"""Tests de l'endpoint d'ingestion micro (fusion macro+micro, ADR-030 Étape 2).
+"""Tests de l'endpoint d'ingestion micro (fusion macro+micro, ADR-033 Étape 2).
 
 Vérifie qu'un signal externe 'micro' POSTé sur /api/v1/signals/ingest est :
 - persisté en horizon='micro' (forcé serveur, pas choisi par l'appelant),

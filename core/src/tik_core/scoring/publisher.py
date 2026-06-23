@@ -23,7 +23,7 @@ EXPIRY_BY_HORIZON = {
     "flash": timedelta(hours=1),
     "swing": timedelta(days=7),
     "macro": timedelta(days=30),
-    # "micro" : couche ML btc-research-lab (fusion macro+micro, ADR-030, SHADOW).
+    # "micro" : couche ML btc-research-lab (fusion macro+micro, ADR-033, SHADOW).
     # Horizon court (le moteur micro raisonne en minutes→heures) → fraîcheur 2h.
     "micro": timedelta(hours=2),
 }
