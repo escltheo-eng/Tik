@@ -19,6 +19,8 @@ export function horizonLabel(horizon: string): string {
       return 'swing · ~5-7j';
     case 'macro':
       return 'macro · ~30j';
+    case 'micro':
+      return 'micro · ML (shadow)';
     default:
       return horizon;
   }

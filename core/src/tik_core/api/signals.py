@@ -45,7 +45,7 @@ class _IngestedMicroDecision:
 @router.get("/latest", response_model=list[SignalOut])
 async def get_latest_signals(
     entity: str | None = Query(None, description="Filter by entity id (ex: BTC)"),
-    horizon: str | None = Query(None, pattern="^(flash|swing|macro)$"),
+    horizon: str | None = Query(None, pattern="^(flash|swing|macro|micro)$"),
     limit: int = Query(20, ge=1, le=200),
     session: AsyncSession = Depends(get_session),
     _ctx: AuthContext = Depends(require_scope("read:signals")),
@@ -79,7 +79,7 @@ async def get_signal(
 @router.get("", response_model=list[SignalOut])
 async def search_signals(
     entity: str | None = None,
-    horizon: str | None = Query(None, pattern="^(flash|swing|macro)$"),
+    horizon: str | None = Query(None, pattern="^(flash|swing|macro|micro)$"),
     direction: str | None = Query(None, pattern="^(long|short|neutral)$"),
     min_confidence: float = Query(0.0, ge=0, le=1),
     min_veracity: float = Query(0.0, ge=0, le=1),
