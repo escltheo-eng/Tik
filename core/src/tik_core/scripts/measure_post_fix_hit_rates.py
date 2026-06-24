@@ -24,6 +24,15 @@ Usage :
     python -m tik_core.scripts.measure_post_fix_hit_rates \\
         --signal-horizon flash --horizon-hours 1
 
+    # Mesure MICRO (shadow ADR-033, couche labo btc-research-lab) — à lancer
+    # ~2 semaines après l'activation du pont (verdict ADR-034). Le micro est
+    # long/neutral SEULEMENT et veracity toujours 0.70 (degraded) → seul le
+    # NIVEAU 2 global est pertinent (les buckets 0.85/0.90 seront vides).
+    # Horizon court (le micro raisonne en minutes→heures) ; tester plusieurs :
+    python -m tik_core.scripts.measure_post_fix_hit_rates \\
+        --signal-horizon micro --entity BTC --horizon-hours 4 \\
+        --since-iso 2026-06-24T18:50:00
+
     # Validation logique sur données pré-fix (anti-régression script,
     # doit reproduire approximativement les chiffres Paquet 27)
     python -m tik_core.scripts.measure_post_fix_hit_rates \\
@@ -359,7 +368,7 @@ async def main() -> None:
     parser.add_argument(
         "--signal-horizon",
         type=str,
-        choices=["flash", "swing", "macro", "all"],
+        choices=["flash", "swing", "macro", "micro", "all"],
         default="all",
         help=(
             "Filtre les signaux par horizon contractuel. Apparier avec "
