@@ -7,6 +7,12 @@
  * (CME FedWatch). Réutilise les MÊMES hooks data que la Home (`useMacroRegime`,
  * `useRateProbabilities`) — seul l'affichage est cosmique.
  *
+ * Refonte nav Stage 1 (2026-06-24) : les 8 cartes, jusque-là empilées en
+ * « déversoir », sont regroupées en 4 FAMILLES repliables (`CosmicSection`) —
+ * Liquidité / Risque / Anticipations / Cross-asset. Réduit le scroll et clarifie
+ * la logique métier. Les blocs sensibles au temps (séances + fenêtre de
+ * discipline ±4h) restent TOUJOURS visibles en tête.
+ *
  * Route DÉDIÉE `/macro-cosmique`, atteinte depuis le bandeau contexte en haut de
  * la liste Signals + le bandeau du Cockpit (pas un onglet : choix trader de garder
  * 5 onglets propres, l'accès se fait par les bandeaux). L'ancienne page `/macro`
@@ -28,6 +34,7 @@ import { CosmicGlobalLiquidityCard } from '@/components/cosmic/cosmic-global-liq
 import { CosmicMacroRegimeCard } from '@/components/cosmic/cosmic-macro-regime-card';
 import { CosmicRateProbabilitiesCard } from '@/components/cosmic/cosmic-rate-probabilities-card';
 import { CosmicRiskRegimeCard } from '@/components/cosmic/cosmic-risk-regime-card';
+import { CosmicSection } from '@/components/cosmic/cosmic-section';
 import { CosmicSessionClock } from '@/components/cosmic/cosmic-session-clock';
 import { CosmicStablecoinsCard } from '@/components/cosmic/cosmic-stablecoins-card';
 import { Cosmic, TitleShadow, serifTitleFamily } from '@/constants/cosmic';
@@ -73,41 +80,55 @@ export default function MacroCosmicScreen() {
           </Text>
         </View>
 
+        {/* Toujours visibles : sensibles au temps (discipline ±4h). */}
         <CosmicSessionClock />
-
         <CosmicDisciplineWindow />
 
-        <CosmicMacroRegimeCard regime={macro.regime} loading={macro.loading} error={macro.error} />
+        {/* Familles de contexte, repliables (Stage 1 refonte nav). */}
+        <CosmicSection
+          title="Liquidité"
+          subtitle="Quand le capital entre / sort du marché"
+          defaultOpen>
+          <CosmicMacroRegimeCard
+            regime={macro.regime}
+            loading={macro.loading}
+            error={macro.error}
+          />
+          <CosmicGlobalLiquidityCard
+            globalLiquidity={macro.regime?.global_liquidity ?? null}
+            loading={macro.loading}
+            error={macro.error}
+          />
+          <CosmicStablecoinsCard
+            stablecoins={stablecoins.stablecoins}
+            loading={stablecoins.loading}
+            error={stablecoins.error}
+          />
+        </CosmicSection>
 
-        <CosmicGlobalLiquidityCard
-          globalLiquidity={macro.regime?.global_liquidity ?? null}
-          loading={macro.loading}
-          error={macro.error}
-        />
+        <CosmicSection title="Risque" subtitle="Le stress de marché (VIX, spreads de crédit)">
+          <CosmicRiskRegimeCard
+            risk={macro.regime?.risk_regime ?? null}
+            loading={macro.loading}
+            error={macro.error}
+          />
+        </CosmicSection>
 
-        <CosmicRiskRegimeCard
-          risk={macro.regime?.risk_regime ?? null}
-          loading={macro.loading}
-          error={macro.error}
-        />
+        <CosmicSection title="Anticipations" subtitle="Où le marché voit les taux de la Fed">
+          <CosmicRateProbabilitiesCard
+            rates={rateProb.rates}
+            loading={rateProb.loading}
+            error={rateProb.error}
+          />
+        </CosmicSection>
 
-        <CosmicStablecoinsCard
-          stablecoins={stablecoins.stablecoins}
-          loading={stablecoins.loading}
-          error={stablecoins.error}
-        />
-
-        <CosmicCrossAssetCard
-          crossAsset={crossAsset.crossAsset}
-          loading={crossAsset.loading}
-          error={crossAsset.error}
-        />
-
-        <CosmicRateProbabilitiesCard
-          rates={rateProb.rates}
-          loading={rateProb.loading}
-          error={rateProb.error}
-        />
+        <CosmicSection title="Cross-asset" subtitle="Avec quoi le BTC co-bouge (actions, or, dollar)">
+          <CosmicCrossAssetCard
+            crossAsset={crossAsset.crossAsset}
+            loading={crossAsset.loading}
+            error={crossAsset.error}
+          />
+        </CosmicSection>
 
         <Pressable
           onPress={() => router.push('/macro')}
