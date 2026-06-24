@@ -116,7 +116,7 @@ async def ingest_micro_signal(
 ) -> Signal:
     """Ingère un signal externe 'micro' (couche ML btc-research-lab) — SHADOW.
 
-    Fusion macro+micro (ADR-030), Étape 2. Le signal est TOUJOURS persisté en
+    Fusion macro+micro (ADR-033), Étape 2. Le signal est TOUJOURS persisté en
     `horizon='micro'` et marqué `circuit_breaker_status='degraded'` (shadow strict) :
     l'appelant ne peut PAS injecter un faux signal swing/flash. Il est stocké et
     publié sur Redis (`tik.signal.{entity}.micro`) comme tout signal, donc visible
