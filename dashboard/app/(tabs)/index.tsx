@@ -30,6 +30,7 @@ import { useMacroRegime } from '@/src/hooks/useMacroRegime';
 import { useTick } from '@/src/hooks/use-tick';
 import { useTopHeadlines } from '@/src/hooks/useTopHeadlines';
 import { useTrades } from '@/src/journal/useTrades';
+import { computeTradeSafety, type SafetyLevel } from '@/src/safety/trade-safety';
 import { useUpcomingMacroEvents } from '@/src/hooks/useUpcomingMacroEvents';
 import { formatLocal, parseUtcIso, timeAgo } from '@/src/utils/time';
 
@@ -187,23 +188,33 @@ export default function HomeScreen() {
   const openTrades = useMemo(() => trades.filter((t) => t.status === 'open'), [trades]);
 
   const swingVeracityOk = latestBtcSwing ? latestBtcSwing.veracity >= SWING_VERACITY_FLOOR : false;
-  const discipline: { color: string; head: string } = macroBlockEvent
-    ? { color: Cosmic.short, head: '🔴 Frein de discipline' }
-    : !latestBtcSwing || !swingVeracityOk
-      ? { color: Cosmic.neutral, head: '🟠 Prudence' }
-      : { color: Cosmic.long, head: '🟢 Aucun frein de discipline' };
+
+  // Feu de sécurité consolidé (« edge de non-perte ») : fusionne macro ±4h +
+  // série de pertes (carnet) + risk-off + breaking. C'est le futur GATE qui
+  // modulera la prédiction. Dit « droit de trader / taille », jamais « achète ».
+  const safety = computeTradeSafety({
+    macroBlock: macroBlockEvent ? { event_name: macroBlockEvent.event_name } : null,
+    trades,
+    riskState: macroRegimeState.regime?.risk_regime?.risk_state ?? null,
+    breaking: breaking.items,
+    nowMs: Date.now(),
+  });
+  const SAFETY_VIEW: Record<SafetyLevel, { color: string; head: string }> = {
+    go: { color: Cosmic.long, head: '🟢 Tu peux trader' },
+    caution: { color: Cosmic.neutral, head: '🟠 Prudence — sizing ÷2' },
+    stop: { color: Cosmic.short, head: '🔴 STOP — ne pas trader' },
+  };
+  const discipline = SAFETY_VIEW[safety.level];
 
   const criteria: { ok: boolean; text: string }[] = [
-    macroBlockEvent
-      ? { ok: false, text: `Event macro HIGH ±4h (${macroBlockEvent.event_name}) — ne pas entrer, ou sizing ÷2` }
-      : { ok: true, text: "Pas d'event macro HIGH dans les ±4h" },
+    ...safety.reasons.map((r) => ({ ok: false, text: r.text })),
+    ...(safety.reasons.length === 0 ? [{ ok: true, text: 'Aucun frein actif — RAS' }] : []),
     latestBtcSwing
       ? {
           ok: swingVeracityOk,
           text: `Veracity dernier swing BTC ${(latestBtcSwing.veracity * 100).toFixed(0)}%${swingVeracityOk ? '' : ' < 85 %'}`,
         }
       : { ok: false, text: 'Pas de signal swing BTC récent' },
-    { ok: true, text: 'Marché BTC ouvert (24/7)' },
     { ok: true, text: 'Sizing 1 % max — ta vraie protection' },
   ];
 
