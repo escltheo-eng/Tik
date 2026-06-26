@@ -11,9 +11,13 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Line, Path } from 'react-native-svg';
 
+import { UnavailableState } from './cosmic-unavailable-state';
+
 import { Cosmic } from '@/constants/cosmic';
 import { Fonts } from '@/constants/theme';
 import type { HitRate } from '@/src/api/types';
+import { useTick } from '@/src/hooks/use-tick';
+import { timeAgo } from '@/src/utils/time';
 
 interface Props {
   data: HitRate | null;
@@ -68,6 +72,7 @@ export function CosmicHitRate({
   loading,
   error,
 }: Props) {
+  useTick(); // « à jour il y a X » de la mesure avance en temps réel (30 s)
   const hr = data ? Math.max(0, Math.min(1, data.hit_rate)) : null;
   const baseline = data?.best_baseline_hit_rate ?? null;
 
@@ -93,11 +98,11 @@ export function CosmicHitRate({
       </View>
 
       {error ? (
-        <Text style={styles.empty}>Indisponible : {error}</Text>
+        <UnavailableState kind="error" error={error} />
       ) : loading && !data ? (
-        <Text style={styles.empty}>Chargement…</Text>
+        <UnavailableState kind="loading" />
       ) : hr == null ? (
-        <Text style={styles.empty}>Pas encore de mesure.</Text>
+        <UnavailableState kind="empty" message="Pas encore de mesure pour ce couple actif / horizon." />
       ) : (
         <>
           <View style={styles.gaugeWrap}>
@@ -125,7 +130,9 @@ export function CosmicHitRate({
               ) : null}
             </Svg>
             <Text style={[styles.gaugeValue, { color: hitColor(hr) }]}>{(hr * 100).toFixed(0)}%</Text>
-            <Text style={styles.gaugeSub}>{data!.n_evaluated} mesurés</Text>
+            <Text style={styles.gaugeSub}>
+              {data!.n_evaluated} mesurés · à jour il y a {timeAgo(data!.computed_at)}
+            </Text>
           </View>
 
           <View style={styles.baselineRow}>

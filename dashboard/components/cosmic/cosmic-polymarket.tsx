@@ -11,9 +11,12 @@
 import { useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { UnavailableState } from './cosmic-unavailable-state';
+
 import { Cosmic } from '@/constants/cosmic';
 import { Fonts } from '@/constants/theme';
 import type { PolymarketSnapshot } from '@/src/api/types';
+import { useTick } from '@/src/hooks/use-tick';
 import { timeAgo } from '@/src/utils/time';
 
 interface Props {
@@ -57,6 +60,7 @@ export function CosmicPolymarket({
   error,
   displayLimit = 6,
 }: Props) {
+  useTick(); // « maj il y a X » du snapshot avance en temps réel (30 s)
   const markets = useMemo(() => {
     if (!snapshot) return [];
     return snapshot.events
@@ -97,11 +101,11 @@ export function CosmicPolymarket({
       ) : null}
 
       {error ? (
-        <Text style={styles.empty}>Indisponible : {error}</Text>
+        <UnavailableState kind="error" error={error} />
       ) : loading && markets.length === 0 ? (
-        <Text style={styles.empty}>Chargement…</Text>
+        <UnavailableState kind="loading" />
       ) : markets.length === 0 ? (
-        <Text style={styles.empty}>Pas de marché prédictif {entityId} récent.</Text>
+        <UnavailableState kind="empty" message={`Pas de marché prédictif ${entityId} récent.`} />
       ) : (
         markets.map((m, i) => {
           const p = m.yes_prob ?? 0;

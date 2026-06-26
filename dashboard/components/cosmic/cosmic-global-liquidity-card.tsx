@@ -12,6 +12,8 @@ import { UnavailableState } from './cosmic-unavailable-state';
 
 import { Cosmic, TitleShadow, serifTitleFamily } from '@/constants/cosmic';
 import type { GlobalLiquidity } from '@/src/api/types';
+import { useTick } from '@/src/hooks/use-tick';
+import { timeAgo } from '@/src/utils/time';
 
 import { CosmicGauge } from './cosmic-gauge';
 
@@ -56,6 +58,7 @@ export function CosmicGlobalLiquidityCard({
   loading,
   error,
 }: CosmicGlobalLiquidityCardProps) {
+  useTick(); // fraîcheur « il y a X » rafraîchie en temps réel
   const gl = globalLiquidity;
   const hasData = gl?.available && gl.global_liquidity_tusd != null;
   const comp = (gl?.components ?? {}) as Record<string, unknown>;
@@ -143,7 +146,11 @@ export function CosmicGlobalLiquidityCard({
             {legendItem(BOJ, 'BoJ', boj)}
           </View>
 
-          {gl!.as_of ? <Text style={styles.asof}>Au {gl!.as_of}</Text> : null}
+          {gl!.as_of ? (
+            <Text style={styles.asof}>
+              Au {gl!.as_of} · il y a {timeAgo(gl!.as_of)}
+            </Text>
+          ) : null}
         </View>
       )}
     </View>

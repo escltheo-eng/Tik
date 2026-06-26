@@ -16,9 +16,12 @@
 import { useState } from 'react';
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { UnavailableState } from './cosmic-unavailable-state';
+
 import { Cosmic } from '@/constants/cosmic';
 import { Fonts } from '@/constants/theme';
 import type { BreakingNewsItem, BreakingReaction, Headline } from '@/src/api/types';
+import { useTick } from '@/src/hooks/use-tick';
 import { timeAgo } from '@/src/utils/time';
 
 /** N'ouvre qu'une URL http(s) absolue (garde-fou H3). */
@@ -117,6 +120,7 @@ export function CosmicHeadlines({
   displayLimit = 5,
   onSeeAll,
 }: HeadlinesProps) {
+  useTick(); // « il y a X » des actus avance en temps réel (30 s)
   const visible = headlines.slice(0, displayLimit);
   return (
     <View style={styles.card}>
@@ -138,11 +142,11 @@ export function CosmicHeadlines({
       </View>
 
       {error ? (
-        <Text style={styles.empty}>Actus indisponibles : {error}</Text>
+        <UnavailableState kind="error" error={error} />
       ) : loading && visible.length === 0 ? (
-        <Text style={styles.empty}>Chargement…</Text>
+        <UnavailableState kind="loading" />
       ) : visible.length === 0 ? (
-        <Text style={styles.empty}>Pas d&apos;actu récente.</Text>
+        <UnavailableState kind="empty" message="Pas d'actu récente." />
       ) : (
         visible.map((h, i) => {
           const sm = sentimentMeta(h.sentiment);
@@ -183,6 +187,7 @@ interface BreakingProps {
 }
 
 export function CosmicBreaking({ items, reactions = [] }: BreakingProps) {
+  useTick(); // âge des breaking (« il y a X ») rafraîchi en temps réel
   const [expanded, setExpanded] = useState(false);
   if (items.length === 0) return null;
   const visible = expanded ? items : items.slice(0, COLLAPSED_COUNT);

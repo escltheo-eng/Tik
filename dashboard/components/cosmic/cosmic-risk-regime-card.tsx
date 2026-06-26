@@ -19,6 +19,8 @@ import { UnavailableState } from './cosmic-unavailable-state';
 
 import { Cosmic, TitleShadow, serifTitleFamily } from '@/constants/cosmic';
 import type { RiskRegime, RiskSeries } from '@/src/api/types';
+import { useTick } from '@/src/hooks/use-tick';
+import { timeAgo } from '@/src/utils/time';
 
 import { CosmicGauge } from './cosmic-gauge';
 
@@ -57,6 +59,7 @@ function fmtDelta20d(s: RiskSeries | null, suffix: string): string | null {
 }
 
 export function CosmicRiskRegimeCard({ risk, loading, error }: CosmicRiskRegimeCardProps) {
+  useTick(); // fraîcheur « il y a X » rafraîchie en temps réel
   const hasData = risk?.available;
   const meta = stateMeta(risk?.risk_state ?? null);
   const vix = risk?.vix ?? null;
@@ -149,7 +152,11 @@ export function CosmicRiskRegimeCard({ risk, loading, error }: CosmicRiskRegimeC
             — contexte, pas une prédiction.
           </Text>
 
-          {risk!.as_of ? <Text style={styles.asof}>Données au {risk!.as_of}</Text> : null}
+          {risk!.as_of ? (
+            <Text style={styles.asof}>
+              Données au {risk!.as_of} · il y a {timeAgo(risk!.as_of)}
+            </Text>
+          ) : null}
         </View>
       )}
     </View>
