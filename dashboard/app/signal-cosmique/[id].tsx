@@ -469,8 +469,12 @@ export default function SignalDetailCosmicScreen() {
         {/* Héros : la décision d'un coup d'œil (carte cosmique, non cliquable) */}
         <CosmicSignalCard entityId={signal.entity_id} signal={signal} variant="detail" />
 
-        {/* Discipline / flags (visibles, pas derrière un tap) */}
-        <AfnFlag status={signal.circuit_breaker_status} />
+        {/* Discipline / flags (visibles, pas derrière un tap).
+            Le micro (ADR-033) est toujours "degraded" by-design (shadow strict) → pas un
+            désaccord de sources OSINT, donc pas de flag anti-fake-news. */}
+        {signal.horizon !== 'micro' ? (
+          <AfnFlag status={signal.circuit_breaker_status} />
+        ) : null}
         {signal.advisory?.near_macro_event ? (
           <NearMacroFlag data={signal.advisory.near_macro_event} />
         ) : null}

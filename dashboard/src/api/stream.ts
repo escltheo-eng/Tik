@@ -226,7 +226,14 @@ export class TikStream {
     if (signal.advisory?.macro_crash_warning) {
       this.callbacks.onCrashWarning?.(signal);
     }
-    if (signal.circuit_breaker_status && signal.circuit_breaker_status !== 'ok') {
+    // Un signal micro (fusion ADR-033) est TOUJOURS circuit_breaker_status="degraded"
+    // by-design (SHADOW strict) — ce n'est PAS un désaccord de sources OSINT. On l'exclut
+    // donc du déclencheur anti-fake-news pour ne pas générer de fausses alertes "Fake news".
+    if (
+      signal.circuit_breaker_status &&
+      signal.circuit_breaker_status !== 'ok' &&
+      signal.horizon !== 'micro'
+    ) {
       this.callbacks.onFakeNewsDetected?.(signal);
     }
     if (typeof signal.veracity === 'number' && signal.veracity < this.veracityCollapseThreshold) {

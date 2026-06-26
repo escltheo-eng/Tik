@@ -43,7 +43,11 @@ export function CosmicSignalRow({ signal, showChoppy, onChoppyPress }: Props) {
         </View>
         <Text style={styles.entity}>{signal.entity_id}</Text>
         <Text style={styles.meta}>{horizonLabel(signal.horizon)}</Text>
-        <AntiFakeNewsBadge status={signal.circuit_breaker_status} compact />
+        {/* Le micro (ADR-033) est toujours "degraded" by-design (shadow), pas un
+            désaccord de sources OSINT → pas de badge anti-fake-news. */}
+        {signal.horizon !== 'micro' ? (
+          <AntiFakeNewsBadge status={signal.circuit_breaker_status} compact />
+        ) : null}
         {signal.advisory?.near_macro_event ? (
           <NearMacroBadge data={signal.advisory.near_macro_event} compact />
         ) : null}
