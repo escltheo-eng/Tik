@@ -16,6 +16,7 @@ import { UnavailableState } from './cosmic-unavailable-state';
 import { Cosmic } from '@/constants/cosmic';
 import { Fonts } from '@/constants/theme';
 import type { PolymarketSnapshot } from '@/src/api/types';
+import { useTick } from '@/src/hooks/use-tick';
 import { timeAgo } from '@/src/utils/time';
 
 interface Props {
@@ -59,6 +60,7 @@ export function CosmicPolymarket({
   error,
   displayLimit = 6,
 }: Props) {
+  useTick(); // « maj il y a X » du snapshot avance en temps réel (30 s)
   const markets = useMemo(() => {
     if (!snapshot) return [];
     return snapshot.events

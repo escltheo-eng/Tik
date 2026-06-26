@@ -17,6 +17,8 @@ import { UnavailableState } from './cosmic-unavailable-state';
 
 import { Cosmic, TitleShadow, serifTitleFamily } from '@/constants/cosmic';
 import type { Stablecoins } from '@/src/api/types';
+import { useTick } from '@/src/hooks/use-tick';
+import { timeAgo } from '@/src/utils/time';
 
 import { CosmicGauge } from './cosmic-gauge';
 
@@ -57,6 +59,7 @@ function fmtDelta(busd: number | null): string {
 }
 
 export function CosmicStablecoinsCard({ stablecoins, loading, error }: CosmicStablecoinsCardProps) {
+  useTick(); // fraîcheur « il y a X » rafraîchie en temps réel
   const sc = stablecoins;
   const hasData = sc?.available && sc?.total_busd != null;
 
@@ -147,7 +150,11 @@ export function CosmicStablecoinsCard({ stablecoins, loading, error }: CosmicSta
             </View>
           ) : null}
 
-          {sc!.as_of ? <Text style={styles.asof}>Données au {sc!.as_of}</Text> : null}
+          {sc!.as_of ? (
+            <Text style={styles.asof}>
+              Données au {sc!.as_of} · il y a {timeAgo(sc!.as_of)}
+            </Text>
+          ) : null}
         </View>
       )}
     </View>

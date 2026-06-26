@@ -18,7 +18,7 @@ import { Fonts } from '@/constants/theme';
 import type { MacroEvent } from '@/src/api/types';
 import { useTick } from '@/src/hooks/use-tick';
 import { useUpcomingMacroEvents } from '@/src/hooks/useUpcomingMacroEvents';
-import { parseUtcIso } from '@/src/utils/time';
+import { parseUtcIso, timeUntil } from '@/src/utils/time';
 
 type Importance = 'HIGH' | 'MEDIUM' | 'LOW';
 const ALL_LEVELS: readonly Importance[] = ['HIGH', 'MEDIUM', 'LOW'] as const;
@@ -173,6 +173,7 @@ export default function MacroEventsScreen() {
                       <Text style={styles.eventDetail}>
                         <Text style={{ color: importanceColor(ev.importance) }}>{ev.importance}</Text>
                         {ev.assets_impacted?.length ? ` · ${ev.assets_impacted.join(', ')}` : ''}
+                        {` · ${timeUntil(ev.scheduled_for)}`}
                       </Text>
                     </View>
                     <View style={[styles.eventTag, { backgroundColor: cat.color + '26' }]}>

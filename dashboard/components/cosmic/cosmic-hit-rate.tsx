@@ -16,6 +16,8 @@ import { UnavailableState } from './cosmic-unavailable-state';
 import { Cosmic } from '@/constants/cosmic';
 import { Fonts } from '@/constants/theme';
 import type { HitRate } from '@/src/api/types';
+import { useTick } from '@/src/hooks/use-tick';
+import { timeAgo } from '@/src/utils/time';
 
 interface Props {
   data: HitRate | null;
@@ -70,6 +72,7 @@ export function CosmicHitRate({
   loading,
   error,
 }: Props) {
+  useTick(); // « à jour il y a X » de la mesure avance en temps réel (30 s)
   const hr = data ? Math.max(0, Math.min(1, data.hit_rate)) : null;
   const baseline = data?.best_baseline_hit_rate ?? null;
 
@@ -127,7 +130,9 @@ export function CosmicHitRate({
               ) : null}
             </Svg>
             <Text style={[styles.gaugeValue, { color: hitColor(hr) }]}>{(hr * 100).toFixed(0)}%</Text>
-            <Text style={styles.gaugeSub}>{data!.n_evaluated} mesurés</Text>
+            <Text style={styles.gaugeSub}>
+              {data!.n_evaluated} mesurés · à jour il y a {timeAgo(data!.computed_at)}
+            </Text>
           </View>
 
           <View style={styles.baselineRow}>

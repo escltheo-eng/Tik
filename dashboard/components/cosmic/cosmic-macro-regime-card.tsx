@@ -13,6 +13,8 @@ import { UnavailableState } from './cosmic-unavailable-state';
 
 import { Cosmic, TitleShadow, serifTitleFamily } from '@/constants/cosmic';
 import type { MacroIndicator, MacroRegime } from '@/src/api/types';
+import { useTick } from '@/src/hooks/use-tick';
+import { timeAgo } from '@/src/utils/time';
 
 import { CosmicGauge } from './cosmic-gauge';
 
@@ -53,6 +55,7 @@ function fmtDelta(busd: number | null): string {
 }
 
 export function CosmicMacroRegimeCard({ regime, loading, error }: CosmicMacroRegimeCardProps) {
+  useTick(); // fraîcheur « il y a X » rafraîchie en temps réel
   const nl = regime?.net_liquidity ?? null;
   const hasData = regime?.available && nl?.available;
   const ind = (key: string): MacroIndicator | null => regime?.indicators?.[key] ?? null;
@@ -160,7 +163,11 @@ export function CosmicMacroRegimeCard({ regime, loading, error }: CosmicMacroReg
               )
             : null}
 
-          {nl!.as_of ? <Text style={styles.asof}>Net liquidity au {nl!.as_of}</Text> : null}
+          {nl!.as_of ? (
+            <Text style={styles.asof}>
+              Net liquidity au {nl!.as_of} · il y a {timeAgo(nl!.as_of)}
+            </Text>
+          ) : null}
         </View>
       )}
     </View>

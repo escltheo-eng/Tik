@@ -12,8 +12,13 @@
  */
 
 const TZ_SUFFIX_RE = /[Zz]|[+\-]\d{2}:?\d{2}$/;
+// Date seule "YYYY-MM-DD" (sans heure) : le core renvoie ça pour les données
+// macro journalières/hebdo (FRED, DefiLlama…). On la traite comme minuit UTC,
+// sinon `${iso}Z` donne "2026-06-25Z" = Date invalide → "il y a NaN".
+const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export function parseUtcIso(iso: string): Date {
+  if (DATE_ONLY_RE.test(iso)) return new Date(`${iso}T00:00:00Z`);
   const normalized = TZ_SUFFIX_RE.test(iso) ? iso : `${iso}Z`;
   return new Date(normalized);
 }

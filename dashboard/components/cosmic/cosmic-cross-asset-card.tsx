@@ -16,6 +16,8 @@ import { UnavailableState } from './cosmic-unavailable-state';
 
 import { Cosmic, TitleShadow, serifTitleFamily } from '@/constants/cosmic';
 import type { CrossAsset, CrossAssetCorr } from '@/src/api/types';
+import { useTick } from '@/src/hooks/use-tick';
+import { timeAgo } from '@/src/utils/time';
 
 export interface CosmicCrossAssetCardProps {
   crossAsset: CrossAsset | null;
@@ -69,6 +71,7 @@ function fmtCorr(c: number | null): string {
 }
 
 export function CosmicCrossAssetCard({ crossAsset, loading, error }: CosmicCrossAssetCardProps) {
+  useTick(); // fraîcheur « il y a X » rafraîchie en temps réel
   const ca = crossAsset;
   const hasData = ca?.available && (ca?.assets?.length ?? 0) > 0;
   const meta = behaviorMeta(ca?.behavior ?? null);
@@ -124,7 +127,11 @@ export function CosmicCrossAssetCard({ crossAsset, loading, error }: CosmicCross
             il évolue seul. Descriptif, pas une prédiction.
           </Text>
 
-          {ca!.as_of ? <Text style={styles.asof}>Données au {ca!.as_of}</Text> : null}
+          {ca!.as_of ? (
+            <Text style={styles.asof}>
+              Données au {ca!.as_of} · il y a {timeAgo(ca!.as_of)}
+            </Text>
+          ) : null}
         </View>
       )}
     </View>
