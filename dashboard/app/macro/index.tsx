@@ -12,6 +12,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CosmicBackground } from '@/components/cosmic/cosmic-background';
+import { UnavailableState } from '@/components/cosmic/cosmic-unavailable-state';
 import { Cosmic, TitleShadow, serifTitleFamily } from '@/constants/cosmic';
 import { Fonts } from '@/constants/theme';
 import type { MacroEvent } from '@/src/api/types';
@@ -147,11 +148,11 @@ export default function MacroEventsScreen() {
 
         {/* États */}
         {error ? (
-          <Text style={styles.empty}>Indisponible : {error}</Text>
+          <UnavailableState kind="error" error={error} />
         ) : loading && events.length === 0 ? (
-          <Text style={styles.empty}>Chargement de l&apos;agenda…</Text>
+          <UnavailableState kind="loading" message="Chargement de l'agenda…" />
         ) : groups.length === 0 ? (
-          <Text style={styles.empty}>Aucun event sur la fenêtre / le filtre choisi.</Text>
+          <UnavailableState kind="empty" message="Aucun event sur la fenêtre / le filtre choisi." />
         ) : (
           groups.map((g) => (
             <View key={g.key} style={styles.day}>

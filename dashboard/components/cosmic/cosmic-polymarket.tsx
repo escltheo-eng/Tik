@@ -11,6 +11,8 @@
 import { useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { UnavailableState } from './cosmic-unavailable-state';
+
 import { Cosmic } from '@/constants/cosmic';
 import { Fonts } from '@/constants/theme';
 import type { PolymarketSnapshot } from '@/src/api/types';
@@ -97,11 +99,11 @@ export function CosmicPolymarket({
       ) : null}
 
       {error ? (
-        <Text style={styles.empty}>Indisponible : {error}</Text>
+        <UnavailableState kind="error" error={error} />
       ) : loading && markets.length === 0 ? (
-        <Text style={styles.empty}>Chargement…</Text>
+        <UnavailableState kind="loading" />
       ) : markets.length === 0 ? (
-        <Text style={styles.empty}>Pas de marché prédictif {entityId} récent.</Text>
+        <UnavailableState kind="empty" message={`Pas de marché prédictif ${entityId} récent.`} />
       ) : (
         markets.map((m, i) => {
           const p = m.yes_prob ?? 0;

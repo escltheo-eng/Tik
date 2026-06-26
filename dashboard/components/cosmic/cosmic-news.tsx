@@ -16,6 +16,8 @@
 import { useState } from 'react';
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { UnavailableState } from './cosmic-unavailable-state';
+
 import { Cosmic } from '@/constants/cosmic';
 import { Fonts } from '@/constants/theme';
 import type { BreakingNewsItem, BreakingReaction, Headline } from '@/src/api/types';
@@ -138,11 +140,11 @@ export function CosmicHeadlines({
       </View>
 
       {error ? (
-        <Text style={styles.empty}>Actus indisponibles : {error}</Text>
+        <UnavailableState kind="error" error={error} />
       ) : loading && visible.length === 0 ? (
-        <Text style={styles.empty}>Chargement…</Text>
+        <UnavailableState kind="loading" />
       ) : visible.length === 0 ? (
-        <Text style={styles.empty}>Pas d&apos;actu récente.</Text>
+        <UnavailableState kind="empty" message="Pas d'actu récente." />
       ) : (
         visible.map((h, i) => {
           const sm = sentimentMeta(h.sentiment);

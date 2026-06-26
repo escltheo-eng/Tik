@@ -15,6 +15,8 @@
 
 import { StyleSheet, Text, View } from 'react-native';
 
+import { UnavailableState } from './cosmic-unavailable-state';
+
 import { Cosmic } from '@/constants/cosmic';
 import { useTick } from '@/src/hooks/use-tick';
 import { useUpcomingMacroEvents } from '@/src/hooks/useUpcomingMacroEvents';
@@ -36,9 +38,9 @@ export function CosmicDisciplineWindow() {
       </Text>
 
       {error ? (
-        <Text style={styles.err}>Indisponible : {error}</Text>
+        <UnavailableState kind="error" error={error} />
       ) : loading && events.length === 0 ? (
-        <Text style={styles.dim}>Chargement…</Text>
+        <UnavailableState kind="loading" />
       ) : (
         <>
           {state.windowEvent && (

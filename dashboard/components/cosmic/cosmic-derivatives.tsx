@@ -8,6 +8,8 @@
 
 import { StyleSheet, Text, View } from 'react-native';
 
+import { UnavailableState } from './cosmic-unavailable-state';
+
 import { Cosmic } from '@/constants/cosmic';
 import { Fonts } from '@/constants/theme';
 import type { DerivativesSnapshot } from '@/src/api/types';
@@ -52,11 +54,11 @@ export function CosmicDerivatives({ snapshot, loading, error }: Props) {
       <Text style={styles.title}>Positionnement dérivés · BTC</Text>
 
       {error ? (
-        <Text style={styles.empty}>Indisponible : {error}</Text>
+        <UnavailableState kind="error" error={error} />
       ) : loading && !snapshot ? (
-        <Text style={styles.empty}>Chargement…</Text>
+        <UnavailableState kind="loading" />
       ) : !snapshot ? (
-        <Text style={styles.empty}>Aucune donnée dérivés.</Text>
+        <UnavailableState kind="empty" message="Aucune donnée dérivés (snapshot shadow pas encore publié)." />
       ) : (
         <>
           {(() => {

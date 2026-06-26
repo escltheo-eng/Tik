@@ -11,6 +11,8 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Line, Path } from 'react-native-svg';
 
+import { UnavailableState } from './cosmic-unavailable-state';
+
 import { Cosmic } from '@/constants/cosmic';
 import { Fonts } from '@/constants/theme';
 import type { HitRate } from '@/src/api/types';
@@ -93,11 +95,11 @@ export function CosmicHitRate({
       </View>
 
       {error ? (
-        <Text style={styles.empty}>Indisponible : {error}</Text>
+        <UnavailableState kind="error" error={error} />
       ) : loading && !data ? (
-        <Text style={styles.empty}>Chargement…</Text>
+        <UnavailableState kind="loading" />
       ) : hr == null ? (
-        <Text style={styles.empty}>Pas encore de mesure.</Text>
+        <UnavailableState kind="empty" message="Pas encore de mesure pour ce couple actif / horizon." />
       ) : (
         <>
           <View style={styles.gaugeWrap}>
