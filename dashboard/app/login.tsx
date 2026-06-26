@@ -97,13 +97,14 @@ export default function LoginScreen() {
             autoCapitalize="none"
             autoCorrect={false}
             keyboardType="url"
-            placeholder="http://localhost:8200"
+            placeholder="http://204.168.220.47:8200"
             placeholderTextColor={palette.icon}
             style={inputStyle}
             editable={!submitting}
           />
           <ThemedText style={styles.help}>
-            En développement local, garde la valeur par défaut.
+            Sur t&eacute;l&eacute;phone, mets l&apos;adresse du serveur (ex.
+            http://204.168.220.47:8200), pas localhost.
           </ThemedText>
         </ThemedView>
 

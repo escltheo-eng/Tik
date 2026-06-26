@@ -13,6 +13,8 @@
 
 import { StyleSheet, Text, View } from 'react-native';
 
+import { UnavailableState } from './cosmic-unavailable-state';
+
 import { Cosmic, TitleShadow, serifTitleFamily } from '@/constants/cosmic';
 import type { Stablecoins } from '@/src/api/types';
 
@@ -71,13 +73,14 @@ export function CosmicStablecoinsCard({ stablecoins, loading, error }: CosmicSta
       </Text>
 
       {error ? (
-        <Text style={styles.errorText}>Indisponible : {error}</Text>
+        <UnavailableState kind="error" error={error} />
       ) : loading && !sc ? (
-        <Text style={styles.emptyLabel}>Chargement…</Text>
+        <UnavailableState kind="loading" />
       ) : !hasData ? (
-        <Text style={styles.emptyLabel}>
-          {"Aucune donnée collectée (l'ingester n'a pas encore publié)."}
-        </Text>
+        <UnavailableState
+          kind="empty"
+          message="Aucune donnée collectée (l'ingester n'a pas encore publié)."
+        />
       ) : (
         <View style={styles.body}>
           {/* Jauge headline : z-score 90 j de la masse (contraction ↔ expansion) */}

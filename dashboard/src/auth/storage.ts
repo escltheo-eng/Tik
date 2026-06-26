@@ -47,4 +47,8 @@ export const STORAGE_KEYS = {
   baseUrl: 'tik.dashboard.base_url',
 } as const;
 
-export const DEFAULT_BASE_URL = 'http://localhost:8200';
+// Sur mobile (Expo Go), `localhost` = le téléphone lui-même, pas le serveur → on
+// pré-remplit l'adresse du VPS de prod. En dev local sur le Mac (core sur la même
+// machine), remplacer par http://localhost:8200. À terme : DNS / QR-config (l'IP
+// nue est fragile si le VPS change) — cf. audit 2026-06-24.
+export const DEFAULT_BASE_URL = 'http://204.168.220.47:8200';

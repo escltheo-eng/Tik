@@ -9,6 +9,8 @@
 
 import { StyleSheet, Text, View } from 'react-native';
 
+import { UnavailableState } from './cosmic-unavailable-state';
+
 import { Cosmic, TitleShadow, serifTitleFamily } from '@/constants/cosmic';
 import type { MacroIndicator, MacroRegime } from '@/src/api/types';
 
@@ -84,13 +86,14 @@ export function CosmicMacroRegimeCard({ regime, loading, error }: CosmicMacroReg
       </Text>
 
       {error ? (
-        <Text style={styles.errorText}>Indisponible : {error}</Text>
+        <UnavailableState kind="error" error={error} />
       ) : loading && !regime ? (
-        <Text style={styles.emptyLabel}>Chargement…</Text>
+        <UnavailableState kind="loading" />
       ) : !hasData ? (
-        <Text style={styles.emptyLabel}>
-          {"Aucune donnée collectée (l'ingester n'a pas encore publié)."}
-        </Text>
+        <UnavailableState
+          kind="empty"
+          message="Aucune donnée collectée (l'ingester n'a pas encore publié)."
+        />
       ) : (
         <View style={styles.body}>
           {/* Jauge headline : z-score 52 sem de la liquidité Fed (contraction ↔ expansion) */}
