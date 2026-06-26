@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CosmicBackground } from '@/components/cosmic/cosmic-background';
 import { CosmicBreaking, CosmicHeadlines } from '@/components/cosmic/cosmic-news';
+import { CosmicOverlaysBanner } from '@/components/cosmic/cosmic-overlays-banner';
 import { Cosmic, TitleShadow, directionMeta, serifTitleFamily, sunColor } from '@/constants/cosmic';
 import { Fonts } from '@/constants/theme';
 import { horizonLabel } from '@/src/utils/amplitude';
@@ -228,6 +229,9 @@ export default function HomeScreen() {
             </Text>
           </View>
         </View>
+
+        {/* Alerte dégradation overlays BTC swing (s'affiche seulement si < 4/4 actifs) */}
+        <CosmicOverlaysBanner />
 
         {/* Bandeau global macro (réel) → page Macro */}
         <Pressable
