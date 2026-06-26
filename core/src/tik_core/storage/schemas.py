@@ -300,6 +300,11 @@ class HitRateOut(BaseModel):
     n_total: int  # signaux totaux trouvés (avant filtrage)
     n_evaluated: int  # signaux pour lesquels on a pu calculer un delta prix
     n_skipped: int  # signaux dont le prix n'était pas disponible
+    # Signaux DANS la fenêtre mais PAS encore assez vieux pour être mesurés
+    # (leur horizon de mesure n'est pas écoulé). Auparavant invisibles : ils
+    # étaient écartés au filtre sans être comptés → n_evaluated paraissait bas
+    # sans explication. Défaut 0 (cache antérieur parse sans erreur).
+    n_too_young: int = 0
     n_success: int  # signaux corrects
     n_flagged_excluded: int  # signaux degraded/tripped exclus (si include_flagged=False)
     include_flagged: bool

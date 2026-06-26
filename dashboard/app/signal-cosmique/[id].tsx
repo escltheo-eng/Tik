@@ -167,11 +167,28 @@ function TrackRecordBadge({
   );
 }
 
-function TrackRecordSection({ signalId, client }: { signalId: string; client: unknown }) {
+function TrackRecordSection({
+  signalId,
+  client,
+  horizon,
+}: {
+  signalId: string;
+  client: unknown;
+  horizon?: string;
+}) {
   const [record, setRecord] = useState<SignalTrackRecord | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Micro = signal de mesure shadow (ADR-033) : Tik ne calcule PAS de suivi de
+  // prix pour cet horizon (l'API renverrait 400). On l'explicite (by-design)
+  // au lieu de masquer en silence — Contrat des 4 états (§13ter).
+  const isMicro = horizon === 'micro';
+
   useEffect(() => {
+    if (isMicro) {
+      setLoading(false);
+      return;
+    }
     let cancelled = false;
     (async () => {
       try {
@@ -186,7 +203,22 @@ function TrackRecordSection({ signalId, client }: { signalId: string; client: un
     return () => {
       cancelled = true;
     };
-  }, [signalId, client]);
+  }, [signalId, client, isMicro]);
+
+  if (isMicro) {
+    return (
+      <View style={styles.card}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Track record</Text>
+          <InfoTooltip entryKey="trackRecord" />
+        </View>
+        <Text style={styles.microNote}>
+          ✋ Micro — signal de mesure shadow (ADR-033). Tik ne suit pas le prix de cet horizon (en
+          cours d&apos;évaluation, pas encore enrôlé).
+        </Text>
+      </View>
+    );
+  }
 
   if (loading) {
     return (
@@ -498,7 +530,7 @@ export default function SignalDetailCosmicScreen() {
         </Pressable>
 
         {/* Track record */}
-        {id ? <TrackRecordSection signalId={id} client={client} /> : null}
+        {id ? <TrackRecordSection signalId={id} client={client} horizon={signal?.horizon} /> : null}
 
         {/* Hypothèse principale */}
         {signal.hypothesis ? (
@@ -759,6 +791,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: 0.6,
+  },
+  microNote: {
+    color: Cosmic.textDim,
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 8,
   },
   bodyText: {
     color: Cosmic.text,

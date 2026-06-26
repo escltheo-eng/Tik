@@ -131,7 +131,9 @@ export function CosmicHitRate({
             </Svg>
             <Text style={[styles.gaugeValue, { color: hitColor(hr) }]}>{(hr * 100).toFixed(0)}%</Text>
             <Text style={styles.gaugeSub}>
-              {data!.n_evaluated} mesurés · à jour il y a {timeAgo(data!.computed_at)}
+              {data!.n_evaluated} mesurés
+              {data!.n_too_young ? ` · ${data!.n_too_young} trop jeunes` : ''} · à jour il y a{' '}
+              {timeAgo(data!.computed_at)}
             </Text>
           </View>
 

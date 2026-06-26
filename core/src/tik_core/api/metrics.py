@@ -242,6 +242,16 @@ async def get_hit_rate(
             include_flagged=include_flagged,
         )
 
+        # Signaux dans la fenêtre mais pas encore mûrs (horizon de mesure non
+        # écoulé) : écartés par le filtre sans être comptés. On les expose pour
+        # que `n_evaluated` bas soit explicable (« trop jeune » ≠ « prix manquant »).
+        cutoff_mature = now - timedelta(hours=HORIZON_MEASURE_HOURS[horizon])
+        n_too_young = sum(
+            1
+            for s in all_signals
+            if s.horizon == horizon and s.entity_id == entity_id and s.timestamp > cutoff_mature
+        )
+
         # Fetch history seulement pour l'entity demandée. Si entity inconnue
         # (futur multi-domaines), on saute le fetch et compute_hit_rate
         # retournera 0 évalués.
@@ -290,12 +300,18 @@ async def get_hit_rate(
             baselines["hit_rates"] if baselines["n_evaluated"] > 0 else {},
         )
 
+        young_note = (
+            f" {n_too_young} signaux encore trop jeunes pour être mesurés." if n_too_young else ""
+        )
         sample_warning: str | None = None
         if stats["n_evaluated"] == 0:
-            sample_warning = "Aucun signal éligible — fenêtre trop courte ou prix indisponibles."
+            sample_warning = (
+                "Aucun signal éligible — fenêtre trop courte ou prix indisponibles." + young_note
+            )
         elif stats["n_evaluated"] < 30:
             sample_warning = (
                 f"Échantillon faible ({stats['n_evaluated']} signaux, 30 mini recommandé)."
+                + young_note
             )
 
         out = HitRateOut(
@@ -307,6 +323,7 @@ async def get_hit_rate(
             n_total=len(eligible) + n_flagged_excluded,
             n_evaluated=stats["n_evaluated"],
             n_skipped=stats["n_skipped"],
+            n_too_young=n_too_young,
             n_success=stats["n_success"],
             n_flagged_excluded=n_flagged_excluded,
             include_flagged=include_flagged,

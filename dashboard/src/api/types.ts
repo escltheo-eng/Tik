@@ -190,6 +190,8 @@ export interface HitRate {
   n_total: number;
   n_evaluated: number;
   n_skipped: number;
+  /** Signaux dans la fenêtre mais pas encore assez vieux pour être mesurés. */
+  n_too_young?: number;
   n_success: number;
   n_flagged_excluded: number;
   include_flagged: boolean;
