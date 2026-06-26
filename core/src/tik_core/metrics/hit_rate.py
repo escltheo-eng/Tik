@@ -173,6 +173,10 @@ def compute_hit_rate(
 BASELINE_EDGE_MARGIN = 0.05
 # Sous ce nombre de signaux évalués, on ne tranche pas (échantillon trop faible).
 BASELINE_MIN_SAMPLE = 30
+# Un bucket de veracity peuplé sous ce seuil est marqué `thin_sample` : son
+# hit_rate (ex: 100 % sur N=2) ne doit PAS être lu comme une preuve de fiabilité
+# (anti-fausse-confiance, Axe #1 — veracity ≠ edge).
+BUCKET_MIN_SAMPLE = 10
 
 
 def compute_constant_baselines(
@@ -319,6 +323,8 @@ def compute_hit_rate_by_veracity(
                 "n_success": stats["n_success"],
                 "hit_rate": stats["hit_rate"],
                 "avg_gain_pct": stats["avg_gain_pct"],
+                # Bucket peuplé mais sous le seuil → hit_rate non concluant.
+                "thin_sample": 0 < stats["n_evaluated"] < BUCKET_MIN_SAMPLE,
             }
         )
     return results

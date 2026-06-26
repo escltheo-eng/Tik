@@ -465,6 +465,16 @@ async def get_hit_rate_by_veracity(
             sample_warning = (
                 f"Échantillon faible (total {total_evaluated} signaux, 30 mini recommandé)."
             )
+        else:
+            # Même avec un total suffisant, un bucket de HAUTE veracity peut afficher
+            # un hit_rate flatteur sur 2-3 signaux. On le signale explicitement
+            # (anti-fausse-confiance, Axe #1 : veracity ≠ edge).
+            thin = [b.bucket_label for b in buckets if b.thin_sample]
+            if thin:
+                sample_warning = (
+                    f"Bucket(s) à très peu de signaux ({', '.join(thin)}) : "
+                    "leur taux n'est pas concluant."
+                )
 
         out = HitRateByVeracityOut(
             entity_id=entity_id,

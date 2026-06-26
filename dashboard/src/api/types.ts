@@ -217,6 +217,8 @@ export interface HitRateByVeracityBucket {
   n_success: number;
   hit_rate: number;
   avg_gain_pct: number;
+  /** Bucket peuplé mais sous le seuil (ex: 100 % sur 2 signaux) → taux non concluant. */
+  thin_sample?: boolean;
 }
 
 export interface HitRateByVeracity {
