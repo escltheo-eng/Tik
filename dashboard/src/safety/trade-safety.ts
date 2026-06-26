@@ -38,6 +38,8 @@ export interface SafetyTrade {
   status: string; // "open" | "closed"
   result_pct: number | null;
   exit_time: string | null;
+  entity_id?: string; // pour la concentration (positions empilées)
+  direction?: string; // "long" | "short"
 }
 
 /** Item breaking — sous-ensemble. */
@@ -49,6 +51,7 @@ export interface SafetyBreaking {
 // Seuils (calibrage initial — ajustables).
 export const CONSECUTIVE_LOSS_STOP = 2; // ta règle : 2 pertes d'affilée → STOP
 const BREAKING_FRESH_MS = 2 * 3600 * 1000; // un breaking < 2h = marché nerveux
+export const CONCENTRATION_STACK = 2; // ≥ 2 positions même actif+sens = empilement
 
 /**
  * Nombre de trades CLÔTURÉS perdants consécutifs, en partant du plus récent.
@@ -110,6 +113,26 @@ export function computeTradeSafety(input: {
       level: 'caution',
       text: `Actu breaking récente (${freshBreaking.category}) — marché potentiellement nerveux`,
     });
+  }
+
+  // --- Concentration : positions OUVERTES empilées (même actif + même sens) ---
+  // Le vrai risque de concentration d'un trader mono-actif : empiler du BTC dans
+  // le même sens sans le réaliser → exposition réelle > exposition perçue.
+  const openByKey = new Map<string, { n: number; entity: string; dir: string }>();
+  for (const t of input.trades) {
+    if (t.status !== 'open' || !t.entity_id || !t.direction) continue;
+    const key = `${t.entity_id}:${t.direction}`;
+    const cur = openByKey.get(key) ?? { n: 0, entity: t.entity_id, dir: t.direction };
+    cur.n += 1;
+    openByKey.set(key, cur);
+  }
+  for (const g of openByKey.values()) {
+    if (g.n >= CONCENTRATION_STACK) {
+      reasons.push({
+        level: 'caution',
+        text: `${g.n} positions ${g.entity} ${g.dir} ouvertes — exposition empilée (risque concentré)`,
+      });
+    }
   }
 
   const hasStop = reasons.some((r) => r.level === 'stop');
