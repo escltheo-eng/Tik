@@ -684,6 +684,47 @@ d'aborder le sujet stratégique.
 
 ---
 
+## 13ter — Méthode récurrente PAR SESSION (depuis 2026-06-24)
+
+Issue de l'audit exhaustif des états « indisponible » du dashboard (cf.
+`docs/audit-etats-indisponibles-2026-06-24.md`) : ~80 messages « indisponible »
+recensés, dont l'écrasante majorité vient du **même manque de discipline UI**
+(erreurs avalées en silence, dumps techniques bruts, confusion vide/panne/auth).
+**Un seul levier règle ~80 % des symptômes.** À appliquer/vérifier **à chaque
+session** touchant l'UI ou un flux de données :
+
+### A. Le « Contrat des 4 états » (règle UI obligatoire)
+Tout élément qui affiche une donnée doit distinguer **4 états jamais confondus**,
++ un 5ᵉ si pertinent :
+1. **Chargement** (spinner/skeleton).
+2. **Erreur** → **message FR métier** (« Serveur injoignable », « Clé sans les
+   droits / expirée »), **JAMAIS** un dump technique brut (`401 Forbidden {…}`,
+   `timeout (10000ms) on …`). Idéal : helper `humanizeError()` / composant partagé
+   `<UnavailableState kind=…/>`.
+3. **Vide AVEC sa cause** — et **distinguer** « pas encore publié (ingester) » de
+   « pas d'auth/scope » : **ne JAMAIS accuser l'ingester quand c'est la clé** (cf. le
+   piège « clé absente → 7 cartes macro disent à tort *pas d'ingester* »).
+4. **Donnée**.
+5. **By-design** (✋) → libellé **explicite et pédagogique** (« Source désactivée
+   *ADR-018* », « Micro — mesure shadow », « 🌙 marché GOLD fermé »). On **clarifie**,
+   on ne masque pas (Axe #1 : l'honnêteté n'est pas un bug).
+
+**Interdits** : avaler une erreur en `catch → []`/`null` sans la surfacer ; afficher
+`err.message` brut ; coupler plusieurs cartes sur un seul `error`/`loading` (1 panne =
+N cartes rouges) — chaque carte évalue **son** sous-champ.
+
+### B. La passe « honnêteté & santé » (par session données/UI)
+- Vérifier l'état des **known-issues** (sources critiques Reddit/CryptoCompare,
+  ingesters macro, micro shadow) et **MAJ CLAUDE.md** si l'état a changé.
+- Tout nouvel écran/carte respecte le Contrat des 4 états **avant** d'être livré.
+
+### C. Auto-documentation (standing, demandé 2026-06-24)
+**Consigner automatiquement** dans CLAUDE.md (§8 / bugs / cette section) toute info
+**durable** importante — décision, accès, fix, état des sources, méthode — **sans
+attendre qu'on le demande**. La doc est la mémoire du projet entre les sessions.
+
+---
+
 ## 14. Workflow worktree Claude Code — IMPORTANT
 
 Claude Code peut travailler dans un **worktree Git** isolé situé dans `.claude/worktrees/<nom>/`. C'est une copie temporaire du projet où l'instance Claude fait ses modifications, **séparée du repo principal** que GitHub Desktop voit (`/Users/siku/Documents/Tik/`).
