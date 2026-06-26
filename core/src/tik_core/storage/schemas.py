@@ -333,6 +333,9 @@ class HitRateByVeracityBucket(BaseModel):
     n_success: int
     hit_rate: float = Field(ge=0, le=1)
     avg_gain_pct: float
+    # True si le bucket est peuplé mais sous BUCKET_MIN_SAMPLE : son hit_rate
+    # n'est pas concluant (ex: 100 % sur 2 signaux). L'UI doit le signaler.
+    thin_sample: bool = False
 
 
 class HitRateByVeracityOut(BaseModel):
