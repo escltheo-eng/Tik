@@ -53,7 +53,7 @@ import json
 import math
 import sys
 from datetime import datetime
-from statistics import NormalDist
+from statistics import NormalDist, fmean, pvariance
 
 from redis import Redis
 
@@ -147,6 +147,46 @@ def predictive_ic(
     n_indep = len(nx)
     ic_indep = spearman_correlation(nx, ny) if n_indep >= 5 else None
     return {"ic": ic, "n_overlap": n_overlap, "ic_indep": ic_indep, "n_indep": n_indep}
+
+
+def extreme_reversion(
+    metric: list[float | None], fwd: list[float | None], horizon: int, top_frac: float = 0.2
+) -> dict[str, float | int | None]:
+    """Test du MÉCANISME contrarian : positionnement EXTRÊME → reversion.
+
+    L'IC teste une relation LINÉAIRE sur toute la plage ; or la thèse contrarian
+    vit dans les QUEUES (« foule très longue → repli »). On compare donc le
+    rendement forward moyen quand `metric` est dans son quintile HAUT vs le reste,
+    sur l'échantillon NON chevauchant. Hypothèse : diff (top − reste) < 0. t de
+    Welch approx (normal) — à lire avec la réserve petit-N.
+    """
+    nx: list[float] = []
+    ny: list[float] = []
+    last = -(10**9)
+    for i, (x, y) in enumerate(zip(metric, fwd, strict=True)):
+        if x is not None and y is not None and i - last >= horizon:
+            nx.append(x)
+            ny.append(y)
+            last = i
+    n = len(nx)
+    empty = {"n": n, "n_top": 0, "mean_top": None, "mean_rest": None, "diff": None, "t": None}
+    if n < 20:
+        return empty
+    thr = sorted(nx)[int((1.0 - top_frac) * n)]
+    top = [y for x, y in zip(nx, ny, strict=True) if x >= thr]
+    rest = [y for x, y in zip(nx, ny, strict=True) if x < thr]
+    if len(top) < 5 or len(rest) < 5:
+        return {**empty, "n_top": len(top)}
+    mt = fmean(top)
+    mr = fmean(rest)
+    se = math.sqrt(pvariance(top) / len(top) + pvariance(rest) / len(rest))
+    # se==0 (variance intra-groupe nulle) : irréaliste sur des rendements réels,
+    # mais une séparation parfaite ≠ t=0 → on flagge fort si les moyennes diffèrent.
+    if se > 0:
+        t = (mt - mr) / se
+    else:
+        t = 0.0 if mt == mr else math.copysign(99.0, mt - mr)
+    return {"n": n, "n_top": len(top), "mean_top": mt, "mean_rest": mr, "diff": mt - mr, "t": t}
 
 
 def ic_noise_band(n_indep: int | None, m_tests: int, alpha: float = 0.05) -> float | None:
@@ -280,18 +320,47 @@ def main() -> int:
                 f"(N={res['n_indep']:<4}) | bruit ±{_fmt(crit, 3)}{flag}"
             )
 
+    # --- Test du MÉCANISME contrarian (positionnement extrême → reversion) ---
+    print("\n--- Mécanisme contrarian : rendement forward du quintile HAUT vs reste ---")
+    mech_hits: list[tuple[str, int, float, float]] = []
+    mech_horizons = (6, 24)
+    t_crit = NormalDist().inv_cdf(1.0 - (0.05 / (len(mech_horizons) * len(sweep_metrics))) / 2.0)
+    for h in mech_horizons:
+        fwd_h = forward_returns(marks, h)
+        for field, label in sweep_metrics:
+            ex = extreme_reversion(_series(snaps, field), fwd_h, h)
+            if ex["mean_top"] is None:
+                print(f"  {label:12s} @ {h:>2}h : N non chevauchant={ex['n']} → sous-puissant")
+                continue
+            t_val = ex["t"]
+            flag = ""
+            if t_val is not None and abs(t_val) >= t_crit:
+                flag = "  ⟵ significatif (Bonferroni)"
+                mech_hits.append((label, h, ex["diff"], t_val))  # type: ignore[arg-type]
+            print(
+                f"  {label:12s} @ {h:>2}h : top={ex['mean_top'] * 100:+.2f}% "  # type: ignore[operator]
+                f"vs reste={ex['mean_rest'] * 100:+.2f}%  "  # type: ignore[operator]
+                f"(Δ={ex['diff'] * 100:+.2f}%, t={_fmt(t_val, 2)}, N_top={ex['n_top']}){flag}"  # type: ignore[operator]
+            )
+    print(f"  (seuil |t| significatif, Bonferroni m={len(mech_horizons) * len(sweep_metrics)} : {t_crit:.2f})")
+
     print("\n--- VERDICT ---")
     n_pts = len([m for m in marks if m is not None])
     if n_pts < args.min_points:
         print(f"  ⚠ N={n_pts} points < {args.min_points} → NON CONCLUANT (échantillon trop faible).")
+    if mech_hits:
+        print("  🟡 Mécanisme contrarian : effet significatif détecté (au-delà du bruit corrigé) :")
+        for label, h, diff, t_val in mech_hits:
+            print(f"     - {label} @ {h}h : Δ rendement top vs reste = {diff * 100:+.2f}% (t={round(t_val, 2)})")
+        print("    → à confirmer (étape 2 backtest tradable + plus de données) avant tout enrôlement.")
     if robust:
-        print("  🟡 Signal(aux) CANDIDAT(s) au-delà du bruit (après correction multiple-testing) :")
+        print("  🟡 IC : signal(aux) candidat(s) au-delà du bruit (multiple-testing corrigé) :")
         for label, h, ic, n in robust:
             print(f"     - {label} @ {h}h : IC_indep={round(ic, 3)} (N non chevauchant={n})")
         print("  → JUSTIFIE l'étape 2 : backtest TRADABLE (vs Always-SHORT apparié, hors-")
         print("    échantillon, après coûts). IC ≠ edge : à confirmer avant tout enrôlement.")
-    else:
-        print("  ⚪ AUCUN signal robuste au-delà du bruit (multiple-testing corrigé).")
+    if not robust and not mech_hits:
+        print("  ⚪ AUCUN signal robuste (ni IC linéaire, ni mécanisme extrême) au-delà du bruit.")
         print("    → Pas d'edge dérivés détectable à ce stade — cohérent avec le NO-GO.")
         print("    Soit l'échantillon est encore trop court, soit l'edge n'existe pas ici.")
     print("  ⚠ Rappels : IC sur rendements chevauchants gonfle la significativité (se fier")
