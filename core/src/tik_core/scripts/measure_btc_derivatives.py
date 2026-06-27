@@ -50,8 +50,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from datetime import datetime
+from statistics import NormalDist
 
 from redis import Redis
 
@@ -147,6 +149,21 @@ def predictive_ic(
     return {"ic": ic, "n_overlap": n_overlap, "ic_indep": ic_indep, "n_indep": n_indep}
 
 
+def ic_noise_band(n_indep: int | None, m_tests: int, alpha: float = 0.05) -> float | None:
+    """|IC| critique sous H0 (pas de corrélation), corrigé multiple-testing.
+
+    Sous H0, le rho de Spearman est ~ N(0, 1/(N−1)). On rejette « IC = bruit »
+    si |IC| dépasse z_{α'/2} / sqrt(N−1), avec α' = α / m (Bonferroni : on teste
+    m couples métrique×horizon, donc certains « sortent » par hasard sans
+    correction). Retourne None si N trop faible (< 8) pour que ce soit honnête.
+    """
+    if n_indep is None or n_indep < 8:
+        return None
+    alpha_corr = alpha / max(1, m_tests)
+    z = NormalDist().inv_cdf(1.0 - alpha_corr / 2.0)
+    return z / math.sqrt(n_indep - 1)
+
+
 def _stats(xs: list[float | None]) -> dict[str, float | int | None]:
     """Min/médiane/moyenne/max + N et % positifs d'une colonne (None ignorés)."""
     vals = [x for x in xs if x is not None]
@@ -235,14 +252,51 @@ def main() -> int:
             f"non chevauchant = {_fmt(res['ic_indep'], 3)} (N={res['n_indep']})"
         )
 
+    # --- Balayage multi-horizon : IC NON chevauchant vs bande de bruit corrigée ---
+    sweep_horizons = [6, 12, 24, 48]
+    sweep_metrics = (
+        ("funding_rate", "funding"),
+        ("long_short_ratio_global", "L/S retail"),
+        ("long_short_ratio_top", "L/S top"),
+    )
+    m_tests = len(sweep_horizons) * len(sweep_metrics)
+    print(
+        f"\n--- Balayage multi-horizon : IC NON chevauchant vs bruit "
+        f"(Bonferroni m={m_tests}) ---"
+    )
+    robust: list[tuple[str, int, float, int]] = []
+    for h in sweep_horizons:
+        fwd_h = forward_returns(marks, h)
+        for field, label in sweep_metrics:
+            res = predictive_ic(_series(snaps, field), fwd_h, h)
+            crit = ic_noise_band(res["n_indep"] if isinstance(res["n_indep"], int) else None, m_tests)
+            ic_indep = res["ic_indep"]
+            flag = ""
+            if ic_indep is not None and crit is not None and abs(ic_indep) > crit:
+                flag = "  ⟵ AU-DELÀ du bruit corrigé"
+                robust.append((label, h, ic_indep, res["n_indep"] if isinstance(res["n_indep"], int) else 0))
+            print(
+                f"  {label:12s} @ {h:>2}h : IC_indep={_fmt(ic_indep, 3):>7} "
+                f"(N={res['n_indep']:<4}) | bruit ±{_fmt(crit, 3)}{flag}"
+            )
+
     print("\n--- VERDICT ---")
     n_pts = len([m for m in marks if m is not None])
     if n_pts < args.min_points:
         print(f"  ⚠ N={n_pts} points < {args.min_points} → NON CONCLUANT (échantillon trop faible).")
-    print("  ⚠ IC sur rendements chevauchants gonfle la significativité → se fier au N")
-    print("    non chevauchant. IC ≠ edge tradable. NO-GO directionnel inchangé.")
-    print("  ⚠ Indépendance vs Fear & Greed/news non mesurée ici (suit, comme CoinGecko).")
-    print("  → Re-lancer après ≥ 2 semaines d'accumulation shadow dérivés.")
+    if robust:
+        print("  🟡 Signal(aux) CANDIDAT(s) au-delà du bruit (après correction multiple-testing) :")
+        for label, h, ic, n in robust:
+            print(f"     - {label} @ {h}h : IC_indep={round(ic, 3)} (N non chevauchant={n})")
+        print("  → JUSTIFIE l'étape 2 : backtest TRADABLE (vs Always-SHORT apparié, hors-")
+        print("    échantillon, après coûts). IC ≠ edge : à confirmer avant tout enrôlement.")
+    else:
+        print("  ⚪ AUCUN signal robuste au-delà du bruit (multiple-testing corrigé).")
+        print("    → Pas d'edge dérivés détectable à ce stade — cohérent avec le NO-GO.")
+        print("    Soit l'échantillon est encore trop court, soit l'edge n'existe pas ici.")
+    print("  ⚠ Rappels : IC sur rendements chevauchants gonfle la significativité (se fier")
+    print("    au N non chevauchant) ; IC ≠ edge tradable ; indépendance vs FG/news non")
+    print("    mesurée ici ; NO-GO directionnel inchangé. Re-lancer en accumulant les données.")
     return 0
 
 
