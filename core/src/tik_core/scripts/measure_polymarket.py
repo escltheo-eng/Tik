@@ -61,9 +61,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from bisect import bisect_right
 from datetime import datetime
+from statistics import NormalDist
 
 import httpx
 from redis import Redis
@@ -215,6 +217,26 @@ def direction_metrics(pairs: list[tuple[float, float]]) -> dict:
     }
 
 
+def _fmt3(v: float | None) -> str:
+    return "n/a" if v is None else f"{round(v, 3)}"
+
+
+def ic_noise_band(n: int, m_tests: int, alpha: float = 0.05) -> float | None:
+    """|IC| critique sous H0 (rho ~ N(0, 1/(N−1))), corrigé Bonferroni. None si N<8."""
+    if n < 8:
+        return None
+    z = NormalDist().inv_cdf(1.0 - (alpha / max(1, m_tests)) / 2.0)
+    return z / math.sqrt(n - 1)
+
+
+def hit_noise_band(n_dir: int, m_tests: int, alpha: float = 0.05) -> float | None:
+    """|hit−0.5| critique sous H0 (proportion 0.5, σ=0.5/√N), corrigé Bonferroni."""
+    if n_dir < 8:
+        return None
+    z = NormalDist().inv_cdf(1.0 - (alpha / max(1, m_tests)) / 2.0)
+    return z / (2.0 * math.sqrt(n_dir))
+
+
 def dedupe_one_pair_per_event(
     pairs_full: list[tuple[str, datetime, float, float]],
 ) -> list[tuple[float, float]]:
@@ -350,19 +372,54 @@ def main() -> int:
     _print_metrics(indep, "MESURE-TITRE — 1 paire indépendante par event")
     _print_metrics(raw, "Indicatif brut — autocorrélé, NE PAS conclure dessus")
 
-    print("\n--- VERDICT ---")
+    # --- Significativité sur la MESURE-TITRE (N indépendant), Bonferroni m=2 (IC + hit) ---
     n_indep = len(indep_pairs)
+    ic_ind = indep["ic"]
+    crit_ic = ic_noise_band(n_indep, m_tests=2)
+    ic_robust = ic_ind is not None and crit_ic is not None and abs(ic_ind) > crit_ic
+
+    n_dir = indep["n_directional"]
+    hit = indep["hit_rate"]
+    crit_hit = hit_noise_band(n_dir, m_tests=2)
+    hit_robust = (
+        crit_hit is not None
+        and not math.isnan(hit)
+        and abs(hit - 0.5) > crit_hit
+        and indep["gain"] > 0  # hit ET gain dans le bon sens
+    )
+
+    print("\n--- Significativité (mesure-titre, multiple-testing corrigé) ---")
+    print(
+        f"  IC={ic_ind if ic_ind is None else round(ic_ind, 3)} vs bruit ±{_fmt3(crit_ic)} "
+        f"→ {'AU-DELÀ' if ic_robust else 'dans le bruit'}"
+    )
+    print(
+        f"  hit={hit * 100:.1f}% (N_dir={n_dir}) vs 50%±{_fmt3(None if crit_hit is None else crit_hit * 100)}pts "
+        f"→ {'significatif' if hit_robust else 'dans le bruit'}"
+    )
+
+    print("\n--- VERDICT ---")
     if n_indep < args.min_pairs:
         print(
             f"  ⚠ N indépendant = {n_indep} < {args.min_pairs} → NON CONCLUANT "
             "(trop peu d'events résolus distincts)."
         )
+    if ic_robust or hit_robust:
+        print("  🟡 Signal CANDIDAT au-delà du bruit (multiple-testing corrigé) :")
+        if ic_robust:
+            print(f"     - IC = {round(ic_ind, 3)} (N indépendant={n_indep})")
+        if hit_robust:
+            print(f"     - hit de signe = {hit * 100:.1f}% + gain {indep['gain'] * 100:+.3f}%")
+        print("    → JUSTIFIE l'étape 2 (backtest tradable, hors-échantillon, après coûts).")
+    else:
+        print("  ⚪ AUCUN signal robuste (IC ni hit) au-delà du bruit.")
+        print("    → Pas d'edge Polymarket détectable à ce stade — cohérent avec le NO-GO.")
     print(
         "  ⚠ Le N qui compte est le N INDÉPENDANT (events distincts), pas les paires "
         "brutes (autocorrélées sur snapshots horaires)."
     )
     print("  ⚠ Régime baissier unique + horizon intraday → signal faible par nature.")
-    print("  → Re-lancer après ~2 semaines d'accumulation shadow. AUCUN enrôlement à ce stade.")
+    print("  → Re-lancer en accumulant les données. AUCUN enrôlement à ce stade.")
     return 0
 
 
