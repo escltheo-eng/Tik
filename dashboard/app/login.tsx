@@ -19,7 +19,7 @@ import { useAuth } from '@/src/auth/AuthContext';
 import { DEFAULT_BASE_URL } from '@/src/auth/storage';
 
 export default function LoginScreen() {
-  const { signIn, baseUrl: currentBaseUrl } = useAuth();
+  const { signIn, baseUrl: currentBaseUrl, sessionExpired } = useAuth();
   const colorScheme = useColorScheme() ?? 'light';
   const palette = Colors[colorScheme];
 
@@ -88,6 +88,15 @@ export default function LoginScreen() {
             (Keychain sur iOS, EncryptedSharedPreferences sur Android, localStorage sur web).
           </ThemedText>
         </ThemedView>
+
+        {sessionExpired ? (
+          <ThemedView style={styles.expiredBox}>
+            <ThemedText style={styles.expiredText}>
+              ⚠ Session expirée — ta clé API a été refusée par le core (401). Elle a peut-être
+              été révoquée ou a expiré. Reconnecte-toi avec une clé valide.
+            </ThemedText>
+          </ThemedView>
+        ) : null}
 
         <ThemedView style={styles.field}>
           <ThemedText type="defaultSemiBold">URL du core</ThemedText>
@@ -201,6 +210,20 @@ const styles = StyleSheet.create({
     padding: 12,
     backgroundColor: 'rgba(192, 57, 43, 0.08)',
   },
+  expiredBox: {
+    borderWidth: 1,
+    borderColor: '#d99a3c',
+    borderRadius: 8,
+    padding: 12,
+    backgroundColor: 'rgba(217, 154, 60, 0.10)',
+  },
+  expiredText: {
+    color: '#b9770e',
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '600',
+  },
+
   submit: {
     paddingVertical: 14,
     borderRadius: 8,
