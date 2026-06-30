@@ -334,8 +334,12 @@ class TestFetchCotHistory:
                 ],
             )
 
+        # Fenêtre large (10 ans) pour que ce test reste insensible à la date du
+        # jour : il valide le dédup/tri/strip/net pct, pas le filtre par cutoff
+        # (couvert par test_old_data_filtered_by_cutoff). Avec days_back=60 les
+        # dates fixtures 2026 finissaient par sortir de la fenêtre → faux échec.
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-            result = await fetch_cot_history(days_back=60, client=client)
+            result = await fetch_cot_history(days_back=3650, client=client)
 
         # Tri ascendant après dédup, dates strippées du T-suffix
         assert len(result) == 2
@@ -356,8 +360,11 @@ class TestFetchCotHistory:
                 ],
             )
 
+        # Fenêtre large : on veut que le [] vienne du skip des positions nulles,
+        # PAS du filtre par date (sinon le test passerait pour la mauvaise raison
+        # une fois la date fixture 2026 sortie de la fenêtre de 60 jours).
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-            result = await fetch_cot_history(days_back=60, client=client)
+            result = await fetch_cot_history(days_back=3650, client=client)
 
         assert result == []
 
