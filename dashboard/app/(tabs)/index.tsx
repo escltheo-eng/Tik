@@ -36,7 +36,6 @@ import { formatLocal, parseUtcIso, timeAgo } from '@/src/utils/time';
 
 const HEALTH_REFRESH_INTERVAL_MS = 30_000;
 const MACRO_WINDOW_MS = 4 * 3600 * 1000; // ±4h discipline (Garde-fou 2-bis)
-const SWING_VERACITY_FLOOR = 0.85; // seuil transitoire Garde-fou 2-bis
 
 interface HealthState {
   status: 'idle' | 'loading' | 'ok' | 'error';
@@ -187,8 +186,6 @@ export default function HomeScreen() {
   const nextEvent = macroEventsState.events[0] ?? null;
   const openTrades = useMemo(() => trades.filter((t) => t.status === 'open'), [trades]);
 
-  const swingVeracityOk = latestBtcSwing ? latestBtcSwing.veracity >= SWING_VERACITY_FLOOR : false;
-
   // Feu de sécurité consolidé (« edge de non-perte ») : fusionne macro ±4h +
   // série de pertes (carnet) + risk-off + breaking. C'est le futur GATE qui
   // modulera la prédiction. Dit « droit de trader / taille », jamais « achète ».
@@ -206,17 +203,17 @@ export default function HomeScreen() {
   };
   const discipline = SAFETY_VIEW[safety.level];
 
+  // Les critères = UNIQUEMENT le droit de trader (non-perte). La veracity n'y est
+  // PLUS : un % d'accord des sources n'est pas un feu vert (reframe 2026-06-30).
+  // Elle est montrée à part, en contexte neutre, sous les critères.
   const criteria: { ok: boolean; text: string }[] = [
     ...safety.reasons.map((r) => ({ ok: false, text: r.text })),
     ...(safety.reasons.length === 0 ? [{ ok: true, text: 'Aucun frein actif — RAS' }] : []),
-    latestBtcSwing
-      ? {
-          ok: swingVeracityOk,
-          text: `Veracity dernier swing BTC ${(latestBtcSwing.veracity * 100).toFixed(0)}%${swingVeracityOk ? '' : ' < 85 %'}`,
-        }
-      : { ok: false, text: 'Pas de signal swing BTC récent' },
     { ok: true, text: 'Sizing 1 % max — ta vraie protection' },
   ];
+  const veracityContext = latestBtcSwing
+    ? `Accord des sources dernier swing BTC : ${(latestBtcSwing.veracity * 100).toFixed(0)}% — concordance, pas un feu vert`
+    : 'Pas de signal swing BTC récent';
 
   const liq = regimeView(macroRegimeState.regime?.global_liquidity?.regime);
   const recession = macroRegimeState.regime?.indicators?.recession_prob_12m?.value ?? null;
@@ -282,6 +279,7 @@ export default function HomeScreen() {
               <Text style={styles.critText}>{c.text}</Text>
             </View>
           ))}
+          <Text style={styles.disciplineContext}>{veracityContext}</Text>
         </View>
 
         {/* Derniers signaux BTC + GOLD côte-à-côte (tap → détail complet) */}
@@ -455,6 +453,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontStyle: 'italic',
     marginBottom: 2,
+  },
+  disciplineContext: {
+    color: Cosmic.textFaint,
+    fontSize: 12,
+    fontStyle: 'italic',
+    marginTop: 4,
   },
   critRow: {
     flexDirection: 'row',
