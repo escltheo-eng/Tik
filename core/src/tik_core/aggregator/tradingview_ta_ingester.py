@@ -69,18 +69,13 @@ class TVTarget:
 
 # --- Panier MACRO (contexte macro-économique, timeframe journalier) ---
 # 1re variante = la plus courante ; les suivantes = replis si « not found ».
+# Note 2026-06-30 : S&P 500 et US 10Y RETIRÉS — aucune variante (TVC/SP/FOREXCOM…)
+# ne résout sur le scanner gratuit de TradingView (mesuré en prod : « Exchange or
+# symbol not found » sur les 3 essais). Ils gaspillaient 6 requêtes/cycle qui
+# échouaient toujours (charge inutile + risque de 429). À ré-ajouter seulement si
+# une combinaison (screener, exchange, symbol) valide est identifiée par un test.
 MACRO_TARGETS: list[TVTarget] = [
     TVTarget("DXY", "macro", "1d", (("cfd", "TVC", "DXY"),)),  # dollar index
-    TVTarget("S&P 500", "macro", "1d", (
-        ("cfd", "TVC", "SPX"),  # indice S&P 500 via TVC (proven family)
-        ("cfd", "FOREXCOM", "SPXUSD"),
-        ("america", "SP", "SPX"),
-    )),
-    TVTarget("US 10Y", "macro", "1d", (
-        ("cfd", "TVC", "TNX"),  # rendement 10 ans (CBOE TNX, ×10)
-        ("cfd", "TVC", "US10Y"),
-        ("cfd", "TVC", "US10"),
-    )),
     TVTarget("Or", "macro", "1d", (("cfd", "TVC", "GOLD"),)),  # or spot (résout en prod)
     TVTarget("VIX", "macro", "1d", (("cfd", "TVC", "VIX"),)),  # volatilité
 ]
