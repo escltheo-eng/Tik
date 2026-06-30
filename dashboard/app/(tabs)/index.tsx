@@ -5,6 +5,7 @@ import { ActivityIndicator, Platform, Pressable, StyleSheet } from 'react-native
 import { HitRateByVeracityCard } from '@/components/dashboard/hit-rate-by-veracity-card';
 import { BreakingNewsCard } from '@/components/dashboard/breaking-news-card';
 import { DerivativesCard } from '@/components/dashboard/derivatives-card';
+import { TradingViewCard } from '@/components/dashboard/tradingview-card';
 import { FlashStabilityCard } from '@/components/dashboard/flash-stability-card';
 import { HitRateCard } from '@/components/dashboard/hit-rate-card';
 import { KpiCard } from '@/components/dashboard/kpi-card';
@@ -34,6 +35,7 @@ import { useHitRate } from '@/src/hooks/useHitRate';
 import { useHitRateByVeracity } from '@/src/hooks/useHitRateByVeracity';
 import { useTick } from '@/src/hooks/use-tick';
 import { useDerivatives } from '@/src/hooks/useDerivatives';
+import { useTradingView } from '@/src/hooks/useTradingView';
 import { usePolymarket } from '@/src/hooks/usePolymarket';
 import { useTopHeadlines } from '@/src/hooks/useTopHeadlines';
 import { useMacroRegime } from '@/src/hooks/useMacroRegime';
@@ -130,6 +132,7 @@ export default function HomeScreen() {
   const polymarketState = usePolymarket(polymarketEntity, { limit: 4 });
   // Positionnement dérivés BTC (shadow ADR-023) — contexte, pas un signal.
   const derivativesState = useDerivatives('BTC');
+  const tradingViewState = useTradingView();
   // Lacune B Phase B1 — calendrier macro/géopolitique 7 j à venir.
   // Cap 4 events sur Home (1 mis en avant + 3 suivants), poll 5 min
   // (cohérent TTL cache Redis 5 min).
@@ -280,6 +283,14 @@ export default function HomeScreen() {
         snapshot={derivativesState.snapshot}
         loading={derivativesState.loading}
         error={derivativesState.error}
+      />
+
+      <TradingViewCard
+        macro={tradingViewState.macro}
+        microBtc={tradingViewState.microBtc}
+        microGold={tradingViewState.microGold}
+        loading={tradingViewState.loading}
+        error={tradingViewState.error}
       />
 
       <ThemedView style={styles.section}>

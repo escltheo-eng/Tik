@@ -367,6 +367,34 @@ export interface DerivativesSnapshot {
   short_account_top: number | null;
 }
 
+// ----- TradingView recommandations techniques (SHADOW — contexte, ADR-031) -----
+// Note technique agrégée TradingView par instrument × timeframe. Panier "macro"
+// (DXY/SPX/US10Y/Or/VIX en 1D) ou "micro" (BTCUSDT 5m/15m/1h). Analyse technique,
+// PAS un signal Tik — ne touche jamais direction/veracity.
+
+export interface TradingViewItem {
+  label: string;
+  symbol: string;
+  interval: string;
+  recommendation: string | null; // STRONG_BUY / BUY / NEUTRAL / SELL / STRONG_SELL
+  buy: number | null;
+  sell: number | null;
+  neutral: number | null;
+  osc_recommendation: string | null;
+  ma_recommendation: string | null;
+  rsi: number | null;
+  close: number | null;
+}
+
+export interface TradingViewSnapshot {
+  source: string;
+  basket: string; // "macro" | "micro"
+  mode: string;
+  entity: string | null;
+  fetched_at: string | null;
+  items: TradingViewItem[];
+}
+
 // Couche éducative « Lecture macro » supprimée 2026-05-30 (cf. memory
 // macro-reading-removed-2026-05-30 pour rebuild guide en Option C / liens externes).
 

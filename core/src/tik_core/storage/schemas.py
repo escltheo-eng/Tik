@@ -570,6 +570,46 @@ class DerivativesSnapshotOut(BaseModel):
     short_account_top: float | None = None
 
 
+class TradingViewItemOut(BaseModel):
+    """Recommandation technique TradingView d'un instrument × un timeframe.
+
+    `recommendation` est la note agrégée TradingView (STRONG_BUY / BUY / NEUTRAL /
+    SELL / STRONG_SELL). `osc_recommendation` / `ma_recommendation` détaillent
+    oscillateurs vs moyennes mobiles (souvent divergents). CONTEXTE technique pur.
+    """
+
+    label: str
+    symbol: str
+    interval: str
+    recommendation: str | None = None
+    buy: int | None = None
+    sell: int | None = None
+    neutral: int | None = None
+    osc_recommendation: str | None = None
+    ma_recommendation: str | None = None
+    rsi: float | None = None
+    close: float | None = None
+
+
+class TradingViewSnapshotOut(BaseModel):
+    """Snapshot recommandations techniques TradingView par panier (SHADOW — contexte).
+
+    Reflète tel quel le snapshot Redis publié par `TradingViewTAIngester`
+    (`tik.tradingview.macro` ou `tik.tradingview.micro.btc`). C'est de l'**analyse
+    technique** (note agrégée de l'algo TradingView), PAS un signal Tik — aucun
+    overlay branché (ADR-031). `basket` vaut "macro" (DXY/SPX/US10Y/Or/VIX en 1D)
+    ou "micro" (BTCUSDT 5m/15m/1h). Snapshot vide (`items=[]`, `fetched_at=None`)
+    si l'ingester n'a pas encore publié.
+    """
+
+    source: str = "tradingview_ta"
+    basket: str
+    mode: str = "shadow"
+    entity: str | None = None  # "BTC" pour le panier micro
+    fetched_at: str | None = None
+    items: list[TradingViewItemOut] = Field(default_factory=list)
+
+
 # Couche éducative « Lecture macro » supprimée 2026-05-30 sur décision trader
 # (cf. memory macro-reading-removed-2026-05-30 pour rebuild guide). Schémas
 # MacroReactionStat / MacroAssetReaction / MacroReadingOut / MacroLiveEvent /

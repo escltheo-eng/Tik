@@ -34,6 +34,7 @@ import {
   SignalTrackRecord,
   SourceHealth,
   SourceVeracity,
+  TradingViewSnapshot,
   VeracityStatus,
 } from './types';
 
@@ -210,6 +211,23 @@ export async function getDerivatives(
   entityId: string,
 ): Promise<DerivativesSnapshot> {
   return client.get<DerivativesSnapshot>(`/derivatives/${encodeURIComponent(entityId)}`);
+}
+
+// ----- TradingView recommandations techniques (SHADOW — contexte, ADR-031) -----
+
+export async function getTradingViewMacro(
+  client: HttpClient,
+): Promise<TradingViewSnapshot> {
+  return client.get<TradingViewSnapshot>('/tradingview/macro');
+}
+
+export async function getTradingViewMicro(
+  client: HttpClient,
+  entityId: string,
+): Promise<TradingViewSnapshot> {
+  return client.get<TradingViewSnapshot>(
+    `/tradingview/micro/${encodeURIComponent(entityId)}`,
+  );
 }
 
 // ----- Macro events (Lacune B Phase B1 trading manuel J+10) -----
