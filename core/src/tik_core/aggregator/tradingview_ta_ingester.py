@@ -48,43 +48,64 @@ from tik_core.aggregator.base import BaseIngester
 log = structlog.get_logger()
 
 
+# Une « variante » = un triplet (screener, exchange, symbol) candidat sur la
+# nomenclature TradingView. Certains instruments n'existent que sous une combinaison
+# précise et la lib lève « Exchange or symbol not found » sur les autres (mesuré en
+# prod 2026-06-30 : SP:SPX, TVC:US10Y et OANDA:XAUUSD ne résolvaient pas, alors que
+# TVC:GOLD/DXY/VIX oui). On essaie donc plusieurs variantes par instrument jusqu'à
+# en trouver une qui répond — l'ingester est ainsi robuste aux conventions.
+TVVariant = tuple[str, str, str]  # (screener, exchange, symbol)
+
+
 @dataclass(frozen=True)
 class TVTarget:
-    """Une cible TradingView à interroger (un instrument × un timeframe)."""
+    """Une cible TradingView (un instrument × un timeframe), avec variantes de repli."""
 
     label: str  # libellé court affiché ("DXY", "BTC 15m")
     basket: str  # "macro" | "micro"
-    screener: str  # "cfd" | "america" | "crypto" (catégorie TradingView)
-    exchange: str  # "TVC" | "SP" | "BINANCE"
-    symbol: str  # "DXY" | "SPX" | "BTCUSDT"
     interval: str  # Interval.* ("1d", "5m"…) — chaîne attendue par la lib
+    candidates: tuple[TVVariant, ...]  # variantes essayées dans l'ordre
 
 
 # --- Panier MACRO (contexte macro-économique, timeframe journalier) ---
-# Symboles / screeners vérifiés contre la convention TradingView. Si l'un d'eux
-# ne résout pas côté runtime (log `tradingview.target.error`), ajuster ici.
+# 1re variante = la plus courante ; les suivantes = replis si « not found ».
 MACRO_TARGETS: list[TVTarget] = [
-    TVTarget("DXY", "macro", "cfd", "TVC", "DXY", "1d"),  # dollar index
-    TVTarget("S&P 500", "macro", "america", "SP", "SPX", "1d"),  # actions US
-    TVTarget("US 10Y", "macro", "cfd", "TVC", "US10Y", "1d"),  # taux 10 ans
-    TVTarget("Or", "macro", "cfd", "TVC", "GOLD", "1d"),  # or spot
-    TVTarget("VIX", "macro", "cfd", "TVC", "VIX", "1d"),  # volatilité
+    TVTarget("DXY", "macro", "1d", (("cfd", "TVC", "DXY"),)),  # dollar index
+    TVTarget("S&P 500", "macro", "1d", (
+        ("cfd", "TVC", "SPX"),  # indice S&P 500 via TVC (proven family)
+        ("cfd", "FOREXCOM", "SPXUSD"),
+        ("america", "SP", "SPX"),
+    )),
+    TVTarget("US 10Y", "macro", "1d", (
+        ("cfd", "TVC", "TNX"),  # rendement 10 ans (CBOE TNX, ×10)
+        ("cfd", "TVC", "US10Y"),
+        ("cfd", "TVC", "US10"),
+    )),
+    TVTarget("Or", "macro", "1d", (("cfd", "TVC", "GOLD"),)),  # or spot (résout en prod)
+    TVTarget("VIX", "macro", "1d", (("cfd", "TVC", "VIX"),)),  # volatilité
 ]
 
 # --- Panier MICRO (microstructure par actif, timeframes courts) ---
-# Un panier par entité tradée. GOLD via OANDA:XAUUSD (spot continu, bonne donnée
-# intraday) ; c'est du CONTEXTE technique indépendant de Yahoo, donc compatible
-# micro contrairement au flash GOLD interne (ADR-005, bloqué par le délai Yahoo).
+# Un panier par entité tradée. GOLD : on réutilise TVC:GOLD (qui résout déjà en
+# macro) en 1re variante, OANDA/FX_IDC en repli. C'est du CONTEXTE technique
+# indépendant de Yahoo, donc compatible micro contrairement au flash GOLD interne
+# (ADR-005, bloqué par le délai Yahoo).
+_BTC_VARIANTS: tuple[TVVariant, ...] = (("crypto", "BINANCE", "BTCUSDT"),)
+_GOLD_VARIANTS: tuple[TVVariant, ...] = (
+    ("cfd", "TVC", "GOLD"),
+    ("forex", "OANDA", "XAUUSD"),
+    ("forex", "FX_IDC", "XAUUSD"),
+)
 MICRO_TARGETS: dict[str, list[TVTarget]] = {
     "BTC": [
-        TVTarget("BTC 5m", "micro", "crypto", "BINANCE", "BTCUSDT", "5m"),
-        TVTarget("BTC 15m", "micro", "crypto", "BINANCE", "BTCUSDT", "15m"),
-        TVTarget("BTC 1h", "micro", "crypto", "BINANCE", "BTCUSDT", "1h"),
+        TVTarget("BTC 5m", "micro", "5m", _BTC_VARIANTS),
+        TVTarget("BTC 15m", "micro", "15m", _BTC_VARIANTS),
+        TVTarget("BTC 1h", "micro", "1h", _BTC_VARIANTS),
     ],
     "GOLD": [
-        TVTarget("Or 5m", "micro", "forex", "OANDA", "XAUUSD", "5m"),
-        TVTarget("Or 15m", "micro", "forex", "OANDA", "XAUUSD", "15m"),
-        TVTarget("Or 1h", "micro", "forex", "OANDA", "XAUUSD", "1h"),
+        TVTarget("Or 5m", "micro", "5m", _GOLD_VARIANTS),
+        TVTarget("Or 15m", "micro", "15m", _GOLD_VARIANTS),
+        TVTarget("Or 1h", "micro", "1h", _GOLD_VARIANTS),
     ],
 }
 
@@ -106,9 +127,10 @@ def _safe_float(value: object) -> float | None:
         return None
 
 
-def _build_item(target: TVTarget, analysis: object) -> dict | None:
+def _build_item(target: TVTarget, analysis: object, resolved_symbol: str) -> dict | None:
     """Normalise un objet Analysis TradingView en dict compact.
 
+    `resolved_symbol` = la variante "EXCHANGE:SYMBOL" qui a effectivement répondu.
     Retourne None si l'analyse est inexploitable (None ou sans summary) — la lib
     renvoie None quand TradingView n'a pas assez de données pour l'instrument.
     """
@@ -120,7 +142,7 @@ def _build_item(target: TVTarget, analysis: object) -> dict | None:
     indicators = getattr(analysis, "indicators", None) or {}
     return {
         "label": target.label,
-        "symbol": f"{target.exchange}:{target.symbol}",
+        "symbol": resolved_symbol,
         "interval": target.interval,
         # Note agrégée TradingView (STRONG_BUY / BUY / NEUTRAL / SELL / STRONG_SELL)
         "recommendation": summary.get("RECOMMENDATION"),
@@ -180,27 +202,42 @@ class TradingViewTAIngester(BaseIngester):
     def _fetch_target_sync(self, target: TVTarget) -> dict | None:
         """Appel synchrone TradingView pour une cible (exécuté dans un thread).
 
-        Best-effort : toute exception (instrument inconnu, réseau, parsing lib)
-        est capturée → retourne None, l'ingester continue avec les autres cibles.
+        Essaie chaque variante (screener, exchange, symbol) dans l'ordre et
+        retourne le 1er item exploitable. Best-effort : toute exception (instrument
+        inconnu, réseau, parsing lib) est capturée → on passe à la variante suivante.
+        Retourne None si AUCUNE variante ne répond (log warning avec la liste).
         """
-        try:
-            handler = TA_Handler(
-                symbol=target.symbol,
-                screener=target.screener,
-                exchange=target.exchange,
-                interval=target.interval,
-                timeout=self.request_timeout_s,
-            )
-            analysis = handler.get_analysis()
-        except Exception as exc:  # noqa: BLE001
-            log.warning(
-                "tradingview_ta.target.error",
-                label=target.label,
-                symbol=f"{target.exchange}:{target.symbol}",
-                error=str(exc),
-            )
-            return None
-        return _build_item(target, analysis)
+        for screener, exchange, symbol in target.candidates:
+            resolved = f"{exchange}:{symbol}"
+            try:
+                handler = TA_Handler(
+                    symbol=symbol,
+                    screener=screener,
+                    exchange=exchange,
+                    interval=target.interval,
+                    timeout=self.request_timeout_s,
+                )
+                analysis = handler.get_analysis()
+            except Exception as exc:  # noqa: BLE001
+                # Variante non résolue → on tente la suivante (debug, pas warning :
+                # un repli est attendu, pas une anomalie).
+                log.debug(
+                    "tradingview_ta.variant.miss",
+                    label=target.label,
+                    symbol=resolved,
+                    error=str(exc),
+                )
+                continue
+            item = _build_item(target, analysis, resolved)
+            if item is not None:
+                return item
+        log.warning(
+            "tradingview_ta.target.error",
+            label=target.label,
+            interval=target.interval,
+            tried=[f"{e}:{s}" for _, e, s in target.candidates],
+        )
+        return None
 
     async def _fetch_basket(self, targets: list[TVTarget]) -> list[dict]:
         """Interroge séquentiellement toutes les cibles d'un panier (best-effort).
