@@ -28,6 +28,7 @@ from tik_core.aggregator.news_classifier import build_news_classifier
 from tik_core.aggregator.polymarket_ingester import PolymarketIngester
 from tik_core.aggregator.rate_probabilities_ingester import RateProbabilitiesIngester
 from tik_core.aggregator.reddit_ingester import RedditIngester
+from tik_core.aggregator.tradingview_ta_ingester import TradingViewTAIngester
 from tik_core.aggregator.yahoo_ingester import YahooPoller
 from tik_core.config import get_settings
 
@@ -215,6 +216,18 @@ async def main() -> None:
         # Polling 6 h (les flux ETF sont quotidiens, pas intra-day). Retrait =
         # retirer cette ligne.
         BtcEtfFlowsIngester(redis, entity="BTC", interval_s=6 * 3600),
+        # Recommandations techniques TradingView (macro + micro) — MODE SHADOW
+        # (ADR-031). Collecte la note technique agrégée TradingView de deux
+        # paniers : MACRO (DXY/SPX/US10Y/Or/VIX en 1D — contexte macro-éco) et
+        # MICRO par actif (BTCUSDT + XAUUSD en 5m/15m/1h — microstructure BTC ET
+        # GOLD), dans tik.tradingview.macro / tik.tradingview.micro.{btc,gold}.
+        # SANS toucher le
+        # combined_bias : il n'existe AUCUN _enrich_with_tradingview ni toggle
+        # (zéro ligne touchée dans les moteurs). C'est de l'analyse technique —
+        # déjà calculée à poids 0 par Tik (ADR-018) → à MESURER (redondance ?)
+        # avant tout enrôlement. Lib non-officielle (scanner.tradingview.com),
+        # best-effort. Polling 30 min. Retrait = retirer cette ligne.
+        TradingViewTAIngester(redis, interval_s=1800),
     ]
 
     # Breaking-news alerting (ADR-027) — gaté par toggle (défaut OFF). Capte les
