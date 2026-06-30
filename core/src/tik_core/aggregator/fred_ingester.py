@@ -140,9 +140,18 @@ class FredIngester(BaseIngester):
                             f"tik.macro.{point.series_id}",
                             json.dumps(payload),
                         )
+                        # TTL 24h (ex=86400) : borne la péremption de la
+                        # valeur. Sans TTL (bug audit 2026-06-24 finding A), si
+                        # FRED décroche, une série périmée serait servie comme
+                        # fraîche indéfiniment. 24h = ~24× l'intervalle de poll
+                        # (1h) → survit à une coupure FRED longue tout en
+                        # garantissant qu'au-delà d'un jour sans MAJ la clé
+                        # disparaît (donnée absente = honnête, cf. leçon Bug 15
+                        # CryptoCompare : ne PAS choisir un TTL < intervalle).
                         await self.redis.set(
                             f"tik.macro.last.{point.series_id}",
                             json.dumps(payload),
+                            ex=86400,
                         )
                     # Rate limit FRED : 120 req/min. On laisse de la marge.
                     await asyncio.sleep(1)
