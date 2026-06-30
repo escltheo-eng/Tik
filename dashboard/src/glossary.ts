@@ -7,27 +7,32 @@ export interface GlossaryEntry {
 
 export const GLOSSARY: Record<string, GlossaryEntry> = {
   veracity: {
-    term: 'Veracity',
+    term: 'Accord des sources (veracity)',
     short:
-      "Alignement des sources OSINT cross-validées sur ce signal. Affichée en %. " +
-      "70 % = sources divergent fortement, 95 % = toutes alignées.",
+      "⚠ Ce n'est PAS une probabilité que le trade gagne. C'est juste l'ACCORD entre les sources " +
+      "OSINT cross-validées sur ce signal (affiché en %). 70 % = sources divergent fortement, " +
+      "95 % = toutes alignées. Un fort accord ne dit rien sur la justesse de la direction.",
     long:
       "Mesure dynamique entre 70 % et 95 % calculée à partir de la dispersion des biais OSINT (Fear & Greed, news, Reddit, GDELT, FRED). " +
       "Plus les sources sont alignées sur la même direction, plus la veracity monte. " +
       "Paliers : 95 % dispersion ≤ 0.20 / 90 % ≤ 0.40 / 85 % ≤ 0.60 / 78 % ≤ 0.80 / 70 % au-delà. " +
-      "Garde-fou 2-bis transitoire (Reddit IP-bannie) : seuil minimum 85 % pour swing BTC en trading manuel J+24.",
-    ref: 'ADR-018',
+      "Garde-fou 2-bis transitoire (Reddit IP-bannie) : seuil minimum 85 % pour swing BTC en trading manuel J+24. " +
+      "⚠ Rappel honnêteté (Axe #1) : la veracity mesure la CONCORDANCE, pas la fiabilité. Mesuré le " +
+      "2026-06-10 : GOLD affichait 0.89 de veracity pour 4.8 % de hit → veracity ≠ edge. Ne jamais la lire comme un gage de gain.",
+    ref: 'ADR-018 + ADR-026',
   },
   conviction: {
     term: 'Conviction OSINT',
     short:
-      "Affichée en %, mesure entre 0 % et 100 %. < 30 % = marché OSINT équilibré (signal neutral). " +
-      "30-50 % = conviction faible. 50-80 % = moyenne. > 80 % = forte conviction directionnelle.",
+      "⚠ Ce n'est PAS une proba que le trade gagne. C'est la FORCE du penchant des sources OSINT " +
+      "(|combined_bias|, en %). < 30 % = marché OSINT équilibré (signal neutral). 30-50 % = penchant " +
+      "faible. 50-80 % = moyen. > 80 % = penchant fort. Aucun edge directionnel prouvé (NO-GO 2026-05-27).",
     long:
       "Égal à |combined_bias| × 100 où combined_bias est la moyenne des biais des overlays OSINT actifs, sources outliers neutralisées par l'anti fake-news (ADR-011). " +
       "Depuis le refactor OSINT pur ADR-018, ce champ ne reflète plus la force d'une analyse technique RSI/MACD/EMA — il quantifie uniquement la conviction OSINT. " +
       "La direction (long/short/neutral) est dérivée du signe de combined_bias avec seuil ±30 %. " +
       "Sous 30 %, le signal est systématiquement marqué neutral. " +
+      "⚠ Honnêteté (Axe #1) : une conviction haute = sources d'accord, PAS un trade plus sûr. Le sentiment est colinéaire au trend (NO-GO 2026-05-27). " +
       "Le champ JSON s'appelle encore 'confidence' pour rétrocompatibilité des signaux historiques.",
     ref: 'ADR-018 + SDK 0.6.0',
   },

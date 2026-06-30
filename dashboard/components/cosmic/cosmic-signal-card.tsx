@@ -186,7 +186,11 @@ export function CosmicSignalCard({ entityId, signal, loading, variant = 'summary
         <Text style={styles.detailHint}>Toucher la carte pour le détail complet →</Text>
       )}
 
-      {/* Rappel discipline (anti vernis de certitude) */}
+      {/* Rappel discipline (anti vernis de certitude) — les deux % ci-dessus
+          mesurent l'ACCORD des sources, jamais une probabilité de gain. */}
+      <Text style={styles.disclaimer}>
+        Conviction &amp; accord = concordance des sources, PAS une proba de gain
+      </Text>
       <Text style={styles.disclaimer}>
         Tik = contexte, pas un ordre · aucun edge prouvé · sizing 1 %
       </Text>

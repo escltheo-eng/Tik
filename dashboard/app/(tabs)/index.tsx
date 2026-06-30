@@ -309,7 +309,8 @@ export default function HomeScreen() {
           />
         </View>
         <Text style={styles.tilesDisclaimer}>
-          Contexte, pas un ordre · aucun edge prouvé · sizing 1 % · touche une carte pour le détail
+          conv / accord = concordance des sources, pas une proba de gain · contexte, pas un ordre ·
+          sizing 1 % · touche une carte pour le détail
         </Text>
 
         {/* Dernières infos cosmiques : breaking (si choc) + top headlines (bull/bear) */}
