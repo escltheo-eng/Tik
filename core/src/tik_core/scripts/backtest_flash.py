@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import bisect
 from datetime import UTC, datetime, timedelta
 
 import httpx
@@ -43,7 +44,6 @@ from tik_core.scripts.backtest import (
     evaluate_constant_baseline,
     evaluate_random_baseline,
     evaluate_tik_baseline,
-    find_closest_price,
     paired_gain_significance,
 )
 from tik_core.storage.models import Signal
@@ -96,6 +96,44 @@ async def fetch_btc_1m_range(
     return out
 
 
+# ----- Index de prix rapide (recherche dichotomique) -----
+
+
+class PriceIndex:
+    """Index sur l'historique 1m (trié) pour retrouver un prix en O(log n).
+
+    Le backtest journalier fait un balayage linéaire (OK sur ~1000 klines), mais
+    le flash a des milliers de signaux × des dizaines de milliers de klines →
+    balayage linéaire = milliards d'opérations. On précalcule la liste des
+    timestamps une fois et on cherche par `bisect`.
+    """
+
+    def __init__(self, history: list[tuple[int, float]]) -> None:
+        self.history = history
+        self.ts = [t for t, _ in history]
+
+    def at(self, target: datetime, max_diff_ms: int = MAX_DIFF_MS_1M) -> float | None:
+        if not self.history:
+            return None
+        target_ms = (
+            int(target.replace(tzinfo=UTC).timestamp() * 1000)
+            if target.tzinfo is None
+            else int(target.timestamp() * 1000)
+        )
+        i = bisect.bisect_left(self.ts, target_ms)
+        best_price: float | None = None
+        best_diff = float("inf")
+        for j in (i - 1, i):  # le plus proche est l'un des deux voisins
+            if 0 <= j < len(self.history):
+                diff = abs(self.ts[j] - target_ms)
+                if diff < best_diff:
+                    best_diff = diff
+                    best_price = self.history[j][1]
+        if best_price is None or best_diff > max_diff_ms:
+            return None
+        return best_price
+
+
 # ----- Évaluation d'un flash sur horizon minutes -----
 
 
@@ -103,7 +141,7 @@ def evaluate_flash_signal(
     signal: Signal,
     horizon_minutes: int,
     threshold_pct: float,
-    btc_history: list[tuple[int, float]],
+    prices: PriceIndex,
 ) -> dict | None:
     """Évalue un signal flash BTC sur un horizon en minutes.
 
@@ -113,8 +151,8 @@ def evaluate_flash_signal(
     ts0 = signal.timestamp
     ts1 = ts0 + timedelta(minutes=horizon_minutes)
 
-    p0 = find_closest_price(btc_history, ts0, max_diff_ms=MAX_DIFF_MS_1M)
-    p1 = find_closest_price(btc_history, ts1, max_diff_ms=MAX_DIFF_MS_1M)
+    p0 = prices.at(ts0)
+    p1 = prices.at(ts1)
     if p0 is None or p1 is None or p0 == 0:
         return None
 
@@ -252,11 +290,12 @@ async def main() -> None:
     print(f"  Récupération des klines 1m depuis {start_dt.date()}… (peut prendre ~10-30 s)")
     async with httpx.AsyncClient() as client:
         btc_history = await fetch_btc_1m_range(client, start_ms, end_ms)
-    print(f"  {len(btc_history)} klines 1m récupérées.")
+    print(f"  {len(btc_history)} klines 1m récupérées. Évaluation…", flush=True)
 
+    prices = PriceIndex(btc_history)
     results: list[dict] = []
     for sig in eligible:
-        ev = evaluate_flash_signal(sig, args.horizon_minutes, args.threshold, btc_history)
+        ev = evaluate_flash_signal(sig, args.horizon_minutes, args.threshold, prices)
         if ev is not None:
             results.append(ev)
 
