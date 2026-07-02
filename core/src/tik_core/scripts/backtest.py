@@ -77,6 +77,28 @@ async def fetch_btc_history(
     return [(int(d[0]), float(d[4])) for d in raw]
 
 
+async def fetch_paxg_history(
+    client: httpx.AsyncClient,
+    *,
+    interval: str = "1h",
+    limit: int = 1000,
+) -> list[tuple[int, float]]:
+    """Récupère les klines PAXGUSDT (or tokenisé) depuis Binance — ADR-039.
+
+    Sert à MESURER les signaux flash GOLD générés sur PAXG : cohérence
+    source→mesure (le signal naît sur PAXG, il est évalué sur PAXG).
+    Yahoo (15 min de retard, klines 1h) reste la source du swing GOLD.
+    """
+    r = await client.get(
+        BINANCE_KLINES,
+        params={"symbol": "PAXGUSDT", "interval": interval, "limit": limit},
+        timeout=30.0,
+    )
+    r.raise_for_status()
+    raw = r.json()
+    return [(int(d[0]), float(d[4])) for d in raw]
+
+
 async def fetch_gold_history(
     client: httpx.AsyncClient,
     *,

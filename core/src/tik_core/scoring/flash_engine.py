@@ -54,9 +54,15 @@ FLASH_SOURCE_SCORES: dict[str, float] = {
     "binance_klines_1m": 0.90,
     "binance_orderbook": 0.85,
     "binance_aggtrades": 0.85,
+    # PAXG = PROXY de l'or (ADR-039) : score plus bas que BTC — prime/décote
+    # vs XAU + carnet moins liquide. r≈0.975 vs GC=F mesuré 2026-06-30 (1h).
+    "binance_paxg_klines_1m": 0.80,
 }
 
 LAST_PRICE_KEY = "tik.last_price.BTC"
+# Flash GOLD via PAXG (ADR-039) : pas de flux WS dédié → la fraîcheur est
+# vérifiée sur l'âge du dernier kline 1m PAXGUSDT retourné par le REST.
+PAXG_KLINE_STALE_SEC = 180
 LAST_DIRECTION_KEY_TPL = "tik.flash.last_direction.{entity_id}"
 LAST_DIRECTION_TTL_SEC = 86400  # 24h
 HEARTBEAT_INTERVAL = timedelta(minutes=30)
@@ -618,6 +624,138 @@ def should_emit(
 
 
 # ----- Fonction d'analyse principale -----
+
+
+def is_gold_market_open(now: datetime) -> bool:
+    """Le marché de l'or (futures COMEX) est-il ouvert ? Approximation UTC.
+
+    Fermé du vendredi 21:00 UTC au dimanche 22:00 UTC (ADR-039). PAXG cote
+    24/7 sur Binance, mais émettre un signal « or » quand le sous-jacent réel
+    est fermé serait trompeur (le proxy dérive sans ancrage) → on skip.
+    Approximation assumée : les jours fériés US ne sont pas gérés (le flash
+    tournera alors sur un PAXG peu ancré — acceptable en shadow, cf. ADR-039).
+    """
+    wd = now.weekday()  # 0=lundi … 4=vendredi, 5=samedi, 6=dimanche
+    if wd == 5:
+        return False
+    if wd == 4 and now.hour >= 21:
+        return False
+    if wd == 6 and now.hour < 22:
+        return False
+    return True
+
+
+async def analyze_flash_gold(
+    redis: Redis | None = None,
+    hypothesis_generator: HypothesisGenerator | None = None,
+) -> FlashDecision:
+    """Analyse flash GOLD via le PROXY PAXGUSDT Binance (ADR-039, SHADOW).
+
+    Miroir assumé de `analyze_flash_btc` (duplication volontaire, comme
+    swing/flash — le chemin BTC mesuré NO-GO reste intouché). Différences :
+    - klines/carnet/aggTrades sur PAXGUSDT (PAXG ≈ or tokenisé, r≈0.975 vs
+      GC=F mesuré 2026-06-30) — Yahoo (15 min de retard) reste inutilisable
+      pour du flash (ADR-005 inchangé pour le swing) ;
+    - fraîcheur : âge du dernier kline 1m (pas de flux WS PAXG) ;
+    - skip hors heures du marché or réel (voir `is_gold_market_open`).
+
+    ⚠ Rappel empirique : le flash BTC (même famille d'overlays) est mesuré
+    NO-GO (33 % vs 39.4 % Always SHORT, 2026-07-02). Ce moteur est du
+    CONTEXTE microstructure à MESURER, pas un générateur de trades.
+    """
+    now = now_utc()
+    if not is_gold_market_open(now):
+        log.info("flash.gold.market_closed_skip")
+        return FlashDecision(
+            entity_id="GOLD",
+            timestamp=now,
+            direction="neutral",
+            confidence=0.0,
+            hypothesis="Marché or fermé (week-end) — flash GOLD/PAXG skippé",
+        )
+
+    df = await _fetch_klines_1m("PAXGUSDT", 240)
+    if not df.empty:
+        last_kline_age = (now_utc() - df["timestamp"].iloc[-1].to_pydatetime()).total_seconds()
+        if last_kline_age > PAXG_KLINE_STALE_SEC:
+            log.warning("flash.gold.stale_data_skip", age_sec=int(last_kline_age))
+            return FlashDecision(
+                entity_id="GOLD",
+                timestamp=now_utc(),
+                direction="neutral",
+                confidence=0.0,
+                hypothesis="Realtime feed stale (>180s old) — flash analysis skipped",
+            )
+    df.attrs["entity_id"] = "GOLD"
+    df.attrs["source"] = "binance_paxg_klines_1m"
+    decision = _score_flash_indicators(df)
+    decision.entity_id = "GOLD"
+    decision.advisory["expected_amplitude_pct"] = median_abs_return_pct(df["close"], 60)
+    decision.advisory["proxy"] = "PAXGUSDT (or tokenisé, r≈0.975 vs GC=F — ADR-039)"
+    if len(df) < 60:
+        decision.advisory["technical_note"] = "insufficient_history"
+    if not df.empty:
+        decision.advisory["ref_price"] = round(float(df["close"].iloc[-1]), 2)
+    else:
+        log.warning("flash.klines_empty", entity=decision.entity_id)
+
+    settings = get_settings()
+    dynamic_scores = await preload_source_scores(
+        redis,
+        ["binance_orderbook", "binance_aggtrades"],
+    )
+    token = set_dynamic_scores(dynamic_scores)
+    try:
+        biases_by_source: dict[str, float] = {}
+
+        try:
+            orderbook = await _fetch_orderbook("PAXGUSDT", 20)
+            bias = _enrich_with_orderbook(decision, orderbook)
+            if bias is not None:
+                biases_by_source["binance_orderbook"] = bias
+        except Exception as exc:  # noqa: BLE001
+            log.info("flash.gold.orderbook_unavailable", error=str(exc))
+
+        try:
+            trades = await _fetch_agg_trades("PAXGUSDT", 1000)
+            bias = _enrich_with_aggression(decision, trades)
+            if bias is not None:
+                biases_by_source["binance_aggtrades"] = bias
+        except Exception as exc:  # noqa: BLE001
+            log.info("flash.gold.aggtrades_unavailable", error=str(exc))
+
+        if biases_by_source:
+            cv = apply_cross_validation_to_decision(
+                decision, biases_by_source, mode=settings.antifakenews_mode
+            )
+            _derive_osint_decision_flash(decision, cv.combined_bias)
+            decision.veracity = _veracity_from_dispersion(cv.dispersion)
+            log.info(
+                "veracity.shadow",
+                horizon="flash",
+                **veracity_shadow_fields(decision, cv, biases_by_source),
+            )
+            if cv.circuit_breaker_status != "ok":
+                log.info(
+                    "anti_fake_news.flagged",
+                    entity_id=decision.entity_id,
+                    horizon="flash",
+                    status=cv.circuit_breaker_status,
+                    outliers=list(cv.outlier_sources),
+                    method=cv.method,
+                    mode=settings.antifakenews_mode,
+                )
+
+        await apply_llm_hypothesis(
+            decision,
+            "flash",
+            hypothesis_generator,
+            settings.llm_hypothesis_mode,
+        )
+
+        return decision
+    finally:
+        reset_dynamic_scores(token)
 
 
 async def analyze_flash_btc(

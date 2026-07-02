@@ -20,6 +20,7 @@ from tik_core.notify.alerts import check_and_alert
 from tik_core.notify.briefing import send_briefing
 from tik_core.scoring.flash_engine import (
     analyze_flash_btc,
+    analyze_flash_gold,
     read_last_emission,
     record_emission,
     should_emit,
@@ -116,6 +117,40 @@ async def _run_flash_btc(
         await record_emission(redis, decision.entity_id, decision)
     except Exception as exc:  # noqa: BLE001
         log.error("scheduler.flash_btc.error", error=str(exc))
+
+
+async def _run_flash_gold(
+    session_maker, redis, hypothesis_generator: HypothesisGenerator | None
+) -> None:
+    """Flash GOLD via proxy PAXG (ADR-039, SHADOW) — miroir de _run_flash_btc.
+
+    Deux skips silencieux gérés par l'engine (confidence=0 + hypothesis
+    explicite) : marché or fermé (week-end) et feed PAXG stale.
+    """
+    try:
+        decision = await analyze_flash_gold(redis=redis, hypothesis_generator=hypothesis_generator)
+
+        if decision.confidence == 0.0 and (
+            "stale" in decision.hypothesis.lower() or "fermé" in decision.hypothesis.lower()
+        ):
+            log.info("scheduler.flash_gold.skipped", reason=decision.hypothesis)
+            return
+
+        last = await read_last_emission(redis, decision.entity_id)
+        if not should_emit(decision, last, now_utc()):
+            log.info(
+                "scheduler.flash_gold.skipped_no_change",
+                direction=decision.direction,
+            )
+            return
+
+        async with session_maker() as session:
+            await annotate_near_macro_event(session, decision)
+            await publish_flash_signal(session, redis, decision)
+            await session.commit()
+        await record_emission(redis, decision.entity_id, decision)
+    except Exception as exc:  # noqa: BLE001
+        log.error("scheduler.flash_gold.error", error=str(exc))
 
 
 async def _run_briefing(session_maker, redis) -> None:
@@ -215,6 +250,18 @@ async def main() -> None:
         # principale source de contention Ollama. LLM réservé au swing.
         args=[session_maker, redis, None],
         id="flash_btc",
+        max_instances=1,
+        coalesce=True,
+    )
+    # Flash GOLD via proxy PAXG (ADR-039, SHADOW) : toutes les 5 min, décalé
+    # de 2 min du flash BTC pour lisser les appels Binance. Émission
+    # conditionnelle (transitions + heartbeat) + skip week-end dans le job.
+    scheduler.add_job(
+        _run_flash_gold,
+        "interval",
+        minutes=5,
+        args=[session_maker, redis, None],  # LLM exclu du flash (fix A1), comme BTC
+        id="flash_gold",
         max_instances=1,
         coalesce=True,
     )

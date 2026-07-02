@@ -65,7 +65,7 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
       "Échelle temporelle du signal. flash = minutes-heures, swing = heures-jours, macro = semaines-mois.",
     long:
       "Tik produit des signaux sur 4 horizons en parallèle : " +
-      "flash (TTL 1h, klines 1m Binance, BTC uniquement car Yahoo a 15 min de délai sur GOLD), " +
+      "flash (TTL 1h, klines 1m Binance — BTC direct, GOLD via le proxy PAXG depuis ADR-039), " +
       "swing (TTL 7j, klines 1h, BTC + GOLD), " +
       "macro (semaines-mois, klines 1j), " +
       "micro (ML btc-research-lab en SHADOW strict — mesure, jamais un signal de trade). " +

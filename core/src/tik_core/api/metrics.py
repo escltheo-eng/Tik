@@ -52,7 +52,7 @@ from tik_core.metrics.source_health import (
     compute_source_health,
     summarize,
 )
-from tik_core.scripts.backtest import fetch_btc_history, fetch_gold_history
+from tik_core.scripts.backtest import fetch_btc_history, fetch_gold_history, fetch_paxg_history
 from tik_core.storage.database import get_session
 from tik_core.storage.models import Signal
 from tik_core.storage.schemas import (
@@ -140,8 +140,9 @@ TRACK_RECORD_BINANCE_PARAMS: dict[str, dict] = {
     "micro": {"interval": "15m", "limit": 672},
 }
 TRACK_RECORD_YAHOO_PARAMS: dict[str, dict] = {
-    # Pas de flash GOLD (cf. ADR-005 — Yahoo a 15 min de délai, incompatible
-    # avec l'horizon flash). L'endpoint fail-fast HTTP 400 si on tente.
+    # Yahoo sert le swing/macro GOLD. Le flash GOLD n'est PAS mesuré via Yahoo
+    # (15 min de retard, ADR-005) mais via les klines PAXG Binance (ADR-039) —
+    # voir le branchement fetch_paxg_history plus bas. Micro GOLD : fail-fast 400.
     "swing": {"interval": "1h", "range_param": "60d"},
     "macro": {"interval": "1d", "range_param": "1y"},
 }
@@ -264,7 +265,12 @@ async def get_hit_rate(
                 if entity_id == "BTC":
                     btc_history = await fetch_btc_history(client)
                 elif entity_id == "GOLD":
-                    gold_history = await fetch_gold_history(client)
+                    # ADR-039 : flash GOLD mesuré sur PAXG (source des signaux).
+                    gold_history = await (
+                        fetch_paxg_history(client)
+                        if horizon == "flash"
+                        else fetch_gold_history(client)
+                    )
         except Exception as exc:  # noqa: BLE001
             log.error(
                 "metrics.hit_rate.history_fetch_error",
@@ -452,7 +458,12 @@ async def get_hit_rate_by_veracity(
                 if entity_id == "BTC":
                     btc_history = await fetch_btc_history(client)
                 elif entity_id == "GOLD":
-                    gold_history = await fetch_gold_history(client)
+                    # ADR-039 : flash GOLD mesuré sur PAXG (source des signaux).
+                    gold_history = await (
+                        fetch_paxg_history(client)
+                        if horizon == "flash"
+                        else fetch_gold_history(client)
+                    )
         except Exception as exc:  # noqa: BLE001
             log.error(
                 "metrics.hit_rate_by_veracity.history_fetch_error",
@@ -597,10 +608,10 @@ async def get_signal_track_record(
                 ),
             )
 
-        # Fail-fast ADR-005 : pas de track record flash GOLD (Yahoo 15 min
-        # de délai → incompatible avec mesure 15min/30min). Idem micro (mêmes
-        # fenêtres courtes 15min/30min ; l'ingest whiteliste BTC de toute façon).
-        if signal.horizon in ("flash", "micro") and signal.entity_id == "GOLD":
+        # Fail-fast : pas de track record micro GOLD (l'ingest whiteliste BTC).
+        # Le flash GOLD est désormais mesurable via PAXG (ADR-039) — l'ancien
+        # fail-fast ADR-005 (Yahoo 15 min de retard) ne s'applique plus au flash.
+        if signal.horizon == "micro" and signal.entity_id == "GOLD":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=(
@@ -620,6 +631,14 @@ async def get_signal_track_record(
             async with httpx.AsyncClient(timeout=30.0) as client:
                 if signal.entity_id == "BTC":
                     btc_history = await fetch_btc_history(
+                        client,
+                        interval=btc_params["interval"],
+                        limit=btc_params["limit"],
+                    )
+                elif signal.entity_id == "GOLD" and signal.horizon == "flash":
+                    # ADR-039 : le flash GOLD naît sur PAXG → il est MESURÉ sur
+                    # PAXG (cohérence source→mesure ; Yahoo a 15 min de retard).
+                    gold_history = await fetch_paxg_history(
                         client,
                         interval=btc_params["interval"],
                         limit=btc_params["limit"],
