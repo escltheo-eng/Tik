@@ -34,6 +34,7 @@ EXPECTED_CROSS_CHECKED = {
     "google_news_gold",
     "gdelt_gold",
     "reddit_btc",
+    "hackernews_btc",
     "coingecko_btc",
     "polymarket_btc",
     "polymarket_gold",

@@ -12,6 +12,7 @@ import { Cosmic } from '@/constants/cosmic';
 import { Fonts } from '@/constants/theme';
 import type { SourceHealthItem } from '@/src/api/types';
 import { useSourceHealth } from '@/src/hooks/useSourceHealth';
+import { sourceDisplayName } from '@/src/utils/source-labels';
 
 function statusColor(s: string): string {
   if (s === 'ok') return Cosmic.long;
@@ -23,11 +24,6 @@ function statusLabel(s: string): string {
   if (s === 'ok') return 'Vivante';
   if (s === 'stale') return 'En retard';
   return 'Muette';
-}
-
-function prettyName(name: string): string {
-  const base = name.replace(/_(btc|gold)$/i, '').replace(/_/g, ' ').trim();
-  return base.replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 function ageLabel(age: number | null): string {
@@ -52,7 +48,7 @@ export function CosmicSourceHealth() {
 
   const onDot = (s: SourceHealthItem) => {
     Alert.alert(
-      `${prettyName(s.name)}${s.critical ? ' ★' : ''}`,
+      `${sourceDisplayName(s.name)}${s.critical ? ' ★' : ''}`,
       `${statusLabel(s.status)} · ${ageLabel(s.age_seconds)}${s.note ? `\n\n${s.note}` : ''}`,
       [{ text: 'OK' }],
     );
@@ -87,7 +83,7 @@ export function CosmicSourceHealth() {
                 ]}
               />
               <Text style={styles.starLabel} numberOfLines={1}>
-                {prettyName(s.name)}
+                {sourceDisplayName(s.name)}
               </Text>
             </Pressable>
           );

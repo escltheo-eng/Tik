@@ -16,6 +16,7 @@ import { Cosmic, directionMeta } from '@/constants/cosmic';
 import { Fonts } from '@/constants/theme';
 import type { Signal } from '@/src/api/types';
 import { formatAmplitudePct, horizonLabel } from '@/src/utils/amplitude';
+import { goldCaveat } from '@/src/utils/gold-caveat';
 import { timeAgo } from '@/src/utils/time';
 
 interface Props {
@@ -27,6 +28,7 @@ interface Props {
 export function CosmicSignalRow({ signal, showChoppy, onChoppyPress }: Props) {
   const router = useRouter();
   const dir = directionMeta(signal.direction);
+  const caveat = goldCaveat(signal);
 
   return (
     <Pressable
@@ -72,6 +74,10 @@ export function CosmicSignalRow({ signal, showChoppy, onChoppyPress }: Props) {
           </>
         ) : null}
       </View>
+
+      {/* Caveat GOLD (Garde-fou 2-bis) : un « conv 100 % » GOLD ne doit JAMAIS
+          ressembler à une invitation à trader — hit mesuré 4,8 %. */}
+      {caveat ? <Text style={styles.caveatTag}>{caveat}</Text> : null}
 
       {/* Tag « court terme indécis » (flash BTC haché) */}
       {showChoppy ? (
@@ -146,6 +152,17 @@ const styles = StyleSheet.create({
   metricSep: {
     color: Cosmic.textFaint,
     fontSize: 12,
+  },
+  caveatTag: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#f5b971',
+    backgroundColor: 'rgba(245, 158, 66, 0.14)',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+    overflow: 'hidden',
+    lineHeight: 14,
   },
   choppyWrap: {
     alignSelf: 'flex-start',
