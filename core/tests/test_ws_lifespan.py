@@ -231,6 +231,88 @@ def test_ws_module_continues_on_payload_parse_error() -> None:
     )
 
 
+# ============================================================================
+# REGRESSION GUARD Bug 16 — pubsub.listen() crashe sur read idle (redis-py 8)
+# ============================================================================
+# CLAUDE.md section 9 Bug 16 (fixé 2026-06-15) : en redis-py >= 8.0,
+# `pubsub.listen()` lève `redis.exceptions.TimeoutError` après ~5 s SANS
+# message (read idle), même avec socket_timeout=None. Comme les signaux Tik
+# arrivent toutes les 5-30 min, chaque connexion WS crashait ~toutes les 5 s
+# entre deux signaux → reconnexion client en boucle (mesuré : 48 reconnexions
+# en 30 min) + signaux manqués dans les trous. Le fix remplace `listen()` par
+# `pubsub.get_message(ignore_subscribe_messages=True, timeout=...)` dans une
+# boucle `while True`, avec `continue` sur TimeoutError (inactivité normale)
+# et `break` sur RedisError (vraie panne).
+#
+# Pourquoi ce garde-fou « code source » (le pendant de ceux du Bug 10) : le
+# test d'intégration `test_ws_disconnects_cleanly_and_app_stays_healthy` est
+# SKIPPÉ en CI sans Redis → si quelqu'un remettait un `pubsub.listen()`, la
+# CI ne verrait RIEN (le bug ne se révèle qu'en runtime avec un vrai Redis —
+# exactement comme en 2026-06-15). Ce test est donc la seule protection CI
+# contre cette régression.
+
+
+def test_ws_module_uses_get_message_not_listen() -> None:
+    """SMOKE TEST source code — garde-fou Bug 16 (régression redis-py 8.0).
+
+    Vérifie que la boucle WS lit via `pubsub.get_message(` et qu'aucun
+    `pubsub.listen(` n'a été réintroduit dans le CODE de ws.py.
+    """
+    from pathlib import Path
+
+    ws_src = Path(__file__).parent.parent / "src" / "tik_core" / "api" / "ws.py"
+    source = ws_src.read_text(encoding="utf-8")
+
+    # On ne contrôle que le CODE : les commentaires de ws.py citent l'ancien
+    # `pubsub.listen()` pour documenter le Bug 16 — on strippe la partie
+    # commentée de chaque ligne avant les assertions.
+    code = "\n".join(line.split("#", 1)[0] for line in source.splitlines())
+
+    assert "pubsub.get_message(" in code, (
+        "Bug 16 régression : `pubsub.get_message(` absent du code de ws.py. "
+        "La boucle WS doit lire le pubsub via get_message(timeout=...) et "
+        "traiter l'inactivité comme normale (continue sur TimeoutError). "
+        "Cf. CLAUDE.md section 9 Bug 16."
+    )
+    assert "pubsub.listen(" not in code, (
+        "Bug 16 régression : `pubsub.listen(` réintroduit dans ws.py. En "
+        "redis-py >= 8.0, listen() lève redis TimeoutError après ~5 s sans "
+        "message → le handler WS meurt entre deux signaux → reconnexion en "
+        "boucle côté dashboard + signaux manqués. Utiliser "
+        "pubsub.get_message(timeout=...) + continue sur TimeoutError. "
+        "Cf. CLAUDE.md section 9 Bug 16."
+    )
+
+
+def test_ws_module_finally_cleanup_is_defensive() -> None:
+    """SMOKE TEST — chaque étape du `finally` de ws_signals est protégée.
+
+    Audit 2026-07-02 : si la boucle sort sur RedisError (Redis down), un
+    `punsubscribe` NON protégé lève à son tour dans le finally → les
+    `pubsub.aclose()` / `redis.aclose()` suivants sautent → fuite d'une
+    connexion Redis par client WS pendant toute la panne (même famille que
+    Bug 10/16 : ressources non libérées). Le fix enveloppe chaque étape dans
+    son propre try/except avec un log debug dédié — les 3 clés de log
+    ci-dessous sont la signature de ce cleanup défensif.
+    """
+    from pathlib import Path
+
+    ws_src = Path(__file__).parent.parent / "src" / "tik_core" / "api" / "ws.py"
+    source = ws_src.read_text(encoding="utf-8")
+
+    for log_key in (
+        "ws.cleanup_punsubscribe_failed",
+        "ws.cleanup_pubsub_aclose_failed",
+        "ws.cleanup_redis_aclose_failed",
+    ):
+        assert log_key in source, (
+            f"Régression : le log '{log_key}' a été retiré de ws.py — le "
+            "finally n'est plus défensif étape par étape. Si punsubscribe "
+            "lève (Redis down), les aclose() sautent → fuite de connexion "
+            "Redis par client WS (audit 2026-07-02)."
+        )
+
+
 def test_ws_disconnects_cleanly_and_app_stays_healthy(ws_api_key: str) -> None:
     """INTEGRATION TEST Bug 10 — ferme une WS et publie sur Redis derrière.
 

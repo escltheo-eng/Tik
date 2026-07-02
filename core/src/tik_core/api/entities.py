@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tik_core.auth import AuthContext, require_scope
@@ -49,7 +50,17 @@ async def create_entity(
         updated_at=now_utc_naive(),
     )
     session.add(entity)
-    await session.flush()
+    try:
+        await session.flush()
+    except IntegrityError as exc:
+        # TOCTOU (audit 2026-07-02) : deux créations concurrentes peuvent toutes
+        # les deux passer le check d'existence ci-dessus avant que la première
+        # n'ait committé — la contrainte de clé primaire tranche alors côté DB.
+        # On traduit la violation en 409 explicite au lieu d'un 500 opaque.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Entity '{payload.id}' already exists",
+        ) from exc
     return entity
 
 

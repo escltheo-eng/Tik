@@ -81,6 +81,20 @@ def test_cutoff_history_naive_subtracts_days():
 # =============================================================================
 
 
+class _MockNested:
+    """Faux SAVEPOINT (`session.begin_nested()`) — context manager async no-op.
+
+    `upsert_macro_event` isole chaque upsert dans un savepoint depuis le fix
+    S-2 (audit 2026-07-02) ; les mocks doivent donc exposer `begin_nested`.
+    """
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        return None
+
+
 class _MockSession:
     def __init__(self, parent):
         self.parent = parent
@@ -90,6 +104,10 @@ class _MockSession:
 
     async def __aexit__(self, *args):
         return None
+
+    def begin_nested(self):
+        self.parent.begin_nested_count += 1
+        return _MockNested()
 
     async def execute(self, stmt):
         self.parent.execute_count += 1
@@ -103,6 +121,7 @@ class _MockSessionMaker:
     def __init__(self, raise_on_execute: Exception | None = None):
         self.execute_count = 0
         self.commit_count = 0
+        self.begin_nested_count = 0
         self._raise = raise_on_execute
 
     def __call__(self):
@@ -117,6 +136,10 @@ class _MockSessionMaker:
 
                 async def __aexit__(self_inner, *args):
                     return None
+
+                def begin_nested(self_inner):
+                    self_inner.parent.begin_nested_count += 1
+                    return _MockNested()
 
                 async def execute(self_inner, stmt):
                     raise self._raise
@@ -170,6 +193,9 @@ async def test_upsert_many_executes_per_event():
     assert n == 2
     assert sm.execute_count == 2
     assert sm.commit_count == 1
+    # GUARD fix S-2 (audit 2026-07-02) : un SAVEPOINT par event — sans lui, un
+    # event invalide avorterait la transaction Postgres du batch entier.
+    assert sm.begin_nested_count == 2
 
 
 async def test_upsert_many_swallows_db_error():

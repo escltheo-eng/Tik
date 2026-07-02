@@ -45,6 +45,17 @@ Limitations connues :
   constante (1 ligne).
 - Réutilise evaluate_constant_baseline / evaluate_random_baseline /
   evaluate_tik_baseline de backtest.py. Ne ré-implémente rien.
+- Significativité (audit 2026-07-02, constat C-1 CRITIQUE) : les signaux
+  swing sont émis toutes les 15-30 min avec un horizon 5 j → fenêtres
+  forward chevauchantes à ~99 %. Les z/p et verdicts « sig. » des tests
+  appariés sont donc calculés UNIQUEMENT sur le sous-échantillon NON
+  chevauchant (signaux espacés ≥ horizon). N_total ET N_indépendant sont
+  affichés ; les stats descriptives (hit rate, gains) restent plein
+  échantillon.
+- Couverture klines : Binance plafonne à 1000 bougies (~41,6 j en 1h). Si
+  --since-iso déborde la couverture réelle, un WARNING explicite est
+  imprimé et les signaux hors couverture sont exclus via un compteur
+  dédié (pas fondus dans « ignorés »).
 """
 
 import argparse
@@ -67,7 +78,10 @@ from tik_core.scripts.backtest import (
     fetch_btc_history,
     fetch_gold_history,
     find_closest_price,
+    format_coverage_warning,
+    klines_coverage_start,
     paired_gain_significance,
+    split_out_of_coverage,
 )
 from tik_core.storage.models import Signal
 from tik_core.utils.time import now_utc_naive
@@ -193,6 +207,7 @@ def _print_level_section(
     min_veracity: float,
     threshold_pct: float,
     min_samples: int,
+    horizon_td: timedelta,
 ) -> None:
     filtered = _filter_by_veracity(results, min_veracity)
     n = len(filtered)
@@ -264,10 +279,15 @@ def _print_level_section(
         print(f"{name:<16} | {hit_str:<14} | {s['hit_rate'] * 100:6.1f}% | {s['avg_gain']:+8.2f}%")
     print()
 
-    _print_trend_baseline_comparison(filtered, min_samples=min_samples)
+    _print_trend_baseline_comparison(filtered, horizon_td=horizon_td, min_samples=min_samples)
 
 
-def _print_trend_baseline_comparison(filtered: list[dict], *, min_samples: int) -> None:
+def _print_trend_baseline_comparison(
+    filtered: list[dict],
+    *,
+    horizon_td: timedelta,
+    min_samples: int,
+) -> None:
     """Tik vs baselines constantes : test apparié sur le GAIN + significativité.
 
     Répond à « Tik bat-il la TENDANCE, ou seulement Random ? ». En marché
@@ -275,18 +295,39 @@ def _print_trend_baseline_comparison(filtered: list[dict], *, min_samples: int) 
     baseline constante (souvent Always SHORT/LONG). Si Tik ne bat pas
     *significativement* la meilleure baseline constante sur le gain → aucun
     edge directionnel démontré au-dessus de la tendance.
+
+    Significativité (audit 2026-07-02, constat C-1 CRITIQUE) : les signaux
+    sont émis toutes les 15-30 min alors que l'horizon de mesure couvre des
+    heures/jours → les fenêtres forward se chevauchent à ~99 % et un z-test
+    plein échantillon est invalide (p massivement gonflée). Les colonnes z/p
+    et les verdicts « sig. » sont donc calculés UNIQUEMENT sur le
+    sous-échantillon non chevauchant (signaux espacés ≥ horizon, cf.
+    `backtest.non_overlapping_subsample`). Les gains (Tik gain, base gain,
+    Δ gain) restent descriptifs plein échantillon. N_total ET N_indépendant
+    sont affichés.
     """
     print("--- Tik vs baselines constantes : test apparié sur le GAIN ---")
     print("    (Tik ajoute-t-il de l'alpha AU-DESSUS de la tendance, ou est-il colinéaire ?)\n")
 
     tests = [
         t
-        for t in (paired_gain_significance(filtered, d) for d in ("short", "long", "neutral"))
+        for t in (
+            paired_gain_significance(filtered, d, horizon_td=horizon_td)
+            for d in ("short", "long", "neutral")
+        )
         if t is not None
     ]
     if not tests:
         print("    (aucun signal)\n")
         return
+
+    n_total = tests[0]["n"]
+    n_indep = tests[0]["n_indep"]
+    print(f"    N_total = {n_total} signaux · N_indépendant = {n_indep} fenêtres non chevauchantes")
+    print(
+        "    (z/p et verdicts calculés sur le NON chevauchant uniquement ; "
+        "gains descriptifs plein échantillon)\n"
+    )
 
     print(
         f"    {'comparaison':<18} | {'Tik gain':>9} | {'base gain':>9} | "
@@ -295,7 +336,10 @@ def _print_trend_baseline_comparison(filtered: list[dict], *, min_samples: int) 
     print("    " + "-" * 92)
     for t in tests:
         if t["p"] is None:
-            verdict = "n/a (Tik ≡ baseline)"
+            if t["n_indep"] is not None and t["n_indep"] < 2:
+                verdict = "n/a (N_indép < 2)"
+            else:
+                verdict = "n/a (Tik ≡ baseline)"
         elif t["p"] < 0.05 and t["mean_diff"] > 0:
             verdict = "Tik GAGNE (sig.)"
         elif t["p"] < 0.05 and t["mean_diff"] < 0:
@@ -311,13 +355,15 @@ def _print_trend_baseline_comparison(filtered: list[dict], *, min_samples: int) 
         )
 
     # Conclusion : Tik bat-il la MEILLEURE baseline constante (par gain) ?
+    # Le « sig. » vient du sous-échantillon non chevauchant (n_indep).
     best = max(tests, key=lambda t: t["baseline_gain"])
     print()
     if best["mean_diff"] > 0 and best["p"] is not None and best["p"] < 0.05:
         print(
             f"    ✅ Tik AJOUTE de l'alpha au-dessus de la meilleure baseline "
             f"(Always {best['baseline_direction'].upper()} {best['baseline_gain']:+.2f}%) : "
-            f"Δ {best['mean_diff']:+.2f}% p={best['p']:.3f}"
+            f"Δ {best['mean_diff']:+.2f}% p={best['p']:.3f} "
+            f"(p sur N_indépendant={best['n_indep']})"
         )
     else:
         pstr = f"p={best['p']:.3f}" if best["p"] is not None else "p=n/a"
@@ -326,8 +372,11 @@ def _print_trend_baseline_comparison(filtered: list[dict], *, min_samples: int) 
             f"(Always {best['baseline_direction'].upper()} {best['baseline_gain']:+.2f}%) : "
             f"Tik {best['tik_gain']:+.2f}%, Δ {best['mean_diff']:+.2f}% {pstr}"
         )
-    if best["n"] < min_samples:
-        print(f"    ⚠ N={best['n']} < {min_samples} — conclusion fragile (échantillon faible).")
+    if best["n_indep"] is not None and best["n_indep"] < min_samples:
+        print(
+            f"    ⚠ N_indépendant={best['n_indep']} < {min_samples} — trop peu de fenêtres "
+            "non chevauchantes pour établir une significativité robuste."
+        )
     print()
 
 
@@ -491,6 +540,26 @@ async def main() -> None:
     print(f"  → BTC : {len(btc_history)} klines {btc_interval}")
     print(f"  → GOLD : {len(gold_history)} klines {gold_interval}")
 
+    # Couverture réelle des klines vs fenêtre demandée (--since-iso) — audit
+    # 2026-07-02 : Binance plafonne à 1000 bougies (~41,6 j en 1h), une mesure
+    # « depuis le 17/05 » lancée trop tard est silencieusement amputée de ses
+    # premiers jours. On rend la troncature explicite + compteur dédié.
+    coverage = {
+        "BTC": klines_coverage_start(btc_history),
+        "GOLD": klines_coverage_start(gold_history),
+    }
+    eligible, excluded_by_entity = split_out_of_coverage(eligible, coverage)
+    for entity, cov in coverage.items():
+        if cov is not None:
+            print(
+                f"  → couverture klines {entity} : depuis {cov.isoformat()} UTC "
+                f"(fenêtre demandée depuis {since_dt.isoformat()})"
+            )
+        warning = format_coverage_warning(entity, cov, since_dt, excluded_by_entity.get(entity, 0))
+        if warning:
+            print(warning)
+    n_excluded_coverage = sum(excluded_by_entity.values())
+
     # Évaluation
     print("\nÉvaluation signaux...")
     results: list[dict] = []
@@ -507,7 +576,10 @@ async def main() -> None:
             skipped += 1
             continue
         results.append(ev)
-    print(f"  → {len(results)} évalués, {skipped} ignorés (prix hors fenêtre)\n")
+    print(
+        f"  → {len(results)} évalués, {skipped} ignorés (prix hors fenêtre), "
+        f"{n_excluded_coverage} exclus (antérieurs à la couverture klines)\n"
+    )
 
     if not results:
         print("Aucun signal évaluable. Fin.\n")
@@ -530,6 +602,7 @@ async def main() -> None:
             min_veracity=min_v,
             threshold_pct=args.threshold,
             min_samples=args.min_samples,
+            horizon_td=horizon_td,
         )
 
     print()

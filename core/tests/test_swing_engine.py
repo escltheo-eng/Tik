@@ -144,11 +144,12 @@ def test_compute_dxy_bias_main_zones(past, recent, expected_bias, expected_zone)
     history = _make_dxy_history(past, recent)
     result = _compute_dxy_bias(history)
     assert result is not None
-    bias, zone, recent_v, past_v = result
+    bias, zone, recent_v, past_v, n_steps = result
     assert bias == expected_bias
     assert zone == expected_zone
     assert recent_v == recent
     assert past_v == past
+    assert n_steps == 5  # historique nominal : variation sur 5 pas
 
 
 def test_compute_dxy_bias_empty_history():
@@ -180,6 +181,9 @@ def test_compute_dxy_bias_filters_invalid_values():
     # variation = (102-100)/100*100 = +2% → strong_up
     assert result[0] == -1.0
     assert result[1] == "dxy_strong_up"
+    # 5 valeurs valides seulement → variation sur 4 pas, exposé pour que le
+    # libellé « var {n}d » soit exact (audit 2026-07-02)
+    assert result[4] == 4
 
 
 def test_compute_dxy_bias_zero_past_returns_none():

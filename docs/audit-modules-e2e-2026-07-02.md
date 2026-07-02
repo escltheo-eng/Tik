@@ -606,6 +606,97 @@ ne le tire plus en transitif). Après installation de pytz : **826/826 verts**.
 
 ---
 
+## 12. Statut des corrections (2026-07-02, même journée)
+
+Suite à la demande « corrige tout », les constats actionnables ont été corrigés
+le jour même, sur la même branche. **Vérification : suite Tik complète
+1750/1750 verte (1610 + 140 nouveaux tests), ruff check + format verts sur
+tous les fichiers modifiés ; suite lab 875/875 verte.**
+
+### Corrigé — Tik
+
+- **C-1 CRITIQUE** ✅ : helper `non_overlapping_subsample` partagé dans
+  `backtest.py` ; les p-values/verdicts de `measure_post_fix_hit_rates` et
+  `backtest_dual_lens` viennent désormais du sous-échantillon non chevauchant
+  (N_total ET N_indépendant affichés). Convention `neutral = 0` unifiée
+  (⚠ effet de bord assumé : l'`avg_gain_pct` des signaux neutral affiché par
+  `/metrics/hit_rate` passe de −|delta| à 0).
+- **Look-ahead COT** ✅ (`COT_PUBLICATION_LAG_DAYS = 3`, mardi → vendredi de
+  publication) ; **look-ahead DXY** ✅ (`--dxy-lag-days`, défaut 7 j, à affiner
+  contre ALFRED) ; **troncature klines** ✅ (couverture réelle vs fenêtre
+  demandée + compteur dédié + WARNING) ; **multiple-testing des recos** ✅
+  (Bonferroni par cellule, étiquetage « indicatif » sinon).
+- **M-1 source_health** ✅ : CryptoCompare 3h→36h, GDELT 2h→6h + nouveau module
+  `aggregator/polling.py` (source unique des intervalles) + test croisé
+  `max_age_s ≥ 3× intervalle` + verrous anti-régression des intervalles
+  anti-quota (Bug 15).
+- **Ingesters** ✅ : écritures Redis des 8 ingesters anciens sous try/except
+  (pattern polymarket), supervision des tasks (`task_supervision.py`, log
+  `ingester.task_died`), `stop()` défensifs, TTL 25h sur `tik.macro.last.*`,
+  warm-up breaking-news en flag processus (plus d'expiration à 7 j), intervalle
+  breaking-news configurable (défaut 300 s pour protéger le quota Google News),
+  backoff Reddit sur 403 répétés (6 h, auto-récupération), docstrings périmées
+  corrigées.
+- **M-2 Telegram** ✅ : `escape_html` appliqué à toutes les interpolations
+  externes (briefing, alerts), troncature 4096, retry 429 (`retry_after`) et
+  5xx/timeout — nouveau `test_telegram.py`.
+- **E2E-1 publisher** ✅ : validation Pydantic fail-fast des
+  evidence/triggers/counter_scenarios au publish. **S-2 macro** ✅ : SAVEPOINT
+  par event dans `upsert_macro_event` (un event invalide ne perd plus le
+  batch). **WS** ✅ : `finally` défensif + garde-fou « code source » Bug 16.
+- **API** ✅ : `/openapi.json` masqué en production, filtre de redaction
+  `api_key` dans les logs uvicorn (`ApiKeyRedactionFilter`), 409 sur TOCTOU
+  entities, 422 sur `signals/ingest` avec entity inconnue, tests HTTP
+  `/entities`, **test générique « toute route sans clé → 401 »** (verrouille
+  l'auth opt-in pour les routes futures).
+- **Scoring (gardes)** ✅ : DataFrame vide → cycle survivant + advisory
+  `technical_note=insufficient_history` (testé bout-en-bout fetch mocké),
+  momentum 15m off-by-one corrigé (iloc[-16]), libellé DXY « var {n}d »
+  dynamique, docstring `get_source_score` honnête.
+- **Dashboard** ✅ : `parseUtcIso` dans `outcome.ts` (dernier bypass), flag
+  d'annulation local au cycle dans `useDashboardKpis`, fusion (au lieu
+  d'écrasement) de l'historique persisté à l'hydratation Alerts/Watchlist,
+  `busy` périmé retiré, typage `HttpClient` propre — `tsc --noEmit` vert.
+
+### Corrigé — btc-research-lab
+
+- **L-4** ✅ bougie en formation exclue du bootstrap (critère `close_time`
+  passé) ; **L-5** ✅ rattrapage de gap borné (500/TF) à chaque connexion WS ;
+  **L-6** ✅ watchdog staleness (`WS_STALE_RECONNECT_S=90`, `ws_connected=False`
+  pendant le trou) ; **L-7** ✅ résolution contiguë uniquement (tolérance ±10 %,
+  gap avéré → `unresolvable_at_ms`, migration schema v7, exclu des
+  stats/calibration) + même contrôle avant `learn_one` online.
+- **L-1** ✅ baselines `always_short`/`always_long` + contrat de discipline
+  `passes_discipline_contract` (battre la meilleure baseline de tendance) +
+  `always_short` auditée par le red-team ; **L-2** ✅ Sharpe/CIs de tête sur
+  sous-échantillon non chevauchant (pas 21 j) ; **L-3** ✅ entrée décalée d'une
+  barre dans le harnais P1 (le verdict RÉFUTÉ ne peut pas s'inverser — le fix
+  dégrade strictement la perf mesurée ; à reconfirmer sur la DB réelle).
+- Purge walk-forward (`label_horizon`) + test anti-fuite durci (inversion de
+  signe), ligne morte `sort_values` supprimée, gp_search honnête (baseline
+  sélectionnée sur VAL), `±inf → NaN` dans labels, fin des `fillna(0)`
+  masquant les gaps (evaluation + robustness), `pytz` dans requirements.
+
+### Volontairement NON corrigé (décisions réservées)
+
+- **SDK** : gelé (ADR-022) — les 2 MAJEURS « au dégel » restent documentés
+  dans ce rapport, à traiter à la levée du gel, pas avant.
+- **cross_validator (zero-MAD, dispersion outliers incluse)** : recalibration
+  explicitement différée par ADR-026 (Axe #1 — ne pas gonfler la veracity).
+- **TLS devant `IP:8200`** (D-1/A-1 réseau) : infra VPS, pas du code — la
+  redaction des logs est faite, le chiffrement du transport reste à décider
+  (reverse proxy).
+- **Resync REST de l'onglet Alertes** (D-2) : nécessite un endpoint backend
+  d'historique d'alertes — décision produit.
+- **Rétention/purge des tables** (S-1) : politique de rétention à décider
+  (dédup `headlines`, `drop_chunks` Timescale) — nécessite un choix
+  utilisatrice sur la profondeur d'historique à garder.
+- **Correction rétroactive des prédictions lab déjà mal résolues** : le fix
+  L-7 est forward-only ; re-labelliser ou invalider l'historique contaminé
+  est une décision de mesure à prendre avant la prochaine évaluation.
+
+---
+
 *Audit réalisé en environnement isolé — aucune donnée ni service de production
-touché. Les fichiers de production n'ont pas été modifiés : ce rapport est le
-seul livrable.*
+touché. Rapport initial livré comme seul artefact, puis corrections appliquées
+le même jour sur demande (cf. section 12).*

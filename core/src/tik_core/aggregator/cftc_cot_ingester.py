@@ -23,6 +23,7 @@ import structlog
 from redis.asyncio import Redis
 
 from tik_core.aggregator.base import BaseIngester
+from tik_core.aggregator.task_supervision import supervise_task
 
 log = structlog.get_logger()
 
@@ -46,7 +47,7 @@ class CftcCotIngester(BaseIngester):
 
     async def start(self) -> None:
         self._running = True
-        self._task = asyncio.create_task(self._run())
+        self._task = supervise_task(asyncio.create_task(self._run()), self.name)
         log.info("cftc_cot.ingester.started", interval_s=self.interval_s)
 
     async def stop(self) -> None:
@@ -57,6 +58,10 @@ class CftcCotIngester(BaseIngester):
                 await self._task
             except asyncio.CancelledError:
                 pass
+            except Exception as exc:  # noqa: BLE001
+                # Task déjà morte : on logge sans propager pour ne pas casser
+                # l'arrêt gracieux du runner (audit 2026-07-02).
+                log.warning("cftc_cot.ingester.stop_error", error=str(exc))
         log.info("cftc_cot.ingester.stopped")
 
     async def _fetch(self, client: httpx.AsyncClient) -> dict | None:
@@ -121,13 +126,20 @@ class CftcCotIngester(BaseIngester):
                 point = await self._fetch(client)
                 if point is not None:
                     payload = json.dumps(point)
-                    await self.redis.setex(REDIS_KEY, REDIS_TTL_S, payload)
-                    await self.redis.publish(REDIS_KEY, payload)
-                    log.info(
-                        "cftc_cot.published",
-                        report_date=point["report_date"],
-                        mm_long=point["mm_long"],
-                        mm_short=point["mm_short"],
-                        mm_net_pct=point["mm_net_pct"],
-                    )
+                    try:
+                        # Écritures Redis protégées : une panne Redis transitoire
+                        # ne doit pas tuer la boucle — on log et on retente au
+                        # cycle suivant (pattern polymarket, audit 2026-07-02).
+                        await self.redis.setex(REDIS_KEY, REDIS_TTL_S, payload)
+                        await self.redis.publish(REDIS_KEY, payload)
+                    except Exception as exc:  # noqa: BLE001
+                        log.warning("cftc_cot.redis.error", error=str(exc))
+                    else:
+                        log.info(
+                            "cftc_cot.published",
+                            report_date=point["report_date"],
+                            mm_long=point["mm_long"],
+                            mm_short=point["mm_short"],
+                            mm_net_pct=point["mm_net_pct"],
+                        )
                 await asyncio.sleep(self.interval_s)

@@ -42,6 +42,7 @@ import asyncio
 import calendar
 import hashlib
 import json
+import os
 import re
 from datetime import UTC, datetime
 from urllib.parse import quote_plus
@@ -52,6 +53,7 @@ import structlog
 from redis.asyncio import Redis
 
 from tik_core.aggregator.base import BaseIngester
+from tik_core.aggregator.task_supervision import supervise_task
 from tik_core.config import Settings, get_settings
 from tik_core.notify.telegram import send_message
 
@@ -61,7 +63,29 @@ USER_AGENT = "Mozilla/5.0 (compatible; TikBot/0.1)"
 GOOGLE_NEWS_RSS_TPL = "https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en"
 
 # --- Paramètres (pifomètre raisonné, à calibrer post-usage) ---
-INTERVAL_S = 90  # polling rapide mais doux pour des flux gratuits
+# Intervalle de polling. Défaut 300 s (5 min) — l'ancien 90 s générait
+# ~4 800 req/jour vers news.google.com (5 flux Google News par cycle) depuis la
+# MÊME IP que l'overlay sentiment Google News (~96 req/jour), qui est l'un des
+# 2 seuls overlays BTC actifs. Précédents sur cette IP : Reddit bannie à
+# ~96 req/jour (Bug 11), GDELT throttlé 429 (audit 2026-06-11). Arbitrage
+# latence/quota : à 300 s on tombe à ~1 440 req/jour pour une latence d'alerte
+# max de +3,5 min — acceptable pour de l'alerting best-effort (le délai humain
+# de réaction est déjà de plusieurs minutes). Configurable via l'env
+# TIK_BREAKING_NEWS_INTERVAL_S (borné ≥ 60 s pour ne pas retomber dans le
+# matraquage).
+INTERVAL_S = 300
+
+
+def _env_interval_s(default: int = INTERVAL_S) -> int:
+    """Lit TIK_BREAKING_NEWS_INTERVAL_S (secondes), borné ≥ 60. Défaut sinon."""
+    raw = os.environ.get("TIK_BREAKING_NEWS_INTERVAL_S", "")
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return default
+    return max(60, value)
+
+
 RECENCY_H = 12  # on n'alerte que des titres publiés dans les 12 dernières heures
 DEDUP_TTL_S = 48 * 3600  # un titre n'alerte qu'une fois sur 48 h
 # Étranglement PAR CATÉGORIE : sans ça, un seul événement (ex. Trump/Iran) génère
@@ -75,7 +99,15 @@ RECENT_TTL_S = 36 * 3600
 
 SEEN_KEY_TPL = "tik.breaking.seen:{h}"  # SETNX par titre (dédup atomique)
 COOLDOWN_KEY_TPL = "tik.breaking.cd:{cat}"  # cooldown par catégorie
-WARM_KEY = "tik.breaking.warm"  # flag : 1er démarrage (warm-up sans alerter)
+# Warm-up « 1er démarrage » : le flag runtime vit EN MÉMOIRE d'instance
+# (self._first_cycle_done). La clé Redis ci-dessous ne sert QUE de garde
+# anti-redémarrage-fréquent : tant qu'elle existe, un process fraîchement
+# redémarré n'avale pas un cycle d'alertes de plus (la dédup 48 h est déjà
+# amorcée). Avant l'audit 2026-07-02, la clé Redis (SET NX EX 7 j) était le
+# SEUL flag : elle expirait sur un process qui tourne en continu → tous les
+# ~7 jours un cycle d'alertes était avalé en silence (items consommés par la
+# dédup sans alerte Telegram).
+WARM_KEY = "tik.breaking.warm"  # garde anti-redémarrage-fréquent (voir ci-dessus)
 WARM_TTL_S = 7 * 24 * 3600
 RECENT_KEY = "tik.breaking.recent"  # liste JSON pour le dashboard
 
@@ -504,18 +536,23 @@ class BreakingNewsIngester(BaseIngester):
         *,
         settings: Settings | None = None,
         feeds: list[dict[str, str]] | None = None,
-        interval_s: int = INTERVAL_S,
+        interval_s: int | None = None,
     ) -> None:
         self.redis = redis
         self.settings = settings or get_settings()
         self.feeds = feeds or DEFAULT_FEEDS
-        self.interval_s = interval_s
+        # None → env TIK_BREAKING_NEWS_INTERVAL_S, défaut 300 s (voir INTERVAL_S).
+        self.interval_s = interval_s if interval_s is not None else _env_interval_s()
         self._running = False
         self._task: asyncio.Task | None = None
+        # Warm-up « premier cycle utile après démarrage du process » : flag en
+        # MÉMOIRE (la clé Redis WARM_KEY ne sert que de garde anti-redémarrage
+        # fréquent — cf. commentaire près de WARM_KEY, audit 2026-07-02).
+        self._first_cycle_done = False
 
     async def start(self) -> None:
         self._running = True
-        self._task = asyncio.create_task(self._run())
+        self._task = supervise_task(asyncio.create_task(self._run()), self.name)
         log.info(
             "breaking_news.ingester.started",
             n_feeds=len(self.feeds),
@@ -530,6 +567,10 @@ class BreakingNewsIngester(BaseIngester):
                 await self._task
             except asyncio.CancelledError:
                 pass
+            except Exception as exc:  # noqa: BLE001
+                # Task déjà morte : on logge sans propager pour ne pas casser
+                # l'arrêt gracieux du runner (audit 2026-07-02).
+                log.warning("breaking_news.ingester.stop_error", error=str(exc))
         log.info("breaking_news.ingester.stopped")
 
     async def _fetch_feed(self, client: httpx.AsyncClient, feed: dict[str, str]) -> list[dict]:
@@ -567,9 +608,7 @@ class BreakingNewsIngester(BaseIngester):
         items retenus. `dry_run` : ne touche ni Redis ni Telegram (preview)."""
         now = datetime.now(tz=UTC)
         async with httpx.AsyncClient() as client:
-            batches = await asyncio.gather(
-                *(self._fetch_feed(client, f) for f in self.feeds)
-            )
+            batches = await asyncio.gather(*(self._fetch_feed(client, f) for f in self.feeds))
         raw_items = [it for batch in batches for it in batch]
 
         # Filtre mots-clés + fraîcheur.
@@ -606,11 +645,21 @@ class BreakingNewsIngester(BaseIngester):
         # rafale de tout l'historique récent). Posé SEULEMENT ici (fresh non vide) —
         # sinon un 1er cycle aux flux vides "grillerait" le warm-up et le cycle
         # suivant alerterait sur tout le backlog (finding revue #4).
+        # L'intention « premier cycle après démarrage du process UNIQUEMENT » est
+        # portée par le flag mémoire self._first_cycle_done : une fois le premier
+        # cycle utile passé, on ne re-consulte plus jamais la clé Redis — son
+        # expiration (7 j) sur un process qui tourne ne peut donc plus avaler un
+        # cycle d'alertes (bug audit 2026-07-02). La clé Redis reste posée comme
+        # garde anti-redémarrage-fréquent : si elle existe encore au restart, le
+        # SET NX échoue → pas de warm-up (la dédup 48 h est déjà amorcée) → les
+        # alertes partent dès le 1er cycle post-restart.
         warming = False
-        try:
-            warming = bool(await self.redis.set(WARM_KEY, "1", nx=True, ex=WARM_TTL_S))
-        except Exception as exc:  # noqa: BLE001
-            log.warning("breaking_news.warm_check_error", error=str(exc))
+        if not self._first_cycle_done:
+            try:
+                warming = bool(await self.redis.set(WARM_KEY, "1", nx=True, ex=WARM_TTL_S))
+            except Exception as exc:  # noqa: BLE001
+                log.warning("breaking_news.warm_check_error", error=str(exc))
+            self._first_cycle_done = True
 
         # Traduit les titres frais en français (best-effort, cappé, caché).
         await self._translate_fresh(fresh)
@@ -672,9 +721,7 @@ class BreakingNewsIngester(BaseIngester):
             # tentative reparte (sinon catégorie muette 45 min — finding revue #5).
             for g in groups:
                 try:
-                    await self.redis.delete(
-                        COOLDOWN_KEY_TPL.format(cat=dedup_hash(g["category"]))
-                    )
+                    await self.redis.delete(COOLDOWN_KEY_TPL.format(cat=dedup_hash(g["category"])))
                 except Exception:  # noqa: BLE001
                     pass
         return fresh
@@ -926,9 +973,9 @@ class BreakingNewsIngester(BaseIngester):
                 changed = True
             # Garde l'event tant qu'il reste une horizon à mesurer et qu'il n'est
             # pas trop vieux (sécurité anti-fuite).
-            if len(done) < len(FOLLOWUP_HORIZONS_H) and (
-                now_ts - ev.get("alerted_at", now_ts)
-            ) < (max_h * 3600 + 2 * 3600):
+            if len(done) < len(FOLLOWUP_HORIZONS_H) and (now_ts - ev.get("alerted_at", now_ts)) < (
+                max_h * 3600 + 2 * 3600
+            ):
                 kept.append(ev)
             else:
                 changed = True

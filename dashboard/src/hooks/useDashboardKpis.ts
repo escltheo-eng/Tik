@@ -11,7 +11,7 @@
  *   - série de veracities pour la sparkline
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { searchSignals, getGlobalVeracity } from '@/src/api/endpoints';
 import { TikError } from '@/src/api/errors';
@@ -142,19 +142,22 @@ export function useDashboardKpis(options: UseDashboardKpisOptions = {}): Dashboa
   const [signals24hError, setSignals24hError] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
-  const cancelledRef = useRef(false);
-
-  const refresh = useCallback(async () => {
+  // Audit 2026-07-02 : le flag d'annulation est LOCAL au cycle d'effet
+  // (pattern useSignalFreshness). L'ancien `cancelledRef` partagé était remis
+  // à false au cycle suivant : une requête in-flight de l'ancien cycle
+  // (ancien client après changement de credentials) passait le garde et
+  // écrasait l'état avec des données périmées.
+  const refresh = useCallback(async (isCancelled: () => boolean) => {
     if (!apiKey) return;
     const promises: [Promise<VeracityStatus | null>, Promise<Signal[] | null>] = [
       getGlobalVeracity(client).catch((err: unknown) => {
-        if (cancelledRef.current) return null;
+        if (isCancelled()) return null;
         const msg = err instanceof TikError ? err.message : (err as Error).message;
         setVeracityError(msg);
         return null;
       }),
       searchSignals(client, { sinceHours: windowHours, limit: 500 }).catch((err: unknown) => {
-        if (cancelledRef.current) return null;
+        if (isCancelled()) return null;
         const msg = err instanceof TikError ? err.message : (err as Error).message;
         setSignals24hError(msg);
         return null;
@@ -162,7 +165,7 @@ export function useDashboardKpis(options: UseDashboardKpisOptions = {}): Dashboa
     ];
 
     const [vRes, sRes] = await Promise.all(promises);
-    if (cancelledRef.current) return;
+    if (isCancelled()) return;
     if (vRes !== null) {
       setVeracity(vRes);
       setVeracityError(null);
@@ -174,7 +177,8 @@ export function useDashboardKpis(options: UseDashboardKpisOptions = {}): Dashboa
   }, [client, apiKey, windowHours]);
 
   useEffect(() => {
-    cancelledRef.current = false;
+    let cancelled = false;
+    const isCancelled = () => cancelled;
     if (!apiKey) {
       setLoading(false);
       return;
@@ -182,19 +186,23 @@ export function useDashboardKpis(options: UseDashboardKpisOptions = {}): Dashboa
 
     setLoading(true);
     void (async () => {
-      await refresh();
-      if (!cancelledRef.current) setLoading(false);
+      await refresh(isCancelled);
+      if (!cancelled) setLoading(false);
     })();
 
     const id = setInterval(() => {
-      void refresh();
+      void refresh(isCancelled);
     }, refreshIntervalMs);
 
     return () => {
-      cancelledRef.current = true;
+      cancelled = true;
       clearInterval(id);
     };
   }, [refresh, apiKey, refreshIntervalMs]);
+
+  // Refresh exposé (pull-to-refresh) : jamais annulé — seul le cycle d'effet
+  // interne porte un flag d'annulation.
+  const refreshNow = useCallback(() => refresh(() => false), [refresh]);
 
   const signalsByHorizon = useMemo(() => deriveCounts(signals24h), [signals24h]);
   const lastSignalByEntity = useMemo(
@@ -214,6 +222,6 @@ export function useDashboardKpis(options: UseDashboardKpisOptions = {}): Dashboa
     lastSignalByEntity,
     veracitySeries,
     llmStatsToday,
-    refresh,
+    refresh: refreshNow,
   };
 }

@@ -14,6 +14,15 @@ Motivation (cf. CLAUDE.md Paquet 33) : un hit rate flatteur peut ne pas survivre
 au test du gain ni à la significativité. Ce script applique systématiquement les
 deux lentilles pour éviter le cherry-picking et le multiple-testing.
 
+Chevauchement des fenêtres (audit 2026-07-02, constat C-1 CRITIQUE) : les
+signaux sont émis toutes les 15-30 min alors que l'horizon de mesure couvre
+des heures/jours → les fenêtres forward partagent jusqu'à ~99 % de leur
+mouvement, et un test z plein échantillon gonfle massivement la
+significativité. Les p-values (donc sig0.05 / Bonferroni) sont calculées
+UNIQUEMENT sur le sous-échantillon NON chevauchant de chaque groupe (signaux
+espacés ≥ horizon, colonne `nInd`). hit%, gain et baseline random restent
+descriptifs plein échantillon.
+
 Usage :
     python -m tik_core.scripts.backtest_dual_lens \\
         --signal-horizon swing --entity BTC --horizon-hours 6 --threshold 0.30
@@ -42,6 +51,7 @@ from tik_core.scripts.backtest import (
     evaluate_random_baseline,
     fetch_btc_history,
     fetch_gold_history,
+    non_overlapping_subsample,
 )
 from tik_core.scripts.measure_post_fix_hit_rates import (
     FIX_BUG_N2_ISO,
@@ -70,21 +80,35 @@ def _ztest_vs_null(hits: int, n: int, p_null: float) -> float | None:
     return 2 * (1 - _normal_cdf(abs(z)))
 
 
-def _group_stats(rows: list[dict], threshold: float) -> dict | None:
-    """Stats d'un sous-groupe : hit, gain, baseline random, p vs random."""
+def _group_stats(rows: list[dict], threshold: float, horizon_td: timedelta) -> dict | None:
+    """Stats d'un sous-groupe : hit, gain, baseline random, p vs random.
+
+    hit%, gain et baseline random sont DESCRIPTIFS (plein échantillon, n).
+    La p-value est calculée UNIQUEMENT sur le sous-échantillon non chevauchant
+    (`n_indep` signaux espacés ≥ horizon) : des signaux émis toutes les
+    15-30 min sur un horizon de plusieurs heures/jours partagent leur fenêtre
+    forward, et un z-test plein échantillon suppose à tort leur indépendance
+    (audit 2026-07-02, constat C-1 CRITIQUE).
+    """
     n = len(rows)
     if n == 0:
         return None
     hits = sum(1 for r in rows if r["success"])
     gain = mean(_gain_for(r["direction"], r["delta_pct"]) for r in rows)
     rnd = evaluate_random_baseline(rows, threshold)["hit_rate"]
-    p = _ztest_vs_null(hits, n, rnd) if rnd else None
+
+    indep = non_overlapping_subsample(rows, horizon_td)
+    n_indep = len(indep)
+    hits_indep = sum(1 for r in indep if r["success"])
+    rnd_indep = evaluate_random_baseline(indep, threshold)["hit_rate"] if indep else 0.0
+    p = _ztest_vs_null(hits_indep, n_indep, rnd_indep) if rnd_indep else None
     return {
         "n": n,
         "hits": hits,
         "hit": hits / n,
         "gain": gain,
         "rnd": rnd,
+        "n_indep": n_indep,
         "p": p,
     }
 
@@ -108,7 +132,12 @@ def _build_groups(results: list[dict]) -> list[tuple[str, list[dict]]]:
 
 
 def _verdicts(s: dict, bonferroni_threshold: float, min_samples: int) -> tuple[str, str]:
-    """Retourne (lecture sans paranoïa, lecture avec paranoïa)."""
+    """Retourne (lecture sans paranoïa, lecture avec paranoïa).
+
+    La p-value de `s` vient du sous-échantillon non chevauchant (cf.
+    `_group_stats`) : sig0.05 / ✓Bonf ne peuvent donc plus être « gagnés »
+    par la simple densité d'émission des signaux.
+    """
     beats_random = s["hit"] > s["rnd"]
     optimiste = f"{'bat' if beats_random else 'sous'} random ({s['rnd'] * 100:.0f}%)"
 
@@ -121,6 +150,8 @@ def _verdicts(s: dict, bonferroni_threshold: float, min_samples: int) -> tuple[s
     flags.append("gain+" if s["gain"] > 0 else "gain-")
     if s["n"] < min_samples:
         flags.append(f"n<{min_samples}")
+    if s["n_indep"] < min_samples:
+        flags.append(f"nInd<{min_samples}")
     if beats_random and (s["p"] is None or s["p"] >= bonferroni_threshold or s["gain"] <= 0):
         flags.append("→ FRAGILE")
     paranoia = " ".join(flags)
@@ -207,29 +238,38 @@ async def main() -> None:
 
     groups = _build_groups(results)
     bonf_threshold = 0.05 / len(groups)
+    n_indep_overall = len(non_overlapping_subsample(results, horizon_td))
     print(
         f"  {len(results)} signaux évalués · {len(groups)} groupes testés "
-        f"→ seuil Bonferroni = 0.05/{len(groups)} = {bonf_threshold:.4f}\n"
+        f"→ seuil Bonferroni = 0.05/{len(groups)} = {bonf_threshold:.4f}"
+    )
+    print(
+        f"  N_total = {len(results)} · N_indépendant (overall) = {n_indep_overall} — "
+        "p calculées sur le sous-échantillon NON chevauchant uniquement (colonne nInd)\n"
     )
 
-    header = f"  {'groupe':<20} {'n':>4} {'hit%':>6} {'gain%':>7} {'p':>7}  {'SANS parano':<22} {'AVEC parano'}"
+    header = (
+        f"  {'groupe':<20} {'n':>4} {'nInd':>5} {'hit%':>6} {'gain%':>7} {'p':>7}  "
+        f"{'SANS parano':<22} {'AVEC parano'}"
+    )
     print(header)
-    print("  " + "-" * 104)
+    print("  " + "-" * 110)
     for label, rows in groups:
-        s = _group_stats(rows, args.threshold)
+        s = _group_stats(rows, args.threshold, horizon_td)
         if s is None:
             continue
         opt, par = _verdicts(s, bonf_threshold, args.min_samples)
         pstr = f"{s['p']:.3f}" if s["p"] is not None else "n/a"
         print(
-            f"  {label:<20} {s['n']:>4} {s['hit'] * 100:>6.1f} {s['gain']:>+7.2f} "
-            f"{pstr:>7}  {opt:<22} {par}"
+            f"  {label:<20} {s['n']:>4} {s['n_indep']:>5} {s['hit'] * 100:>6.1f} "
+            f"{s['gain']:>+7.2f} {pstr:>7}  {opt:<22} {par}"
         )
 
     print()
     print("  Légende — SANS parano : bat/sous le baseline random.")
     print("  AVEC parano : sig0.05 = p<0.05 ; ✓/✗Bonf = survit/non à la correction multiple ;")
     print("  gain+/- = gain moyen positif/négatif (l'argent) ; n<N = échantillon faible ;")
+    print("  nInd<N = trop peu de fenêtres NON chevauchantes (p calculée sur nInd, pas n) ;")
     print("  → FRAGILE = bat random MAIS ne survit pas Bonferroni OU gain négatif.")
     print()
     await engine.dispose()

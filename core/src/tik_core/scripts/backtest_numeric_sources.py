@@ -11,12 +11,21 @@ Pour chaque source numérique (FG, GDELT tone, DXY, CFTC COT) :
 Cohérent avec le pattern `backtest.py` et `backtest_golden.py` (script CLI,
 sortie JSON Lines + rapport MD).
 
+Rigueur statistique (audit 2026-07-02) :
+- Anti-look-ahead : points COT datés à leur date de PUBLICATION (mardi +
+  3 j → vendredi, cf. fetch_numeric_history.COT_PUBLICATION_LAG_DAYS) ;
+  observations DXY décalées de --dxy-lag-days (défaut 7 j, release H.10).
+- Significativité : p-values calculées sur le sous-échantillon NON
+  chevauchant (points espacés ≥ horizon), puis correction de Bonferroni
+  sur le nombre de cellules testées — chaque recommandation est étiquetée
+  « significatif après correction » ou « indicatif ».
+
 Usage:
     python -m tik_core.scripts.backtest_numeric_sources \\
         --days-back 365 \\
         --output-json core/data/numeric_calibration/report.json \\
         --output-md core/data/numeric_calibration/report.md \\
-        [--fred-api-key KEY]
+        [--fred-api-key KEY] [--dxy-lag-days 7]
 """
 
 from __future__ import annotations
@@ -45,8 +54,10 @@ from tik_core.scripts.backtest import (
     fetch_btc_history,
     fetch_gold_history,
     find_closest_price,
+    normal_cdf,
 )
 from tik_core.scripts.fetch_numeric_history import (
+    COT_PUBLICATION_LAG_DAYS,
     fetch_cot_history,
     fetch_dxy_history,
     fetch_fear_greed_history,
@@ -72,6 +83,15 @@ IC_STRONG_THRESHOLD = 0.20
 # Seuils hit rate
 HIT_RATE_GOOD = 0.55  # > 55 % = signal exploitable
 HIT_RATE_EXCELLENT = 0.65
+
+# Anti-look-ahead DXY (audit 2026-07-02) : la série FRED DTWEXBGS est publiée
+# via la release hebdomadaire H.10 — une observation datée du jour J n'est
+# réellement DISPONIBLE que jusqu'à ~1 semaine plus tard, alors que FRED la
+# date au jour J. La dater au jour J fait « trader » le backtest sur une
+# donnée pas encore publiée. Lag par défaut : 7 jours calendaires, ajustable
+# via --dxy-lag-days (0 pour reproduire l'ancien comportement biaisé ; valeur
+# exacte à affiner contre ALFRED si besoin).
+DXY_PUBLICATION_LAG_DAYS = 7
 
 
 def parse_horizons(raw: str) -> list[int]:
@@ -155,6 +175,86 @@ def _ranks(values: list[float]) -> list[float]:
             ranks[original_idx] = avg_rank
         i = j + 1
     return ranks
+
+
+def apply_publication_lag(
+    points: list[dict[str, Any]],
+    lag_days: int,
+) -> list[dict[str, Any]]:
+    """Décale la date effective de chaque point de `lag_days` jours (anti-look-ahead).
+
+    Retourne de NOUVELLES entrées (copies) avec `date` = date de publication
+    estimée (date d'observation + lag) et `observation_date` = date d'origine
+    (traçabilité). Utilisé pour DXY/FRED (release H.10 hebdomadaire, cf.
+    DXY_PUBLICATION_LAG_DAYS). `lag_days <= 0` retourne la liste inchangée.
+    Un point à date non parsable est écarté (avec le lag actif, sa date
+    effective serait indéfinie).
+    """
+    if lag_days <= 0:
+        return points
+    shifted: list[dict[str, Any]] = []
+    for p in points:
+        try:
+            obs_date = datetime.fromisoformat(str(p["date"])).date()
+        except (KeyError, TypeError, ValueError):
+            continue
+        q = dict(p)
+        q["observation_date"] = str(p["date"])
+        q["date"] = (obs_date + timedelta(days=lag_days)).isoformat()
+        shifted.append(q)
+    return shifted
+
+
+def _subsample_non_overlapping(
+    rows: list[dict[str, Any]],
+    horizon_h: int,
+) -> list[dict[str, Any]]:
+    """Sous-échantillon de points espacés d'au moins `horizon_h` heures (greedy).
+
+    Les points source sont quotidiens (FG/GDELT/DXY) alors que les horizons de
+    mesure vont jusqu'à 30 j : les fenêtres forward se chevauchent massivement
+    et gonflent tout test de significativité (même constat C-1 que
+    `backtest.non_overlapping_subsample`, audit 2026-07-02). Les p-values des
+    recommandations sont calculées sur CE sous-échantillon uniquement.
+    """
+    out: list[dict[str, Any]] = []
+    last_dt: datetime | None = None
+    min_gap = timedelta(hours=horizon_h)
+    for row in sorted(rows, key=lambda r: str(r.get("date", ""))):
+        try:
+            dt = parse_iso_date(str(row["date"]))
+        except (KeyError, ValueError):
+            continue
+        if last_dt is None or (dt - last_dt) >= min_gap:
+            out.append(row)
+            last_dt = dt
+    return out
+
+
+def _proportion_p_value(successes: int, n: int, p_null: float = 0.5) -> float | None:
+    """p-value bilatérale d'un test z 1-proportion vs `p_null` (approx normale).
+
+    Utilisé pour juger si un hit rate de cellule diffère du hasard (50 %).
+    À appeler avec des comptages NON chevauchants (cf.
+    `_subsample_non_overlapping`). Retourne None si n == 0.
+    """
+    if n <= 0 or not (0.0 < p_null < 1.0):
+        return None
+    se = math.sqrt(p_null * (1.0 - p_null) / n)
+    z = (successes / n - p_null) / se
+    return 2 * (1 - normal_cdf(abs(z)))
+
+
+def _spearman_p_value(ic: float | None, n: int) -> float | None:
+    """p-value approximative d'un IC Spearman (z = |ic| * sqrt(n-1), approx normale).
+
+    Approximation classique valable pour n ≥ ~10 ; suffisante pour étiqueter
+    les recommandations (Bonferroni). À appeler avec le n NON chevauchant.
+    """
+    if ic is None or n < 4:
+        return None
+    z = abs(ic) * math.sqrt(n - 1)
+    return 2 * (1 - normal_cdf(z))
 
 
 def evaluate_source_simple(
@@ -283,7 +383,14 @@ def _analyze_rows(
     horizons_h: list[int],
     asset: str,
 ) -> dict[str, Any]:
-    """Calcule les 3 métriques (hit rate par palier, IC Spearman, hit rate extrêmes)."""
+    """Calcule les 3 métriques (hit rate par palier, IC Spearman, hit rate extrêmes).
+
+    Les comptages/hit rates plein échantillon restent DESCRIPTIFS. Pour la
+    significativité (consommée par `build_recommendations`), chaque horizon
+    calcule aussi des comptages sur le sous-échantillon NON chevauchant
+    (points espacés ≥ horizon, cf. `_subsample_non_overlapping`) et en dérive
+    des p-values (`p_value`, `ic_p_value`) — audit 2026-07-02.
+    """
     n_total = len(rows)
     if n_total == 0:
         return {
@@ -298,16 +405,15 @@ def _analyze_rows(
 
     for h in horizons_h:
         threshold = DIRECTIONALITY_THRESHOLDS_PCT.get(h, 1.0)
+        rows_h = [row for row in rows if h in row["deltas_pct"]]
 
-        # Hit rate par palier
+        # Hit rate par palier (plein échantillon — descriptif)
         by_palier: dict[str, dict[str, Any]] = {}
         ic_pairs_value: list[float] = []
         ic_pairs_delta: list[float] = []
         extreme_rows: list[dict[str, Any]] = []  # |bias| == 1.0
 
-        for row in rows:
-            if h not in row["deltas_pct"]:
-                continue
+        for row in rows_h:
             delta_pct = row["deltas_pct"][h]
             palier = row["palier"]
             bias = row["bias"]
@@ -332,12 +438,36 @@ def _analyze_rows(
             if abs(bias) == 1.0:
                 extreme_rows.append({"bias": bias, "delta_pct": delta_pct, "success": success})
 
+        # Sous-échantillon non chevauchant → comptages de significativité
+        indep_rows = _subsample_non_overlapping(rows_h, h)
+        indep_by_palier: dict[str, dict[str, int]] = {}
+        ic_ind_values: list[float] = []
+        ic_ind_deltas: list[float] = []
+        extreme_ind = {"n_evaluable": 0, "n_success": 0}
+        for row in indep_rows:
+            delta_pct = row["deltas_pct"][h]
+            success = is_success(direction, row["bias"], delta_pct, threshold)
+            ind_entry = indep_by_palier.setdefault(
+                row["palier"], {"n_evaluable": 0, "n_success": 0}
+            )
+            if success is not None:
+                ind_entry["n_evaluable"] += 1
+                if success:
+                    ind_entry["n_success"] += 1
+            ic_ind_values.append(float(row["value"]))
+            ic_ind_deltas.append(delta_pct)
+            if abs(row["bias"]) == 1.0 and success is not None:
+                extreme_ind["n_evaluable"] += 1
+                if success:
+                    extreme_ind["n_success"] += 1
+
         # Finalize palier metrics
         finalized_paliers: dict[str, Any] = {}
         for palier, entry in by_palier.items():
             n = entry["n"]
             evaluable = entry["n_evaluable"]
             hit_rate = entry["n_success"] / evaluable if evaluable > 0 else None
+            ind = indep_by_palier.get(palier, {"n_evaluable": 0, "n_success": 0})
             finalized_paliers[palier] = {
                 "n": n,
                 "n_evaluable": evaluable,
@@ -345,10 +475,14 @@ def _analyze_rows(
                 "hit_rate": round(hit_rate, 4) if hit_rate is not None else None,
                 "delta_avg_pct": round(entry["delta_avg"] / n, 4),
                 "bias_value": entry["biases"][0] if entry["biases"] else None,
+                "n_evaluable_indep": ind["n_evaluable"],
+                "n_success_indep": ind["n_success"],
+                "p_value": _proportion_p_value(ind["n_success"], ind["n_evaluable"]),
             }
 
-        # IC Spearman
+        # IC Spearman (descriptif plein échantillon + version non chevauchante)
         ic = spearman_correlation(ic_pairs_value, ic_pairs_delta)
+        ic_ind = spearman_correlation(ic_ind_values, ic_ind_deltas)
         ic_expected_sign = "negative" if direction == "contrarian" else "positive"
 
         # Hit rate cas extrêmes
@@ -361,8 +495,13 @@ def _analyze_rows(
         metrics_by_horizon[f"{h}h"] = {
             "threshold_pct": threshold,
             "n_evaluable_total": sum(p["n_evaluable"] for p in finalized_paliers.values()),
+            "n_indep": len(indep_rows),
             "by_palier": finalized_paliers,
             "ic_spearman": round(ic, 4) if ic is not None else None,
+            "ic_n": len(ic_pairs_value),
+            "ic_spearman_indep": round(ic_ind, 4) if ic_ind is not None else None,
+            "ic_n_indep": len(ic_ind_values),
+            "ic_p_value": _spearman_p_value(ic_ind, len(ic_ind_values)),
             "ic_expected_sign": ic_expected_sign,
             "ic_actual_sign": "positive"
             if (ic is not None and ic > 0)
@@ -375,6 +514,11 @@ def _analyze_rows(
                 "n_evaluable": n_extreme_evaluable,
                 "n_success": n_extreme_success,
                 "hit_rate": round(extreme_hit_rate, 4) if extreme_hit_rate is not None else None,
+                "n_evaluable_indep": extreme_ind["n_evaluable"],
+                "n_success_indep": extreme_ind["n_success"],
+                "p_value": _proportion_p_value(
+                    extreme_ind["n_success"], extreme_ind["n_evaluable"]
+                ),
             },
         }
 
@@ -386,9 +530,64 @@ def _analyze_rows(
     }
 
 
+def _count_tested_cells(report: dict[str, Any]) -> int:
+    """Compte les cellules source×horizon×métrique effectivement testées.
+
+    Une « cellule testée » = une cellule pour laquelle une p-value a été
+    calculée (IC, cas extrêmes, ou palier). C'est le dénominateur de la
+    correction de Bonferroni : ~36+ tests à seuils fixes sans correction
+    garantissent des fausses découvertes (~5 % de cellules « significatives »
+    par pur hasard) — audit 2026-07-02, même pattern que le Paquet 33.
+    """
+    n = 0
+    for source_data in report["by_source"].values():
+        for metrics in source_data.get("metrics_by_horizon", {}).values():
+            if metrics.get("ic_p_value") is not None:
+                n += 1
+            if metrics.get("extreme", {}).get("p_value") is not None:
+                n += 1
+            for palier_data in metrics.get("by_palier", {}).values():
+                if palier_data.get("p_value") is not None:
+                    n += 1
+    return n
+
+
+def _significance_marker(p: float | None, bonferroni: float | None) -> str:
+    """Suffixe d'étiquetage significativité d'une recommandation (Bonferroni).
+
+    Les p-values proviennent des comptages NON chevauchants (cf.
+    `_analyze_rows`) ; `bonferroni` = 0.05 / nombre de cellules testées.
+    """
+    if p is None or bonferroni is None:
+        return " *(indicatif — p non calculable : trop peu de points indépendants)*"
+    if p < bonferroni:
+        return f" *(p={p:.4f} < seuil Bonferroni {bonferroni:.4f} — significatif après correction)*"
+    return (
+        f" *(indicatif — non significatif après correction multiple-testing : "
+        f"p={p:.4f} ≥ seuil Bonferroni {bonferroni:.4f})*"
+    )
+
+
 def build_recommendations(report: dict[str, Any]) -> list[str]:
-    """Génère recommandations chiffrées à partir des métriques calculées."""
+    """Génère recommandations chiffrées à partir des métriques calculées.
+
+    Correction multiple-testing (audit 2026-07-02) : chaque run teste des
+    dizaines de cellules source×horizon×palier — sans correction, ~5 % d'entre
+    elles paraissent « significatives » par pur hasard. On compte donc les
+    cellules testées, on applique Bonferroni (seuil = 0.05 / n_cellules) et
+    chaque recommandation est étiquetée « significatif après correction » ou
+    « indicatif — non significatif après correction ». Les p-values sont
+    calculées sur le sous-échantillon NON chevauchant (cf. `_analyze_rows`).
+    """
     recos: list[str] = []
+    n_cells = _count_tested_cells(report)
+    bonf = (0.05 / n_cells) if n_cells else None
+    if n_cells:
+        recos.append(
+            f"ℹ **Correction multiple-testing** : {n_cells} cellules testées → seuil "
+            f"Bonferroni = 0.05/{n_cells} = {bonf:.5f}. p-values calculées sur le "
+            "sous-échantillon non chevauchant (points espacés ≥ horizon)."
+        )
     for source_name, source_data in report["by_source"].items():
         if source_data["n_total"] == 0:
             recos.append(
@@ -399,41 +598,48 @@ def build_recommendations(report: dict[str, Any]) -> list[str]:
         for horizon, metrics in source_data["metrics_by_horizon"].items():
             ic = metrics.get("ic_spearman")
             ic_correct = metrics.get("ic_sign_correct")
+            ic_marker = _significance_marker(metrics.get("ic_p_value"), bonf)
             extreme = metrics.get("extreme", {})
 
             # Drapeau IC sign
             if ic is not None and ic_correct is False:
                 recos.append(
                     f"🔴 **{source_name} @ {horizon}** : IC Spearman = {ic:+.4f} "
-                    f"(signe opposé à `{metrics['ic_expected_sign']}` attendu pour `{source_data['direction']}`). "
-                    f"Sémantique de l'overlay à reconsidérer."
+                    f"(signe opposé à `{metrics['ic_expected_sign']}` attendu pour "
+                    f"`{source_data['direction']}`). Sémantique de l'overlay à "
+                    f"reconsidérer.{ic_marker}"
                 )
 
             # Drapeau IC magnitude
             if ic is not None and abs(ic) < IC_SIGNIFICANCE_THRESHOLD:
                 recos.append(
-                    f"⚠ **{source_name} @ {horizon}** : IC = {ic:+.4f} (|IC| < {IC_SIGNIFICANCE_THRESHOLD}) "
-                    f"→ source non significative à cet horizon."
+                    f"⚠ **{source_name} @ {horizon}** : IC = {ic:+.4f} "
+                    f"(|IC| < {IC_SIGNIFICANCE_THRESHOLD}) "
+                    f"→ source non significative à cet horizon.{ic_marker}"
                 )
             elif ic is not None and abs(ic) >= IC_STRONG_THRESHOLD:
                 recos.append(
-                    f"✅ **{source_name} @ {horizon}** : IC = {ic:+.4f} (|IC| ≥ {IC_STRONG_THRESHOLD}) "
-                    f"→ signal **fort**, garder le mapping actuel."
+                    f"✅ **{source_name} @ {horizon}** : IC = {ic:+.4f} "
+                    f"(|IC| ≥ {IC_STRONG_THRESHOLD}) "
+                    f"→ signal **fort**, garder le mapping actuel.{ic_marker}"
                 )
 
             # Drapeau cas extrêmes
             if extreme.get("hit_rate") is not None:
                 hr_extreme = extreme["hit_rate"]
                 n_eval = extreme.get("n_evaluable", 0)
+                extreme_marker = _significance_marker(extreme.get("p_value"), bonf)
                 if hr_extreme >= HIT_RATE_EXCELLENT and n_eval >= 10:
                     recos.append(
-                        f"✅ **{source_name} @ {horizon}** : paliers extrêmes (|bias|=1.0) hit rate "
-                        f"= {hr_extreme:.1%} (n={n_eval}) → **conserver les paliers actuels**."
+                        f"✅ **{source_name} @ {horizon}** : paliers extrêmes (|bias|=1.0) "
+                        f"hit rate = {hr_extreme:.1%} (n={n_eval}) → **conserver les paliers "
+                        f"actuels**.{extreme_marker}"
                     )
                 elif hr_extreme < 0.45 and n_eval >= 10:
                     recos.append(
                         f"🔴 **{source_name} @ {horizon}** : paliers extrêmes hit rate "
-                        f"= {hr_extreme:.1%} (n={n_eval}, < 45 %) → **paliers à élargir** (seuils extrêmes trop laxistes)."
+                        f"= {hr_extreme:.1%} (n={n_eval}, < 45 %) → **paliers à élargir** "
+                        f"(seuils extrêmes trop laxistes).{extreme_marker}"
                     )
 
             # Hit rate par palier : flag les paliers ±1.0 vs ±0.5
@@ -447,9 +653,11 @@ def build_recommendations(report: dict[str, Any]) -> list[str]:
                 if bias_val == 0.0:
                     continue
                 if abs(bias_val) == 0.5 and hr >= HIT_RATE_GOOD:
+                    palier_marker = _significance_marker(palier_data.get("p_value"), bonf)
                     recos.append(
                         f"✅ **{source_name} @ {horizon}**, palier `{palier_name}` (bias=±0.5) : "
-                        f"hit rate = {hr:.1%} (n={n_eval}) → **palier moyen utile**."
+                        f"hit rate = {hr:.1%} (n={n_eval}) → **palier moyen "
+                        f"utile**.{palier_marker}"
                     )
 
     if not recos:
@@ -469,6 +677,11 @@ def render_markdown(report: dict[str, Any]) -> str:
     lines.append(f"**Période** : {args['days_back']} jours (depuis {args['since_date']})")
     lines.append(f"**Horizons mesurés** : {', '.join(args['horizons'])}")
     lines.append("**Seuils directionnalité** : 24h=0.5 % / 5j=1.0 % / 30j=2.0 %")
+    lines.append(
+        f"**Lags publication (anti-look-ahead)** : DXY = "
+        f"{args.get('dxy_publication_lag_days', 0)} j (release H.10, --dxy-lag-days) · "
+        f"COT = {args.get('cot_publication_lag_days', 0)} j (mardi → vendredi)"
+    )
     lines.append("")
     lines.append("## Résumé")
     lines.append("")
@@ -502,6 +715,14 @@ def render_markdown(report: dict[str, Any]) -> str:
     lines.append("")
     lines.append("## Recommandations chiffrées")
     lines.append("")
+    mt = report.get("multiple_testing") or {}
+    if mt.get("n_cells_tested"):
+        lines.append(
+            f"_{mt['n_cells_tested']} cellules testées — seuil Bonferroni "
+            f"{mt['bonferroni_threshold']:.5f}. p-values calculées sur le sous-échantillon "
+            "non chevauchant (points espacés ≥ horizon)._"
+        )
+        lines.append("")
     for reco in report["recommendations"]:
         lines.append(f"- {reco}")
 
@@ -565,6 +786,11 @@ def render_markdown(report: dict[str, Any]) -> str:
     lines.append(
         "- **Pas de prise en compte régime de marché** (bull/bear/range). Calibration globale sur 12m."
     )
+    lines.append(
+        "- **Points quotidiens × horizons jusqu'à 30 j** : les fenêtres forward se chevauchent "
+        "— les hit rates/IC plein échantillon sont DESCRIPTIFS ; seules les p-values "
+        "(sous-échantillon non chevauchant + Bonferroni) jugent la significativité."
+    )
     lines.append("")
     return "\n".join(lines)
 
@@ -585,6 +811,16 @@ async def main() -> None:
         "--fred-api-key", default=None, help="Si non fourni, lit settings.fred_api_key (.env)"
     )
     parser.add_argument("--gdelt-query", default="gold price")
+    parser.add_argument(
+        "--dxy-lag-days",
+        type=int,
+        default=DXY_PUBLICATION_LAG_DAYS,
+        help=(
+            "Lag de publication appliqué aux observations DXY/FRED (release "
+            "hebdo H.10, anti-look-ahead). Défaut 7 jours ; 0 pour reproduire "
+            "l'ancien comportement biaisé."
+        ),
+    )
     args = parser.parse_args()
 
     horizons_h = parse_horizons(args.horizons)
@@ -616,6 +852,13 @@ async def main() -> None:
             dxy=len(dxy_history),
             cot=len(cot_history),
         )
+
+        # Anti-look-ahead DXY : les observations FRED datées au jour J ne sont
+        # publiées (release H.10 hebdo) que ~1 semaine plus tard. On décale la
+        # date effective avant tout calcul de bias/entrée. Le COT est déjà
+        # décalé à sa date de publication dans fetch_cot_history.
+        dxy_history = apply_publication_lag(dxy_history, args.dxy_lag_days)
+        log.info("backtest_numeric.dxy_lag_applied", lag_days=args.dxy_lag_days)
 
         # Fetch prix BTC et GOLD (avec buffer pour horizons longs)
         log.info("backtest_numeric.fetch.prices_start")
@@ -653,6 +896,8 @@ async def main() -> None:
             "thresholds_directionality": {
                 f"{h}h": DIRECTIONALITY_THRESHOLDS_PCT.get(h, 1.0) for h in horizons_h
             },
+            "dxy_publication_lag_days": args.dxy_lag_days,
+            "cot_publication_lag_days": COT_PUBLICATION_LAG_DAYS,
             "n_history_fetched": {
                 "fear_greed": len(fg_history),
                 "gdelt_tone": len(gdelt_history),
@@ -663,6 +908,11 @@ async def main() -> None:
             },
         },
         "by_source": by_source,
+    }
+    n_cells = _count_tested_cells(report)
+    report["multiple_testing"] = {
+        "n_cells_tested": n_cells,
+        "bonferroni_threshold": (0.05 / n_cells) if n_cells else None,
     }
     report["recommendations"] = build_recommendations(report)
 

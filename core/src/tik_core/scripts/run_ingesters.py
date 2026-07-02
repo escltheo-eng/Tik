@@ -25,6 +25,7 @@ from tik_core.aggregator.google_news_ingester import GoogleNewsIngester
 from tik_core.aggregator.macro_regime_ingester import MacroRegimeIngester
 from tik_core.aggregator.macro_static_ingester import MacroStaticIngester
 from tik_core.aggregator.news_classifier import build_news_classifier
+from tik_core.aggregator.polling import INGESTER_INTERVALS_S
 from tik_core.aggregator.polymarket_ingester import PolymarketIngester
 from tik_core.aggregator.rate_probabilities_ingester import RateProbabilitiesIngester
 from tik_core.aggregator.reddit_ingester import RedditIngester
@@ -94,8 +95,12 @@ async def main() -> None:
 
     ingesters = [
         BinanceTradesIngester(redis, symbol="btcusdt", entity_id="BTC"),
-        YahooPoller(redis, symbol="GC=F", entity_id="GOLD", interval_s=60),
-        FredIngester(redis, api_key=settings.fred_api_key, interval_s=3600),
+        YahooPoller(
+            redis, symbol="GC=F", entity_id="GOLD", interval_s=INGESTER_INTERVALS_S["price_gold"]
+        ),
+        FredIngester(
+            redis, api_key=settings.fred_api_key, interval_s=INGESTER_INTERVALS_S["fred_macro"]
+        ),
         # Macro Regime (ADR-028) — indicateurs macro OBJECTIFS non-sentiment :
         # Fed Net Liquidity (WALCL−TGA−RRP, hebdo) + taux réel 10Y + proba récession
         # + pente courbe + conditions financières, calculés depuis FRED (gratuit) et
@@ -104,14 +109,20 @@ async def main() -> None:
         # zéro toggle). Reproduit le menu de centralbank.watch via sources primaires
         # (pas de scraping). Polling 6h (données hebdo/quotidiennes). Retrait = retirer
         # cette ligne. Skip propre si pas de clé FRED.
-        MacroRegimeIngester(redis, api_key=settings.fred_api_key, interval_s=6 * 3600),
+        MacroRegimeIngester(
+            redis, api_key=settings.fred_api_key, interval_s=INGESTER_INTERVALS_S["macro_regime"]
+        ),
         # Probabilités de taux Fed par réunion FOMC (ADR-029) — maths CME FedWatch
         # (pyfedwatch) sur futures ZQ Yahoo + range FRED. Le « flagship » de
         # centralbank.watch, reproduit gratuitement. Publie tik.macro.rate_probabilities
         # pour le cockpit. CONTEXTE STRICT : anticipation marché, ne touche jamais le
         # combined_bias/veracity/direction. Polling 6h. Retrait = retirer cette ligne.
-        RateProbabilitiesIngester(redis, api_key=settings.fred_api_key, interval_s=6 * 3600),
-        FearGreedIngester(redis, interval_s=3600),
+        RateProbabilitiesIngester(
+            redis,
+            api_key=settings.fred_api_key,
+            interval_s=INGESTER_INTERVALS_S["rate_probabilities"],
+        ),
+        FearGreedIngester(redis, interval_s=INGESTER_INTERVALS_S["fear_greed"]),
         CryptoCompareIngester(
             redis,
             api_key=settings.cryptocompare_api_key,
@@ -121,7 +132,9 @@ async def main() -> None:
             # 2026-06-10 (l'ancien 1h = ~720/mois faisait exploser le quota).
             # 8h (≈90/mois) ne laissait que ~10 de marge → re-blocage en fin de
             # mois après quelques restarts ; 12h donne ~40 de marge (2026-06-14).
-            interval_s=12 * 3600,
+            # Valeur centralisée dans aggregator/polling.py (invariant anti-quota
+            # Bug 15, verrouillé par tests/test_polling_intervals.py).
+            interval_s=INGESTER_INTERVALS_S["cryptocompare_news"],
             session_maker=session_maker,
         ),
         GoogleNewsIngester(
@@ -129,7 +142,7 @@ async def main() -> None:
             classifier=gn_btc_classifier,
             entity_id="BTC",
             query="Bitcoin",
-            interval_s=1800,
+            interval_s=INGESTER_INTERVALS_S["google_news_btc"],
             limit=50,
             session_maker=session_maker,
         ),
@@ -138,7 +151,7 @@ async def main() -> None:
             classifier=gn_gold_classifier,
             entity_id="GOLD",
             query='"gold price"',
-            interval_s=1800,
+            interval_s=INGESTER_INTERVALS_S["google_news_gold"],
             limit=50,
             session_maker=session_maker,
         ),
@@ -147,7 +160,7 @@ async def main() -> None:
             classifier=red_btc_classifier,
             entity_id="BTC",
             subreddits=["Bitcoin", "CryptoMarkets"],
-            interval_s=1800,
+            interval_s=INGESTER_INTERVALS_S["reddit_btc"],
             limit_per_sub=50,
             session_maker=session_maker,
         ),
@@ -163,9 +176,10 @@ async def main() -> None:
             # 2h (au lieu de 30 min) — GDELT free rate-limite (429 ~75 %, mesuré
             # 2026-06-11) ; 2h suffit pour un tone agrégé 1j sur horizon swing 5j
             # et réduit le matraquage. Couplé au TTL 6h (cf. gdelt_ingester.py).
-            interval_s=2 * 3600,
+            # Valeur centralisée dans aggregator/polling.py (invariant anti-quota).
+            interval_s=INGESTER_INTERVALS_S["gdelt_gold"],
         ),
-        CftcCotIngester(redis, interval_s=24 * 3600),
+        CftcCotIngester(redis, interval_s=INGESTER_INTERVALS_S["cftc_cot"]),
         # Lacune B Phase B1 J+10 — FRED Releases dynamiques (ADR-017).
         # Polling daily des release_dates FRED (NFP, CPI, PPI, GDP…).
         # Skip si pas de clé FRED (Phase B2 : ne bloque plus FOMC static
@@ -173,29 +187,31 @@ async def main() -> None:
         FredCalendarIngester(
             api_key=settings.fred_api_key,
             session_maker=session_maker,
-            interval_s=24 * 3600,
+            interval_s=INGESTER_INTERVALS_S["fred_calendar"],
         ),
         # Lacune B Phase B2 — Calendrier macro statique multi-banques (ADR-020).
         # Upsert daily des dates FOMC + ECB + BoJ + BoE depuis macro_calendar_data.
         # Aucune dépendance externe (pas de clé API). Tourne même sans FRED.
         MacroStaticIngester(
             session_maker=session_maker,
-            interval_s=24 * 3600,
+            interval_s=INGESTER_INTERVALS_S["macro_static"],
         ),
         # Polymarket — marchés prédictifs BTC + GOLD, MODE SHADOW (backlog-osint
         # 2026-05-24). Collecte les probas implicites dans Redis SANS brancher sur
         # le combined_bias (aucun _enrich_with_polymarket). But : historique pour
         # mesurer la valeur prédictive avant tout enrôlement + contexte de marché
         # pour le trader (GOLD ajouté 2026-05-28). Retrait = retirer ces lignes.
-        PolymarketIngester(redis, entity="BTC", interval_s=3600),
-        PolymarketIngester(redis, entity="GOLD", interval_s=3600),
+        PolymarketIngester(redis, entity="BTC", interval_s=INGESTER_INTERVALS_S["polymarket_btc"]),
+        PolymarketIngester(
+            redis, entity="GOLD", interval_s=INGESTER_INTERVALS_S["polymarket_gold"]
+        ),
         # CoinGecko sentiment communautaire BTC — MODE SHADOW (ADR-021).
         # Collecte le vote up/down dans Redis (+ historique cappé) SANS toucher
         # le combined_bias : l'overlay swing est gaté par
         # settings.coingecko_overlay_enabled (défaut False). But : mesurer la
         # divergence vs Fear & Greed avant enrôlement. Retrait = retirer cette
         # ligne. Candidat 4e overlay BTC suite ban IP Reddit (Bug 11).
-        CoinGeckoSentimentIngester(redis, interval_s=3600),
+        CoinGeckoSentimentIngester(redis, interval_s=INGESTER_INTERVALS_S["coingecko_btc"]),
         # Dérivés Binance (funding rate / open interest / ratio long-short retail
         # ET top traders) — MODE SHADOW (ADR-023). Collecte le POSITIONNEMENT
         # dérivés BTC dans Redis SANS toucher le combined_bias : il n'existe
@@ -204,7 +220,9 @@ async def main() -> None:
         # retardé, à mesurer (measure_btc_derivatives.py) avant tout enrôlement
         # ≥ 2 semaines. Retrait = retirer cette ligne. Connectivité futures
         # vérifiée depuis le VPS le 2026-06-03 (HTTP 200 sur tous les endpoints).
-        BinanceDerivativesIngester(redis, entity="BTC", interval_s=3600),
+        BinanceDerivativesIngester(
+            redis, entity="BTC", interval_s=INGESTER_INTERVALS_S["binance_derivatives_btc"]
+        ),
         # Flux ETF spot BTC US (inflow/outflow net quotidien, encours, détail par
         # fonds) — MODE SHADOW (ADR-024). Collecte les flux institutionnels dans
         # Redis SANS toucher le combined_bias : il n'existe AUCUN
@@ -215,7 +233,7 @@ async def main() -> None:
         # joignabilité vérifiée depuis le VPS le 2026-06-03 (HTTP 200, code:0).
         # Polling 6 h (les flux ETF sont quotidiens, pas intra-day). Retrait =
         # retirer cette ligne.
-        BtcEtfFlowsIngester(redis, entity="BTC", interval_s=6 * 3600),
+        BtcEtfFlowsIngester(redis, entity="BTC", interval_s=INGESTER_INTERVALS_S["btc_etf_flows"]),
         # Recommandations techniques TradingView (macro + micro) — MODE SHADOW
         # (ADR-031). Collecte la note technique agrégée TradingView de deux
         # paniers : MACRO (DXY/SPX/US10Y/Or/VIX en 1D — contexte macro-éco) et
@@ -227,7 +245,7 @@ async def main() -> None:
         # déjà calculée à poids 0 par Tik (ADR-018) → à MESURER (redondance ?)
         # avant tout enrôlement. Lib non-officielle (scanner.tradingview.com),
         # best-effort. Polling 30 min. Retrait = retirer cette ligne.
-        TradingViewTAIngester(redis, interval_s=1800),
+        TradingViewTAIngester(redis, interval_s=INGESTER_INTERVALS_S["tradingview_ta"]),
     ]
 
     # Breaking-news alerting (ADR-027) — gaté par toggle (défaut OFF). Capte les
@@ -261,7 +279,14 @@ async def main() -> None:
     finally:
         log.info("ingesters.stopping")
         for ing in ingesters:
-            await ing.stop()
+            # Chaque stop() est protégé individuellement : un stop() qui lève
+            # (ex. task déjà morte qui re-lève son exception au await) ne doit
+            # pas interrompre l'arrêt gracieux des ingesters suivants ni la
+            # fermeture redis/engine (audit 2026-07-02).
+            try:
+                await ing.stop()
+            except Exception as exc:  # noqa: BLE001
+                log.warning("ingesters.stop_error", ingester=ing.name, error=str(exc))
         await redis.aclose()
         await db_engine.dispose()
 

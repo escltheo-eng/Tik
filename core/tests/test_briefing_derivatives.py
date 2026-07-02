@@ -81,9 +81,7 @@ class TestFmtDerivativesLines:
 
     def test_divergent_flag(self):
         lines = _fmt_derivatives_lines(
-            summarize_derivatives(
-                {"long_account_global": 0.75, "long_account_top": 0.55}
-            )
+            summarize_derivatives({"long_account_global": 0.75, "long_account_top": 0.55})
         )
         assert "divergent" in "\n".join(lines)
 

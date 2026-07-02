@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 
 import pytest
 
+from tik_core.notify.alerts import format_macro_alert, format_shock_alert
 from tik_core.notify.briefing import (
     briefing_window_label,
     climate_from_headlines,
@@ -186,6 +187,87 @@ def test_format_briefing_no_events_no_gold():
     )
     assert "Aucun événement HIGH" in text
     assert "donnée indisponible" in text
+
+
+# ---------- échappement HTML du contenu externe (audit 2026-07-02) ----------
+# Un titre / nom d'event contenant « < » brut (ex. « Bitcoin <$60k ») faisait
+# répondre 400 à Telegram → message ENTIER perdu. Les formatters doivent
+# échapper tout contenu venant d'une API tierce via telegram.escape_html.
+
+
+def test_format_briefing_escapes_external_headlines_and_events():
+    text = format_briefing(
+        window="🌍 Matin Europe",
+        now=datetime(2026, 7, 2, 6, 0, tzinfo=UTC),
+        btc=None,
+        gold=None,
+        tech=None,
+        climate={"bull": 0, "bear": 0, "neutral": 0, "tilt": None},
+        events=[
+            {
+                "event_name": "CPI <flash> & core",
+                "hours_until_str": "dans 2h00",
+                "assets": ["BTC", "<GOLD>"],
+                "when_utc": "02/07 12:30",
+            }
+        ],
+        headlines=[
+            {"title": "Bitcoin <$60k & falling", "publisher": "R&D <news>", "sentiment": "bear"}
+        ],
+    )
+    # Titre + publisher échappés, plus aucun « < » externe brut.
+    assert "Bitcoin &lt;$60k &amp; falling" in text
+    assert "R&amp;D &lt;news&gt;" in text
+    assert "<$60k" not in text
+    # Nom d'event + assets échappés.
+    assert "CPI &lt;flash&gt; &amp; core" in text
+    assert "BTC/&lt;GOLD&gt;" in text
+    # Les tags légitimes du template restent intacts (HTML toujours valide).
+    assert "<b>" in text and "</b>" in text
+    assert "<i>" in text and "</i>" in text
+
+
+def test_format_briefing_plain_headline_unchanged():
+    # Un titre sans caractère spécial traverse le formatage à l'identique.
+    text = format_briefing(
+        window="🌍 Matin Europe",
+        now=datetime(2026, 7, 2, 6, 0, tzinfo=UTC),
+        btc=None,
+        gold=None,
+        tech=None,
+        climate=None,
+        events=[],
+        headlines=[{"title": "Strategy sells bitcoin", "publisher": "qz.com", "sentiment": "bear"}],
+    )
+    assert "Strategy sells bitcoin — <i>qz.com</i>" in text
+
+
+def test_format_shock_alert_escapes_external_headlines():
+    text = format_shock_alert(
+        p0=70000.0,
+        now_price=67000.0,
+        move_pct=-4.3,
+        window_h=6,
+        tech=None,
+        headlines=[{"title": "BTC <$60k soon?", "publisher": "a&b", "sentiment": "bear"}],
+    )
+    assert "BTC &lt;$60k soon?" in text
+    assert "a&amp;b" in text
+    assert "<$60k" not in text
+    assert "<b>" in text  # tags du template préservés
+
+
+def test_format_macro_alert_escapes_event_name_and_assets():
+    text = format_macro_alert(
+        event_name="CPI <core> & headline",
+        minutes=45,
+        when_utc="02/07 12:30",
+        assets=["BTC", "<GOLD>"],
+    )
+    assert "CPI &lt;core&gt; &amp; headline" in text
+    assert "BTC/&lt;GOLD&gt;" in text
+    assert "<core>" not in text
+    assert "<b>" in text and "</b>" in text
 
 
 # ---------- telegram.send_message (short-circuit sans réseau) ----------

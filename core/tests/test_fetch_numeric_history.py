@@ -6,10 +6,13 @@ mockés via `httpx.MockTransport`. Pas d'effets réseau, pas de Redis.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+
 import httpx
 import pytest
 
 from tik_core.scripts.fetch_numeric_history import (
+    COT_PUBLICATION_LAG_DAYS,
     _dedupe_by_date_avg,
     _gdelt_timespan_from_days,
     _parse_gdelt_date,
@@ -341,11 +344,64 @@ class TestFetchCotHistory:
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             result = await fetch_cot_history(days_back=3650, client=client)
 
-        # Tri ascendant après dédup, dates strippées du T-suffix
+        # Tri ascendant après dédup, dates strippées du T-suffix. Depuis le fix
+        # look-ahead (audit 2026-07-02), `date` = date de PUBLICATION du
+        # rapport (report_date mardi + 3 j → vendredi), report_date conservé.
         assert len(result) == 2
-        assert result[0]["date"] == "2026-04-24"
+        assert result[0]["date"] == "2026-04-27"
+        assert result[0]["report_date"] == "2026-04-24"
         # Net pct = (long - short) / total
         assert result[0]["value"] == round((90000 - 60000) / 150000, 4)
+
+    async def test_publication_lag_applied_to_every_point(self):
+        # Anti-look-ahead : le backtest ne doit voir le point COT qu'à partir
+        # de sa PUBLICATION (vendredi), pas du mardi de la photo — sinon il
+        # « trade » 3 jours avant que l'information existe.
+        async def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "report_date_as_yyyy_mm_dd": "2026-05-05T00:00:00.000",
+                        "m_money_positions_long_all": "80000",
+                        "m_money_positions_short_all": "20000",
+                    },
+                ],
+            )
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            result = await fetch_cot_history(days_back=3650, client=client)
+
+        assert len(result) == 1
+        report = datetime.fromisoformat(result[0]["report_date"]).date()
+        effective = datetime.fromisoformat(result[0]["date"]).date()
+        assert (effective - report).days == COT_PUBLICATION_LAG_DAYS
+        assert COT_PUBLICATION_LAG_DAYS == 3  # mardi → vendredi
+
+    async def test_cutoff_applies_to_publication_date(self):
+        # Un rapport dont le mardi est juste HORS fenêtre mais dont la
+        # publication (vendredi) est DANS la fenêtre doit être conservé :
+        # le cutoff s'applique à la date effective (publication), cohérent
+        # avec l'usage backtest. (Échouait avant le fix : filtré sur le mardi.)
+        report_date = (datetime.now(tz=UTC).date() - timedelta(days=31)).isoformat()
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "report_date_as_yyyy_mm_dd": f"{report_date}T00:00:00.000",
+                        "m_money_positions_long_all": "80000",
+                        "m_money_positions_short_all": "20000",
+                    },
+                ],
+            )
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            result = await fetch_cot_history(days_back=30, client=client)
+
+        assert len(result) == 1
+        assert result[0]["report_date"] == report_date
 
     async def test_zero_positions_skipped(self):
         async def handler(request: httpx.Request) -> httpx.Response:

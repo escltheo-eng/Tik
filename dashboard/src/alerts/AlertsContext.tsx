@@ -31,6 +31,7 @@ import {
 import { TikStream } from '@/src/api/stream';
 import { Signal } from '@/src/api/types';
 import { useAuth } from '@/src/auth/AuthContext';
+import { parseUtcIso } from '@/src/utils/time';
 
 const MAX_ALERTS = 50;
 const VERACITY_COLLAPSE_THRESHOLD = 0.5;
@@ -99,11 +100,21 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
         if (raw) {
           const parsed = JSON.parse(raw) as AlertEntry[];
           if (Array.isArray(parsed)) {
-            // Ne pas écraser les alertes éventuellement arrivées du WS pendant
-            // la lecture asynchrone du storage (cas rarissime mais sûr).
-            setAlerts((current) =>
-              current.length === 0 ? parsed.slice(0, MAX_ALERTS) : current,
-            );
+            // Audit 2026-07-02 : FUSIONNE l'historique persisté avec les
+            // alertes arrivées du WS pendant la lecture asynchrone du storage.
+            // L'ancien code ignorait le storage si `current` était non vide,
+            // puis l'effet de persistance l'écrasait → perte irréversible des
+            // 50 alertes historiques (fenêtre de quelques ms au boot, mais
+            // conséquence définitive). Dédup par id, plus récentes d'abord,
+            // cap MAX_ALERTS inchangé.
+            setAlerts((current) => {
+              const seen = new Set(current.map((a) => a.id));
+              const merged = [...current, ...parsed.filter((a) => !seen.has(a.id))];
+              merged.sort(
+                (a, b) => parseUtcIso(b.receivedAt).getTime() - parseUtcIso(a.receivedAt).getTime(),
+              );
+              return merged.slice(0, MAX_ALERTS);
+            });
           }
         }
       } catch (err) {

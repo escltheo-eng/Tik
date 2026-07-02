@@ -16,17 +16,21 @@ Risque non couvert : si la contrainte UNIQUE `(event_code, scheduled_for)`
 de doublons. Côté near_macro (Paquet 47) + carte calendrier dashboard, tout
 dépend de ce chemin. Ces tests sont le garde-fou.
 
-NOTE robustesse tracée (NON corrigée ici — chemin prod qui marche, non
-déclenchable avec les specs statiques actuelles) : dans `upsert_many`, si un
-event lève `SQLAlchemyError`, l'`except` interne de `upsert_macro_event`
-retourne False SANS rollback → la transaction Postgres passe « aborted » → les
-events suivants et le `commit()` final échouent → batch entier perdu (best-effort
-retourne 0, log warning). À reconsidérer (savepoint par event) si un jour une
-spec malformée le déclenche.
+NOTE robustesse (corrigée 2026-07-02, audit constat S-2) : historiquement,
+si un event levait `SQLAlchemyError`, l'`except` interne de
+`upsert_macro_event` retournait False SANS rollback → la transaction Postgres
+passait « aborted » → les events suivants et le `commit()` final échouaient →
+batch entier perdu (dont les FOMC HIGH ±4h). Fix : SAVEPOINT
+(`session.begin_nested()`) par event dans `upsert_macro_event`. Les tests
+`test_upsert_failure_does_not_poison_the_session` et
+`test_upsert_many_batch_survives_one_invalid_event` sont les garde-fous —
+ils échoueraient sans le savepoint.
 
 Pré-requis : Postgres réel via `db_session` (skip propre hors base de test).
 Isolation : `upsert_macro_event` ne commit pas → le `rollback()` de teardown du
 fixture `db_session` discard les rows insérées. Aucune pollution de `tik_test`.
+(Exception : le test `upsert_many`, qui commit par design — il nettoie ses
+rows lui-même en `finally`.)
 """
 
 from __future__ import annotations
@@ -34,13 +38,14 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import delete, func, select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tik_core.storage.macro_events_repo import (
     fetch_history,
     fetch_upcoming,
     upsert_macro_event,
+    upsert_many,
 )
 from tik_core.storage.models import MacroEvent
 from tik_core.utils.time import now_utc_naive
@@ -217,3 +222,102 @@ async def test_fetch_history_window(db_session: AsyncSession) -> None:
 
     narrow = await fetch_history(db_session, since_days=1)
     assert all(r.event_code != "ITEST_HIST" for r in narrow)
+
+
+# =============================================================================
+# SAVEPOINT par event (fix S-2, audit 2026-07-02)
+# =============================================================================
+# Sans le `begin_nested()` dans `upsert_macro_event`, une erreur SQL avortait
+# la transaction Postgres du batch entier : les upserts suivants échouaient en
+# cascade (« current transaction is aborted ») puis le commit → UN event
+# invalide faisait perdre TOUT le calendrier macro du cycle. Les deux tests
+# ci-dessous échoueraient sans le savepoint.
+
+# event_name > 128 chars → dépasse String(128) de `MacroEvent.event_name` →
+# asyncpg lève StringDataRightTruncationError (SQLAlchemyError) à l'execute.
+_TOO_LONG_NAME = "X" * 200
+
+
+def _spec(code: str, name: str, offset_h: int = 0) -> dict:
+    """Spec d'event macro minimale pour `upsert_many` (anchor 2030)."""
+    return {
+        "event_code": code,
+        "event_name": name,
+        "scheduled_for": FIXED + timedelta(hours=offset_h),
+        "importance": "HIGH",
+        "assets_impacted": ["BTC"],
+        "source": "itest",
+        "release_id": None,
+    }
+
+
+@pytest.mark.asyncio
+async def test_upsert_failure_does_not_poison_the_session(db_session: AsyncSession) -> None:
+    """Un upsert en échec (rollback du SAVEPOINT) laisse la session utilisable.
+
+    Sans le savepoint, le 2e upsert (valide) échouerait sur la transaction
+    avortée par le 1er → False au lieu de True, et 0 row visible.
+    """
+    ok_bad = await upsert_macro_event(
+        db_session,
+        event_code="ITEST_SP_POISON",
+        event_name=_TOO_LONG_NAME,  # > String(128) → DataError Postgres
+        scheduled_for=FIXED,
+        importance="HIGH",
+        assets_impacted=["BTC"],
+        source="itest",
+        release_id=None,
+    )
+    assert ok_bad is False
+
+    ok_good = await upsert_macro_event(
+        db_session,
+        event_code="ITEST_SP_AFTER",
+        event_name="Event valide après échec",
+        scheduled_for=FIXED,
+        importance="HIGH",
+        assets_impacted=["BTC"],
+        source="itest",
+        release_id=None,
+    )
+    assert ok_good is True, (
+        "La transaction est restée « aborted » après l'échec du 1er upsert : "
+        "le SAVEPOINT de upsert_macro_event a disparu (fix S-2, audit 2026-07-02)."
+    )
+    assert await _count(db_session, "ITEST_SP_AFTER", FIXED) == 1
+
+
+@pytest.mark.asyncio
+async def test_upsert_many_batch_survives_one_invalid_event(db_engine) -> None:
+    """Batch de 3 events dont celui du MILIEU invalide → les 2 autres persistés.
+
+    Reproduit le scénario du constat S-2 : sans savepoint, l'event invalide
+    avortait la transaction → l'event 3 puis le commit échouaient → batch
+    entier perdu (`upsert_many` retournait 0, calendrier macro muet pour le
+    cycle). Avec le fix : retourne 2 et les 2 events valides sont commités.
+
+    `upsert_many` commit par design (chemin ingester réel) → cleanup manuel
+    en `finally` (le rollback du teardown ne peut pas annuler un commit).
+    """
+    maker = async_sessionmaker(db_engine, expire_on_commit=False)
+    events = [
+        _spec("ITEST_SP_OK1", "Premier event valide", offset_h=0),
+        _spec("ITEST_SP_BAD", _TOO_LONG_NAME, offset_h=1),  # celui du milieu, invalide
+        _spec("ITEST_SP_OK2", "Troisième event valide", offset_h=2),
+    ]
+    try:
+        n = await upsert_many(maker, events)
+        assert n == 2, (
+            f"upsert_many a retourné {n} au lieu de 2 : l'event invalide du milieu "
+            "a empoisonné le batch (SAVEPOINT absent — fix S-2, audit 2026-07-02)."
+        )
+        async with maker() as session:
+            assert await _count(session, "ITEST_SP_OK1", FIXED) == 1
+            assert await _count(session, "ITEST_SP_BAD", FIXED + timedelta(hours=1)) == 0
+            assert await _count(session, "ITEST_SP_OK2", FIXED + timedelta(hours=2)) == 1
+    finally:
+        async with maker() as session:
+            await session.execute(
+                delete(MacroEvent).where(MacroEvent.event_code.like("ITEST_SP_%"))
+            )
+            await session.commit()

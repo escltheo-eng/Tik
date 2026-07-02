@@ -31,6 +31,7 @@ import {
 } from 'react';
 
 import { Signal } from '@/src/api/types';
+import { parseUtcIso } from '@/src/utils/time';
 
 const MAX_WATCHLIST = 200;
 const STORAGE_KEY = 'tik.watchlist.v1';
@@ -172,7 +173,18 @@ export function WatchlistProvider({ children }: { children: ReactNode }) {
               .filter((e) => typeof e?.signalId === 'string' && e.signalId.length > 0)
               .map(normalizeEntry)
               .slice(0, MAX_WATCHLIST);
-            setEntries((current) => (current.length === 0 ? normalized : current));
+            // Audit 2026-07-02 : FUSIONNE le storage avec les entrées ajoutées
+            // pendant la lecture asynchrone (l'ancien code ignorait le storage
+            // si current non vide, puis l'écrasait à la persistance → perte de
+            // l'historique). Dédup par signalId, plus récentes d'abord.
+            setEntries((current) => {
+              const seen = new Set(current.map((e) => e.signalId));
+              const merged = [...current, ...normalized.filter((e) => !seen.has(e.signalId))];
+              merged.sort(
+                (a, b) => parseUtcIso(b.addedAt).getTime() - parseUtcIso(a.addedAt).getTime(),
+              );
+              return merged.slice(0, MAX_WATCHLIST);
+            });
           }
         }
       } catch (err) {

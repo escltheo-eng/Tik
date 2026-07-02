@@ -8,12 +8,14 @@ import uuid
 from datetime import UTC, timedelta
 
 import structlog
+from pydantic import ValidationError
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tik_core.scoring.flash_engine import FlashDecision
 from tik_core.scoring.swing_engine import SwingDecision
 from tik_core.storage.models import Signal
+from tik_core.storage.schemas import CounterScenario, Evidence, Trigger
 from tik_core.utils.time import iso_utc, now_utc
 
 log = structlog.get_logger()
@@ -35,6 +37,45 @@ def _make_signal_id(horizon: str, entity_id: str) -> str:
     return f"TIK-{horizon.upper()}-{entity_id}-{ts}-{short}"
 
 
+def _validate_decision_payload(decision: SwingDecision | FlashDecision) -> None:
+    """Valide evidence/triggers/counter_scenarios contre les schémas de sortie.
+
+    Fail-fast (audit 2026-07-02, constat E2E-1) : les colonnes JSON de `signals`
+    acceptent n'importe quel dict, mais la sérialisation API (`SignalOut` dans
+    `storage/schemas.py`) exige `Evidence.fact`, `Trigger.type/value` et
+    `CounterScenario.name`. UN SEUL signal mal formé persisté en DB faisait
+    tomber en 500 `GET /signals/{id}` ET tout le listing `GET /signals`
+    (ResponseValidationError à la lecture). On refuse donc le signal AU PUBLISH
+    avec un message explicite plutôt que d'empoisonner les lectures.
+
+    Les engines (swing/flash) et la route micro (`MicroSignalIn`) produisent
+    déjà la forme attendue → aucun changement de comportement en prod. Ce
+    garde-fou vise tout futur caller direct de `publish_*_signal`.
+    """
+    checks = (
+        ("evidence", Evidence, decision.evidence),
+        ("triggers", Trigger, decision.triggers),
+        ("counter_scenarios", CounterScenario, decision.counter_scenarios),
+    )
+    problems: list[str] = []
+    for field_name, model, items in checks:
+        for i, item in enumerate(items or []):
+            try:
+                model.model_validate(item)
+            except ValidationError as exc:
+                details = "; ".join(
+                    f"{'.'.join(str(part) for part in err['loc']) or '<racine>'}: {err['msg']}"
+                    for err in exc.errors()
+                )
+                problems.append(f"{field_name}[{i}] non conforme ({model.__name__}: {details})")
+    if problems:
+        raise ValueError(
+            "Signal refusé au publish (fail-fast, audit E2E-1 2026-07-02) — payload "
+            "incompatible avec les schémas de sortie storage/schemas.py, il rendrait "
+            "GET /signals et GET /signals/{id} illisibles (500) : " + " | ".join(problems)
+        )
+
+
 async def _publish_signal(
     session: AsyncSession,
     redis: Redis,
@@ -46,7 +87,11 @@ async def _publish_signal(
 
     La veracity provient de `decision.veracity` (calculée par l'engine via
     cross-validation). Le paramètre `veracity` reste accepté pour override.
+
+    Lève `ValueError` si evidence/triggers/counter_scenarios ne respectent pas
+    les schémas de sortie (fail-fast, cf. `_validate_decision_payload`).
     """
+    _validate_decision_payload(decision)
     signal_id = _make_signal_id(horizon, decision.entity_id)
     # Strip tzinfo avant insertion DB : Signal.timestamp et Signal.expiry sont
     # DateTime sans timezone=True (TIMESTAMP WITHOUT TIME ZONE). asyncpg lève
