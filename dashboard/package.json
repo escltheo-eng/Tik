@@ -48,5 +48,10 @@
     "eslint-config-expo": "~10.0.0",
     "typescript": "~5.9.2"
   },
-  "private": true
+  "private": true,
+  "overrides": {
+    "shell-quote": "1.9.0",
+    "ws": "8.21.0",
+    "undici": "^6.27.0"
+  }
 }

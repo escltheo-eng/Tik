@@ -1,0 +1,1600 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tik — Mockup Enrichi</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600;9..144,700&family=JetBrains+Mono:wght@300;400;500;600;700&family=Manrope:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0a0c14;
+  --bg-deep: #06070d;
+  --bg-card: #131826;
+  --bg-card-elevated: #1a2030;
+  --border: rgba(255, 255, 255, 0.06);
+  --border-strong: rgba(255, 255, 255, 0.12);
+  --text: #e8e4dc;
+  --text-dim: rgba(232, 228, 220, 0.6);
+  --text-faint: rgba(232, 228, 220, 0.35);
+  --accent: #f5b042;
+  --accent-soft: rgba(245, 176, 66, 0.15);
+  --long: #6ec5a2;
+  --long-soft: rgba(110, 197, 162, 0.12);
+  --short: #e87a7a;
+  --short-soft: rgba(232, 122, 122, 0.12);
+  --neutral: #e8b86b;
+  --neutral-soft: rgba(232, 184, 107, 0.12);
+  --info: #7d9ed3;
+  --purple: #b08fff;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: #050609;
+  color: var(--text);
+  font-family: 'Manrope', sans-serif;
+  font-weight: 400;
+  min-height: 100vh;
+  padding: 48px 24px 80px;
+  background-image:
+    radial-gradient(ellipse at 20% 10%, rgba(245, 176, 66, 0.04) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 90%, rgba(125, 158, 211, 0.03) 0%, transparent 50%);
+}
+
+.intro {
+  max-width: 1400px;
+  margin: 0 auto 56px;
+  text-align: center;
+}
+
+.intro-tag {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.4em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 12px;
+}
+
+.intro-title {
+  font-family: 'Fraunces', serif;
+  font-weight: 300;
+  font-size: 44px;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+  margin-bottom: 14px;
+  font-style: italic;
+}
+
+.intro-title em {
+  font-weight: 600;
+  font-style: normal;
+  color: var(--accent);
+}
+
+.intro-desc {
+  color: var(--text-dim);
+  font-size: 16px;
+  max-width: 680px;
+  margin: 0 auto;
+  line-height: 1.5;
+}
+
+.screens {
+  display: flex;
+  gap: 36px;
+  justify-content: center;
+  flex-wrap: wrap;
+  max-width: 1500px;
+  margin: 0 auto;
+  align-items: start;
+}
+
+.screen-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+}
+
+.screen-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.screen-label-num {
+  color: var(--accent);
+  margin-right: 8px;
+}
+
+.frame {
+  width: 380px;
+  height: 800px;
+  background: linear-gradient(180deg, #1a1814 0%, #0d0e14 100%);
+  border-radius: 44px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow:
+    0 0 0 1px rgba(255, 200, 100, 0.04),
+    0 40px 100px -20px rgba(0, 0, 0, 0.7),
+    0 20px 40px -10px rgba(245, 176, 66, 0.05);
+  position: relative;
+}
+
+.screen {
+  width: 100%;
+  height: 100%;
+  background: var(--bg);
+  border-radius: 32px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.screen::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(1.5px 1.5px at 12% 18%, rgba(245, 176, 66, 0.5), transparent),
+    radial-gradient(1px 1px at 22% 35%, rgba(255, 255, 255, 0.4), transparent),
+    radial-gradient(1px 1px at 70% 12%, rgba(255, 255, 255, 0.4), transparent),
+    radial-gradient(1.5px 1.5px at 35% 60%, rgba(125, 158, 211, 0.4), transparent),
+    radial-gradient(0.5px 0.5px at 85% 30%, rgba(255, 255, 255, 0.5), transparent),
+    radial-gradient(1px 1px at 50% 75%, rgba(245, 176, 66, 0.3), transparent),
+    radial-gradient(0.5px 0.5px at 18% 78%, rgba(255, 255, 255, 0.5), transparent),
+    radial-gradient(1.5px 1.5px at 90% 65%, rgba(255, 255, 255, 0.3), transparent);
+  background-size: 100% 100%;
+  pointer-events: none;
+  opacity: 0.7;
+  z-index: 0;
+}
+
+.status-bar {
+  display: flex;
+  justify-content: space-between;
+  padding: 14px 24px 8px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text);
+  font-weight: 500;
+  position: relative;
+  z-index: 2;
+}
+
+.header {
+  padding: 10px 24px 18px;
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  position: relative;
+  z-index: 1;
+  border-bottom: 1px solid var(--border);
+}
+
+.brand {
+  font-family: 'Fraunces', serif;
+  font-weight: 300;
+  font-size: 26px;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  font-style: italic;
+  line-height: 0.9;
+}
+
+.brand-mark { font-style: normal; font-weight: 600; }
+
+.brand-sub {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-top: 4px;
+}
+
+.header-meta { text-align: right; }
+
+.header-meta-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8px;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-bottom: 2px;
+}
+
+.header-meta-value {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text-dim);
+  font-weight: 500;
+}
+
+.scroll-area {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  position: relative;
+  z-index: 1;
+  scrollbar-width: none;
+}
+
+.scroll-area::-webkit-scrollbar { display: none; }
+
+/* BOTTOM NAV (5 ITEMS NOW WITH WATCHLIST + PROFIL) */
+.bottom-nav {
+  display: flex;
+  border-top: 1px solid var(--border);
+  background: rgba(10, 12, 20, 0.95);
+  padding: 10px 0 calc(10px + env(safe-area-inset-bottom));
+  backdrop-filter: blur(20px);
+  position: relative;
+  z-index: 2;
+}
+
+.nav-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 4px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  cursor: pointer;
+  position: relative;
+}
+
+.nav-item.active { color: var(--accent); }
+
+.nav-item.active::before {
+  content: '';
+  position: absolute;
+  top: -10px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+}
+
+.nav-icon {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  opacity: 0.5;
+}
+
+.nav-item.active .nav-icon { opacity: 1; }
+
+/* ============================================
+   VUE ORBITAL AMÉLIORÉE (whales mieux visibles)
+   ============================================ */
+.top-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 20px 14px;
+  position: relative;
+  z-index: 2;
+  border-bottom: 1px solid var(--border);
+}
+
+.back-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.15em;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.back-arrow {
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--accent);
+  font-size: 14px;
+}
+
+.top-nav-title {
+  font-family: 'Fraunces', serif;
+  font-style: italic;
+  font-weight: 400;
+  font-size: 15px;
+}
+
+.top-nav-action {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+}
+
+.orbital-header {
+  padding: 18px 24px 14px;
+  text-align: center;
+  position: relative;
+  z-index: 2;
+}
+
+.orbital-title {
+  font-family: 'Fraunces', serif;
+  font-style: italic;
+  font-weight: 300;
+  font-size: 24px;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+  margin-bottom: 4px;
+}
+
+.orbital-title em { font-style: normal; font-weight: 600; color: var(--accent); }
+
+.orbital-subtitle {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.influence-legend {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  padding: 8px 24px 4px;
+  position: relative;
+  z-index: 2;
+}
+
+.inf-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8px;
+  color: var(--text-faint);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.inf-circle {
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.inf-big { width: 12px; height: 12px; box-shadow: 0 0 8px var(--accent); }
+.inf-med { width: 8px; height: 8px; box-shadow: 0 0 5px var(--accent); }
+.inf-small { width: 5px; height: 5px; }
+
+.solar-container {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.orbits {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 360px;
+  height: 360px;
+}
+
+.orbit {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 50%;
+}
+
+.orbit-1 { width: 160px; height: 160px; }
+.orbit-2 { width: 240px; height: 240px; border-style: dashed; border-color: rgba(255, 255, 255, 0.04); }
+.orbit-3 { width: 330px; height: 330px; }
+
+.core-system {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  gap: 28px;
+  z-index: 5;
+}
+
+.core-body {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 700;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.core-btc {
+  background: radial-gradient(circle at 30% 30%, #ffba6b, #d97e1f 65%, #8a4d10);
+  box-shadow:
+    0 0 30px rgba(255, 180, 80, 0.5),
+    0 0 60px rgba(255, 180, 80, 0.25),
+    inset 0 0 16px rgba(255, 220, 150, 0.3);
+}
+
+.core-gold {
+  background: radial-gradient(circle at 30% 30%, #ffe48a, #d4a01a 65%, #8a6a10);
+  box-shadow:
+    0 0 30px rgba(255, 220, 100, 0.5),
+    0 0 60px rgba(255, 220, 100, 0.25),
+    inset 0 0 16px rgba(255, 240, 180, 0.3);
+}
+
+.core-signal-tag {
+  position: absolute;
+  bottom: -22px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 7px;
+  letter-spacing: 0.15em;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(10px);
+  border: 1px solid;
+  white-space: nowrap;
+}
+
+.tag-long-mini { color: var(--long); border-color: rgba(110, 197, 162, 0.4); }
+.tag-neutral-mini { color: var(--neutral); border-color: rgba(232, 184, 107, 0.4); }
+
+/* SATELLITES — IMPROVED with size based on influence */
+.satellite {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  z-index: 4;
+}
+
+.sat-dot {
+  border-radius: 50%;
+  position: relative;
+}
+
+.sat-dot::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  background: inherit;
+  opacity: 0.3;
+  filter: blur(5px);
+}
+
+/* Sizes based on influence */
+.sat-big { width: 14px; height: 14px; }
+.sat-med { width: 10px; height: 10px; }
+.sat-small { width: 7px; height: 7px; }
+
+.sat-big::after { filter: blur(8px); opacity: 0.5; }
+
+.sat-green { background: var(--long); box-shadow: 0 0 10px rgba(110, 197, 162, 0.7); }
+.sat-green.sat-big { box-shadow: 0 0 16px rgba(110, 197, 162, 0.9); }
+
+.sat-blue { background: var(--info); box-shadow: 0 0 8px rgba(125, 158, 211, 0.6); }
+.sat-red { background: var(--short); box-shadow: 0 0 8px rgba(232, 122, 122, 0.6); }
+.sat-yellow { background: var(--accent); box-shadow: 0 0 8px rgba(245, 176, 66, 0.6); }
+.sat-purple { background: var(--purple); box-shadow: 0 0 8px rgba(176, 143, 255, 0.5); }
+
+.sat-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.75);
+  white-space: nowrap;
+  background: rgba(10, 12, 20, 0.85);
+  padding: 2px 5px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  backdrop-filter: blur(4px);
+}
+
+.sat-label.bold {
+  color: var(--accent);
+  border-color: rgba(245, 176, 66, 0.3);
+  font-weight: 600;
+}
+
+.sat-value {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--text);
+  text-shadow: 0 0 6px rgba(0, 0, 0, 0.8);
+}
+
+.sat-value.up { color: var(--long); }
+.sat-value.down { color: var(--short); }
+.sat-value.warn { color: var(--neutral); }
+
+/* TRI DYNAMIQUE: positions optimisées par influence */
+/* Whales = top-left (1ère influence pour BTC) */
+.sat-whales { top: 6%; left: 10%; }
+/* ETF BTC = top-left2 (2e influence pour BTC) */
+.sat-etfbtc { top: 5%; left: 38%; }
+/* ETF Gold = top-right (1ère pour Gold) */
+.sat-etfgold { top: 7%; right: 16%; }
+/* DXY = middle-left */
+.sat-dxy { top: 36%; left: 4%; }
+/* US10Y = middle-right */
+.sat-us10y { top: 36%; right: 4%; }
+/* Stablecoins = bottom-left2 */
+.sat-stables { bottom: 22%; left: 8%; }
+/* CPI = bottom */
+.sat-cpi { bottom: 12%; left: 42%; }
+/* Geopol = bottom-right */
+.sat-geopol { bottom: 22%; right: 8%; }
+
+.selected-panel {
+  margin: 0 16px 12px;
+  padding: 12px 14px;
+  background: linear-gradient(135deg, rgba(245, 176, 66, 0.08), rgba(245, 176, 66, 0.02));
+  border: 1px solid rgba(245, 176, 66, 0.25);
+  border-radius: 12px;
+  position: relative;
+  z-index: 2;
+  backdrop-filter: blur(20px);
+}
+
+.selected-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  margin-bottom: 8px;
+}
+
+.selected-name-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.selected-orb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--long);
+  box-shadow: 0 0 10px var(--long);
+}
+
+.selected-name {
+  font-family: 'Fraunces', serif;
+  font-weight: 500;
+  font-style: italic;
+  font-size: 15px;
+}
+
+.selected-source {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8px;
+  letter-spacing: 0.15em;
+  color: var(--accent);
+  margin-top: 2px;
+  text-transform: uppercase;
+}
+
+.selected-influence-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8px;
+  letter-spacing: 0.15em;
+  color: var(--text-faint);
+  text-transform: uppercase;
+}
+
+.selected-influence-value {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  color: var(--long);
+  font-weight: 700;
+  margin-top: 2px;
+}
+
+.selected-value {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--long);
+  margin-bottom: 4px;
+}
+
+.selected-desc {
+  font-family: 'Fraunces', serif;
+  font-style: italic;
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.4;
+}
+
+/* ============================================
+   WATCHLIST (sources OSINT épinglées)
+   ============================================ */
+.section-title {
+  font-family: 'Fraunces', serif;
+  font-style: italic;
+  font-weight: 400;
+  font-size: 13px;
+  color: var(--accent);
+  padding: 0 4px 8px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.section-title-meta {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  font-style: normal;
+}
+
+.pinned-source {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px;
+  position: relative;
+}
+
+.pinned-source.alert-on {
+  border-left: 3px solid var(--neutral);
+}
+
+.pinned-source.alert-fired {
+  border-left: 3px solid var(--accent);
+  background: linear-gradient(135deg, rgba(245, 176, 66, 0.05), var(--bg-card));
+}
+
+.pinned-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  margin-bottom: 8px;
+}
+
+.pinned-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pin-icon {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--accent);
+}
+
+.pinned-name {
+  font-family: 'Fraunces', serif;
+  font-weight: 500;
+  font-size: 15px;
+}
+
+.pinned-source-tag {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-top: 2px;
+}
+
+.alert-badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8px;
+  letter-spacing: 0.15em;
+  padding: 3px 7px;
+  border-radius: 4px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.badge-active {
+  background: rgba(232, 184, 107, 0.12);
+  color: var(--neutral);
+  border: 1px solid rgba(232, 184, 107, 0.3);
+}
+
+.badge-fired {
+  background: rgba(245, 176, 66, 0.2);
+  color: var(--accent);
+  border: 1px solid rgba(245, 176, 66, 0.5);
+}
+
+.badge-none {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-faint);
+  border: 1px solid var(--border);
+}
+
+.pinned-value-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 8px 0;
+}
+
+.pinned-value {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.pinned-value.up { color: var(--long); }
+.pinned-value.down { color: var(--short); }
+
+.pinned-change {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.pinned-alert-cond {
+  font-family: 'Manrope', sans-serif;
+  font-size: 11px;
+  color: var(--text-dim);
+  font-style: italic;
+  padding: 8px 10px;
+  background: rgba(232, 184, 107, 0.05);
+  border-radius: 6px;
+  margin-top: 8px;
+  line-height: 1.4;
+}
+
+.pinned-alert-cond.fired {
+  background: rgba(245, 176, 66, 0.1);
+  color: var(--text);
+}
+
+.pinned-meta-row {
+  display: flex;
+  justify-content: space-between;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8px;
+  color: var(--text-faint);
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  margin-top: 8px;
+  letter-spacing: 0.05em;
+}
+
+.add-pin {
+  margin-top: 4px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px dashed var(--border-strong);
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.add-pin-icon {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 16px;
+  color: var(--accent);
+}
+
+.add-pin-text {
+  font-family: 'Fraunces', serif;
+  font-style: italic;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+/* ============================================
+   PROFIL (hit rates + LLM + config)
+   ============================================ */
+.profil-header {
+  padding: 24px 24px 12px;
+  text-align: center;
+  position: relative;
+  z-index: 2;
+  border-bottom: 1px solid var(--border);
+}
+
+.profil-avatar {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #ffd684, #d97e1f 60%, #6a3a08);
+  margin: 0 auto 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Fraunces', serif;
+  font-weight: 600;
+  font-size: 22px;
+  color: #1a1a1a;
+  box-shadow: 0 0 30px rgba(245, 176, 66, 0.3);
+}
+
+.profil-name {
+  font-family: 'Fraunces', serif;
+  font-style: italic;
+  font-weight: 500;
+  font-size: 18px;
+}
+
+.profil-id {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  color: var(--text-faint);
+  letter-spacing: 0.15em;
+  margin-top: 2px;
+}
+
+.perf-banner {
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(245, 176, 66, 0.08), transparent 70%),
+    var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px;
+  margin: 0 0 14px;
+}
+
+.perf-banner-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  text-align: center;
+  margin-bottom: 6px;
+}
+
+.perf-banner-value {
+  font-family: 'Fraunces', serif;
+  font-style: italic;
+  font-weight: 400;
+  font-size: 36px;
+  color: var(--long);
+  text-align: center;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+.perf-banner-trend {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--long);
+  text-align: center;
+  margin-top: 4px;
+}
+
+.perf-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.perf-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.perf-card-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-bottom: 6px;
+  line-height: 1.2;
+}
+
+.perf-card-value {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.perf-card-detail {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  color: var(--text-faint);
+  letter-spacing: 0.05em;
+}
+
+.veracity-stack {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 14px;
+}
+
+.veracity-title {
+  font-family: 'Fraunces', serif;
+  font-style: italic;
+  font-weight: 500;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+
+.veracity-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+}
+
+.veracity-range {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text-dim);
+  width: 60px;
+}
+
+.veracity-bar {
+  flex: 1;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 3px;
+  position: relative;
+  overflow: hidden;
+}
+
+.veracity-fill {
+  height: 100%;
+  background: linear-gradient(to right, var(--accent), var(--long));
+  border-radius: 3px;
+}
+
+.veracity-pct {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  width: 36px;
+  text-align: right;
+}
+
+.veracity-pct.high { color: var(--long); }
+.veracity-pct.med { color: var(--neutral); }
+.veracity-pct.low { color: var(--short); }
+
+.llm-stack {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 14px;
+}
+
+.llm-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 7px 0;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.llm-row:last-child { border-bottom: none; }
+
+.llm-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: 'Manrope', sans-serif;
+  color: var(--text-dim);
+}
+
+.llm-status {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--long);
+  box-shadow: 0 0 6px var(--long);
+}
+
+.llm-status.warn {
+  background: var(--neutral);
+  box-shadow: 0 0 6px var(--neutral);
+}
+
+.llm-value {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.config-stack {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 4px;
+  margin-bottom: 14px;
+}
+
+.config-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--border);
+}
+
+.config-row:last-child { border-bottom: none; }
+
+.config-label {
+  font-family: 'Manrope', sans-serif;
+  color: var(--text);
+}
+
+.config-value-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.config-value {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.config-arrow {
+  color: var(--text-faint);
+  font-size: 14px;
+}
+
+.toggle {
+  width: 36px;
+  height: 20px;
+  background: rgba(245, 176, 66, 0.3);
+  border-radius: 999px;
+  position: relative;
+  display: inline-block;
+}
+
+.toggle::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 16px;
+  height: 16px;
+  background: var(--accent);
+  border-radius: 50%;
+  box-shadow: 0 0 6px rgba(245, 176, 66, 0.6);
+}
+
+.toggle.off { background: rgba(255, 255, 255, 0.08); }
+
+.toggle.off::after {
+  right: auto;
+  left: 2px;
+  background: var(--text-faint);
+  box-shadow: none;
+}
+</style>
+</head>
+<body>
+
+<header class="intro">
+  <div class="intro-tag">Mockup enrichi · Vues additionnelles</div>
+  <h1 class="intro-title">Orbital amélioré, <em>Watchlist</em> et <em>Profil</em>.</h1>
+  <p class="intro-desc">
+    Whales mieux visibles (taille selon influence + tri dynamique).
+    Watchlist en sources épinglées avec alertes. Profil avec hit rates et stats LLM.
+  </p>
+</header>
+
+<section class="screens">
+
+  <!-- ========== 04 ORBITAL AMÉLIORÉ ========== -->
+  <div class="screen-wrapper">
+    <div class="screen-label"><span class="screen-label-num">04.</span>ORBITAL · Whales en évidence</div>
+    <div class="frame">
+      <div class="screen">
+
+        <div class="status-bar">
+          <span>09:42</span>
+          <span>● ● ● 87%</span>
+        </div>
+
+        <div class="top-nav">
+          <div class="back-btn">
+            <span class="back-arrow">←</span>
+            <span>Signals</span>
+          </div>
+          <div class="top-nav-title">Cartographie</div>
+          <div class="top-nav-action">Liste</div>
+        </div>
+
+        <div class="orbital-header">
+          <h2 class="orbital-title">L'<em>observatoire</em> du marché</h2>
+          <div class="orbital-subtitle">Trié par influence · BTC</div>
+        </div>
+
+        <div class="influence-legend">
+          <div class="inf-item"><div class="inf-circle inf-big"></div>Forte</div>
+          <div class="inf-item"><div class="inf-circle inf-med"></div>Moyenne</div>
+          <div class="inf-item"><div class="inf-circle inf-small"></div>Faible</div>
+        </div>
+
+        <div class="solar-container">
+          <div class="orbits">
+            <div class="orbit orbit-1"></div>
+            <div class="orbit orbit-2"></div>
+            <div class="orbit orbit-3"></div>
+          </div>
+
+          <div class="core-system">
+            <div class="core-body core-btc">
+              <span>BTC</span>
+              <div class="core-signal-tag tag-long-mini">LONG · 72%</div>
+            </div>
+            <div class="core-body core-gold">
+              <span>GOLD</span>
+              <div class="core-signal-tag tag-neutral-mini">NEUTRAL · 45%</div>
+            </div>
+          </div>
+
+          <!-- WHALES — gros, top-left, mis en valeur -->
+          <div class="satellite sat-whales">
+            <div class="sat-dot sat-green sat-big"></div>
+            <div class="sat-label bold">Whales BTC</div>
+            <div class="sat-value up">+33%</div>
+          </div>
+
+          <!-- ETF BTC — gros aussi -->
+          <div class="satellite sat-etfbtc">
+            <div class="sat-dot sat-green sat-big"></div>
+            <div class="sat-label bold">ETF BTC</div>
+            <div class="sat-value up">+473M</div>
+          </div>
+
+          <!-- ETF Gold — moyen -->
+          <div class="satellite sat-etfgold">
+            <div class="sat-dot sat-green sat-med"></div>
+            <div class="sat-label">ETF Gold</div>
+            <div class="sat-value up">+1.2t</div>
+          </div>
+
+          <!-- DXY — moyen -->
+          <div class="satellite sat-dxy">
+            <div class="sat-dot sat-blue sat-med"></div>
+            <div class="sat-label">DXY</div>
+            <div class="sat-value down">−0.42%</div>
+          </div>
+
+          <!-- US10Y — moyen -->
+          <div class="satellite sat-us10y">
+            <div class="sat-dot sat-blue sat-med"></div>
+            <div class="sat-label">US10Y</div>
+            <div class="sat-value">4.32%</div>
+          </div>
+
+          <!-- Stablecoins — moyen -->
+          <div class="satellite sat-stables">
+            <div class="sat-dot sat-green sat-med"></div>
+            <div class="sat-label">Stablecoins</div>
+            <div class="sat-value up">+820M</div>
+          </div>
+
+          <!-- CPI — petit (influence faible aujourd'hui) -->
+          <div class="satellite sat-cpi">
+            <div class="sat-dot sat-yellow sat-small"></div>
+            <div class="sat-label">CPI</div>
+            <div class="sat-value warn">3.5%</div>
+          </div>
+
+          <!-- Geopol — petit -->
+          <div class="satellite sat-geopol">
+            <div class="sat-dot sat-red sat-small"></div>
+            <div class="sat-label">Géopol.</div>
+            <div class="sat-value warn">Stable</div>
+          </div>
+        </div>
+
+        <div class="selected-panel">
+          <div class="selected-header">
+            <div>
+              <div class="selected-name-wrap">
+                <div class="selected-orb"></div>
+                <div class="selected-name">Whales BTC</div>
+              </div>
+              <div class="selected-source">COINGLASS · 24H · Veracity 0.87</div>
+            </div>
+            <div>
+              <div class="selected-influence-label">Influence</div>
+              <div class="selected-influence-value">+0.14 BTC</div>
+            </div>
+          </div>
+          <div class="selected-value">+33% transferts</div>
+          <div class="selected-desc">
+            Accumulation marquée détectée. Driver clé du signal LONG actuel.
+          </div>
+        </div>
+
+        <div class="bottom-nav">
+          <div class="nav-item active"><div class="nav-icon">✦</div>Signals</div>
+          <div class="nav-item"><div class="nav-icon">◐</div>Sources</div>
+          <div class="nav-item"><div class="nav-icon">◑</div>Watch</div>
+          <div class="nav-item"><div class="nav-icon">◷</div>Calendar</div>
+          <div class="nav-item"><div class="nav-icon">◯</div>Profil</div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== 05 WATCHLIST ========== -->
+  <div class="screen-wrapper">
+    <div class="screen-label"><span class="screen-label-num">05.</span>WATCHLIST · Sources épinglées</div>
+    <div class="frame">
+      <div class="screen">
+
+        <div class="status-bar">
+          <span>09:42</span>
+          <span>● ● ● 87%</span>
+        </div>
+
+        <div class="header">
+          <div>
+            <div class="brand"><span class="brand-mark">Tik</span><span style="font-style: italic; font-weight: 300;"> · watch</span></div>
+            <div class="brand-sub">6 épinglées · 2 alertes actives</div>
+          </div>
+          <div class="header-meta">
+            <div class="header-meta-label">Alertes</div>
+            <div class="header-meta-value" style="color: var(--accent);">1 fired</div>
+          </div>
+        </div>
+
+        <div class="scroll-area">
+
+          <div class="section-title">
+            <span><em>Alertes</em> actives</span>
+            <span class="section-title-meta">1 fired</span>
+          </div>
+
+          <div class="pinned-source alert-fired">
+            <div class="pinned-header">
+              <div class="pinned-meta">
+                <div class="pin-icon">◆</div>
+                <div>
+                  <div class="pinned-name">BTC ETF Net Flow</div>
+                  <div class="pinned-source-tag">FARSIDE · 24H</div>
+                </div>
+              </div>
+              <div class="alert-badge badge-fired">FIRED</div>
+            </div>
+
+            <div class="pinned-value-row">
+              <div class="pinned-value up">+473.2 M$</div>
+              <div class="pinned-change">vs cond. > +400 M$</div>
+            </div>
+
+            <div class="pinned-alert-cond fired">
+              Alerte déclenchée à 09:30 : flux dépassent le seuil paramétré.
+              Action automatique : notification + log dans le journal.
+            </div>
+
+            <div class="pinned-meta-row">
+              <span>Déclenché 09:30</span>
+              <span>Veracity 0.92</span>
+            </div>
+          </div>
+
+          <div class="pinned-source alert-on">
+            <div class="pinned-header">
+              <div class="pinned-meta">
+                <div class="pin-icon">◆</div>
+                <div>
+                  <div class="pinned-name">Gold/Silver Ratio</div>
+                  <div class="pinned-source-tag">YAHOO · 24H</div>
+                </div>
+              </div>
+              <div class="alert-badge badge-active">ALERT</div>
+            </div>
+
+            <div class="pinned-value-row">
+              <div class="pinned-value down">88.2</div>
+              <div class="pinned-change">limite > 90</div>
+            </div>
+
+            <div class="pinned-alert-cond">
+              En approche du seuil critique 90 (zone stress historique).
+            </div>
+
+            <div class="pinned-meta-row">
+              <span>MAJ 1h</span>
+              <span>Veracity 0.81</span>
+            </div>
+          </div>
+
+          <div class="section-title">
+            <span><em>Sans</em> alerte</span>
+            <span class="section-title-meta">4 sources</span>
+          </div>
+
+          <div class="pinned-source">
+            <div class="pinned-header">
+              <div class="pinned-meta">
+                <div class="pin-icon">◆</div>
+                <div>
+                  <div class="pinned-name">DXY</div>
+                  <div class="pinned-source-tag">FRED · LIVE</div>
+                </div>
+              </div>
+              <div class="alert-badge badge-none">—</div>
+            </div>
+            <div class="pinned-value-row">
+              <div class="pinned-value down">104.32</div>
+              <div class="pinned-change">−0.42%</div>
+            </div>
+            <div class="pinned-meta-row">
+              <span>MAJ 1h</span>
+              <span>Veracity 0.96</span>
+            </div>
+          </div>
+
+          <div class="pinned-source">
+            <div class="pinned-header">
+              <div class="pinned-meta">
+                <div class="pin-icon">◆</div>
+                <div>
+                  <div class="pinned-name">Stablecoins flow</div>
+                  <div class="pinned-source-tag">DEFILLAMA · 24H</div>
+                </div>
+              </div>
+              <div class="alert-badge badge-none">—</div>
+            </div>
+            <div class="pinned-value-row">
+              <div class="pinned-value up">+820 M$</div>
+              <div class="pinned-change">net flow positif</div>
+            </div>
+            <div class="pinned-meta-row">
+              <span>MAJ 18 min</span>
+              <span>Veracity 0.83</span>
+            </div>
+          </div>
+
+          <div class="add-pin">
+            <div class="add-pin-icon">+</div>
+            <div class="add-pin-text">Épingler une source</div>
+          </div>
+
+        </div>
+
+        <div class="bottom-nav">
+          <div class="nav-item"><div class="nav-icon">✦</div>Signals</div>
+          <div class="nav-item"><div class="nav-icon">◐</div>Sources</div>
+          <div class="nav-item active"><div class="nav-icon">◑</div>Watch</div>
+          <div class="nav-item"><div class="nav-icon">◷</div>Calendar</div>
+          <div class="nav-item"><div class="nav-icon">◯</div>Profil</div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== 06 PROFIL ========== -->
+  <div class="screen-wrapper">
+    <div class="screen-label"><span class="screen-label-num">06.</span>PROFIL · Performance & config</div>
+    <div class="frame">
+      <div class="screen">
+
+        <div class="status-bar">
+          <span>09:42</span>
+          <span>● ● ● 87%</span>
+        </div>
+
+        <div class="profil-header">
+          <div class="profil-avatar">T</div>
+          <div class="profil-name">Théa</div>
+          <div class="profil-id">tik-server-1 · Helsinki</div>
+        </div>
+
+        <div class="scroll-area">
+
+          <div class="section-title">
+            <span><em>Performance</em> Tik</span>
+            <span class="section-title-meta">30 derniers jours</span>
+          </div>
+
+          <div class="perf-banner">
+            <div class="perf-banner-label">Hit rate live · global</div>
+            <div class="perf-banner-value">58.4%</div>
+            <div class="perf-banner-trend">↑ +3.2 pts vs mois dernier</div>
+          </div>
+
+          <div class="perf-grid">
+            <div class="perf-card">
+              <div class="perf-card-label">Hit rate<br>BTC swing 5j</div>
+              <div class="perf-card-value" style="color: var(--long);">61.2%</div>
+              <div class="perf-card-detail">42 trades suivis</div>
+            </div>
+            <div class="perf-card">
+              <div class="perf-card-label">Hit rate<br>Gold swing 5j</div>
+              <div class="perf-card-value" style="color: var(--neutral);">52.8%</div>
+              <div class="perf-card-detail">28 trades suivis</div>
+            </div>
+            <div class="perf-card">
+              <div class="perf-card-label">Confiance<br>moyenne</div>
+              <div class="perf-card-value">67%</div>
+              <div class="perf-card-detail">+5% vs J-30</div>
+            </div>
+            <div class="perf-card">
+              <div class="perf-card-label">Signaux<br>générés</div>
+              <div class="perf-card-value">183</div>
+              <div class="perf-card-detail">6.1/jour moyen</div>
+            </div>
+          </div>
+
+          <div class="veracity-stack">
+            <div class="veracity-title">Hit rate <em>par tranche veracity</em></div>
+
+            <div class="veracity-row">
+              <div class="veracity-range">0.9 — 1.0</div>
+              <div class="veracity-bar"><div class="veracity-fill" style="width: 71%;"></div></div>
+              <div class="veracity-pct high">71%</div>
+            </div>
+            <div class="veracity-row">
+              <div class="veracity-range">0.8 — 0.9</div>
+              <div class="veracity-bar"><div class="veracity-fill" style="width: 63%;"></div></div>
+              <div class="veracity-pct high">63%</div>
+            </div>
+            <div class="veracity-row">
+              <div class="veracity-range">0.7 — 0.8</div>
+              <div class="veracity-bar"><div class="veracity-fill" style="width: 54%;"></div></div>
+              <div class="veracity-pct med">54%</div>
+            </div>
+            <div class="veracity-row">
+              <div class="veracity-range">0.6 — 0.7</div>
+              <div class="veracity-bar"><div class="veracity-fill" style="width: 48%;"></div></div>
+              <div class="veracity-pct med">48%</div>
+            </div>
+            <div class="veracity-row">
+              <div class="veracity-range">&lt; 0.6</div>
+              <div class="veracity-bar"><div class="veracity-fill" style="width: 38%; background: var(--short);"></div></div>
+              <div class="veracity-pct low">38%</div>
+            </div>
+          </div>
+
+          <div class="section-title">
+            <span><em>Moteur</em> LLM</span>
+            <span class="section-title-meta">Ollama · llama3</span>
+          </div>
+
+          <div class="llm-stack">
+            <div class="llm-row">
+              <div class="llm-label"><div class="llm-status"></div>Statut</div>
+              <div class="llm-value" style="color: var(--long);">Opérationnel</div>
+            </div>
+            <div class="llm-row">
+              <div class="llm-label">Latence moyenne</div>
+              <div class="llm-value">2.3 s</div>
+            </div>
+            <div class="llm-row">
+              <div class="llm-label">Appels 24h</div>
+              <div class="llm-value">847</div>
+            </div>
+            <div class="llm-row">
+              <div class="llm-label">Taux succès</div>
+              <div class="llm-value" style="color: var(--long);">98.4%</div>
+            </div>
+            <div class="llm-row">
+              <div class="llm-label">Fallback keywords</div>
+              <div class="llm-value">13 (1.6%)</div>
+            </div>
+          </div>
+
+          <div class="section-title">
+            <span><em>Configuration</em></span>
+            <span class="section-title-meta">Tik v0.1.0</span>
+          </div>
+
+          <div class="config-stack">
+            <div class="config-row">
+              <div class="config-label">Notifications push</div>
+              <div class="toggle"></div>
+            </div>
+            <div class="config-row">
+              <div class="config-label">Mode sombre</div>
+              <div class="toggle"></div>
+            </div>
+            <div class="config-row">
+              <div class="config-label">Seuil veracity min.</div>
+              <div class="config-value-wrap">
+                <div class="config-value">0.70</div>
+                <div class="config-arrow">›</div>
+              </div>
+            </div>
+            <div class="config-row">
+              <div class="config-label">Sources actives</div>
+              <div class="config-value-wrap">
+                <div class="config-value">12 / 14</div>
+                <div class="config-arrow">›</div>
+              </div>
+            </div>
+            <div class="config-row">
+              <div class="config-label">API key Tik</div>
+              <div class="config-value-wrap">
+                <div class="config-value">●●●● 4f7a</div>
+                <div class="config-arrow">›</div>
+              </div>
+            </div>
+            <div class="config-row">
+              <div class="config-label">À propos · v0.1.0</div>
+              <div class="config-arrow">›</div>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="bottom-nav">
+          <div class="nav-item"><div class="nav-icon">✦</div>Signals</div>
+          <div class="nav-item"><div class="nav-icon">◐</div>Sources</div>
+          <div class="nav-item"><div class="nav-icon">◑</div>Watch</div>
+          <div class="nav-item"><div class="nav-icon">◷</div>Calendar</div>
+          <div class="nav-item active"><div class="nav-icon">◯</div>Profil</div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+</section>
+
+</body>
+</html>

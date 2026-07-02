@@ -73,7 +73,8 @@ export interface Advisory {
 }
 
 export type Direction = 'long' | 'short' | 'neutral';
-export type Horizon = 'flash' | 'swing' | 'macro';
+// 'micro' = couche ML btc-research-lab en SHADOW (ADR-030/ADR-034).
+export type Horizon = 'flash' | 'swing' | 'macro' | 'micro';
 export type CircuitBreakerStatus = 'ok' | 'degraded' | 'tripped';
 
 export interface Signal {
@@ -190,6 +191,8 @@ export interface HitRate {
   n_total: number;
   n_evaluated: number;
   n_skipped: number;
+  /** Signaux dans la fenêtre mais pas encore assez vieux pour être mesurés. */
+  n_too_young?: number;
   n_success: number;
   n_flagged_excluded: number;
   include_flagged: boolean;
@@ -217,6 +220,8 @@ export interface HitRateByVeracityBucket {
   n_success: number;
   hit_rate: number;
   avg_gain_pct: number;
+  /** Bucket peuplé mais sous le seuil (ex: 100 % sur 2 signaux) → taux non concluant. */
+  thin_sample?: boolean;
 }
 
 export interface HitRateByVeracity {
@@ -437,6 +442,30 @@ export interface GlobalLiquidity {
   context_only?: boolean;
 }
 
+export interface RiskSeries {
+  value: number | null;
+  date: string | null;
+  n?: number | null;
+  delta_20d: number | null;
+  pct_rank_1y: number | null; // rang centile sur ~1 an (0..1) — élevé = stress élevé
+  zscore_1y: number | null;
+  series_id?: string | null;
+}
+
+// Régime de RISQUE (ADR-035) : VIX + spreads de crédit FRED. `risk_state` décrit
+// l'environnement de risque (volatilité actions + tension crédit), JAMAIS une
+// prédiction du prix BTC/GOLD. CONTEXTE strict (ne touche pas direction/veracity).
+export interface RiskRegime {
+  available: boolean;
+  as_of: string | null;
+  risk_state: string | null; // risk_on | risk_off | neutral | unknown
+  stress_percentile: number | null; // moyenne centile VIX + HY (0..1)
+  vix: RiskSeries | null;
+  hy_oas: RiskSeries | null; // spread High Yield (% pts)
+  ig_oas: RiskSeries | null; // spread Investment Grade (% pts)
+  context_only?: boolean;
+}
+
 export interface MacroRegime {
   available: boolean;
   source?: string;
@@ -444,6 +473,53 @@ export interface MacroRegime {
   net_liquidity: NetLiquidity | null;
   global_liquidity?: GlobalLiquidity | null;
   indicators: Record<string, MacroIndicator>;
+  risk_regime?: RiskRegime | null;
+  context_only?: boolean;
+}
+
+// Stablecoins (ADR-036) : masse totale + tendance (DefiLlama). « Poudre sèche »
+// crypto-native. `trend` = sens du flux de capital, JAMAIS une prédiction de prix.
+// CONTEXTE strict (ne touche pas direction/veracity).
+export interface StablecoinBreakdown {
+  symbol: string | null;
+  name: string | null;
+  circulating_busd: number | null;
+  share: number | null; // part de la masse USD-pegged totale (0..1)
+}
+export interface Stablecoins {
+  available: boolean;
+  source?: string;
+  fetched_at: string | null;
+  as_of: string | null;
+  total_busd: number | null;
+  total_tusd: number | null;
+  n_days?: number | null;
+  delta_7d_busd: number | null;
+  delta_30d_busd: number | null;
+  pct_30d: number | null;
+  trend: string | null; // expansion | contraction | neutral | unknown
+  zscore_90d: number | null;
+  breakdown: StablecoinBreakdown[];
+  context_only?: boolean;
+}
+
+// Corrélations cross-asset (ADR-037) : avec quoi le BTC co-bouge (actions/or/dollar).
+// `behavior` est DESCRIPTIF (co-mouvement récent), JAMAIS une prédiction ni une
+// causalité. CONTEXTE strict (ne touche pas direction/veracity).
+export interface CrossAssetCorr {
+  key: string | null;
+  label: string | null;
+  corr_recent: number | null; // [-1, 1] sur ~30 j ouvrés
+  corr_full: number | null; // [-1, 1] sur ~3 mois
+  n?: number | null;
+}
+export interface CrossAsset {
+  available: boolean;
+  source?: string;
+  fetched_at: string | null;
+  as_of: string | null;
+  behavior: string | null; // risk_asset | digital_gold | decoupled | mixed
+  assets: CrossAssetCorr[];
   context_only?: boolean;
 }
 

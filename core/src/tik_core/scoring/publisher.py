@@ -9,6 +9,7 @@ from datetime import UTC, timedelta
 
 import structlog
 from redis.asyncio import Redis
+from redis.exceptions import RedisError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tik_core.scoring.flash_engine import FlashDecision
@@ -111,7 +112,15 @@ async def _publish_signal(
         "circuit_breaker_status": signal.circuit_breaker_status,
     }
     channel = f"tik.signal.{signal.entity_id}.{signal.horizon}"
-    await redis.publish(channel, json.dumps(payload))
+    # Publish best-effort : à ce stade le signal est `flush` mais PAS commité (le
+    # commit est fait par le scheduler après retour). Sans ce try/except, une
+    # panne Redis ferait remonter l'exception → rollback DB → signal entièrement
+    # perdu (pas seulement raté côté WS). On préserve la ligne DB : les clients la
+    # récupèrent au resync REST. Le flux temps réel reprendra au signal suivant.
+    try:
+        await redis.publish(channel, json.dumps(payload))
+    except RedisError as exc:  # noqa: BLE001
+        log.warning("signal.publish_redis_failed", id=signal.id, error=str(exc))
 
     log.info(
         "signal.published",

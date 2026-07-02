@@ -31,6 +31,8 @@ interface AuthState {
   loading: boolean;
   client: HttpClient;
   isAuthenticated: boolean;
+  /** true quand la clé a été refusée (401) → bannière « session expirée » au login. */
+  sessionExpired: boolean;
   signIn: (baseUrl: string, apiKey: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
@@ -45,6 +47,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [baseUrl, setBaseUrlState] = useState<string>(DEFAULT_BASE_URL);
   const [apiKey, setApiKeyState] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [sessionExpired, setSessionExpired] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -71,6 +74,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     const cleanedKey = newApiKey.trim();
     await setItem(STORAGE_KEYS.baseUrl, cleanedUrl);
     await setItem(STORAGE_KEYS.apiKey, cleanedKey);
+    setSessionExpired(false); // nouvelle connexion réussie → on efface le drapeau
     setBaseUrlState(cleanedUrl);
     setApiKeyState(cleanedKey);
   }, []);
@@ -80,9 +84,19 @@ export function AuthProvider({ children }: AuthProviderProps) {
     setApiKeyState(null);
   }, []);
 
+  // Déconnexion auto sur 401 : la clé courante a été refusée (révoquée / expirée
+  // / invalide). On purge la clé (→ AuthGate redirige vers /login) + on lève le
+  // drapeau « session expirée » pour l'expliquer. Idempotent : appelé une fois
+  // par requête en vol, mais setState(null/true) répété est sans effet de bord.
+  const handleAuthError = useCallback(() => {
+    setSessionExpired(true);
+    setApiKeyState(null);
+    void deleteItem(STORAGE_KEYS.apiKey);
+  }, []);
+
   const client = useMemo(
-    () => new HttpClient({ baseUrl, apiKey }),
-    [baseUrl, apiKey],
+    () => new HttpClient({ baseUrl, apiKey, onAuthError: handleAuthError }),
+    [baseUrl, apiKey, handleAuthError],
   );
 
   const value = useMemo<AuthState>(
@@ -92,10 +106,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
       loading,
       client,
       isAuthenticated: apiKey !== null && apiKey.length > 0,
+      sessionExpired,
       signIn,
       signOut,
     }),
-    [baseUrl, apiKey, loading, client, signIn, signOut],
+    [baseUrl, apiKey, loading, client, sessionExpired, signIn, signOut],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -72,6 +72,18 @@ HORIZON_SPECS_BY_SIGNAL_HORIZON: dict[str, dict] = {
         ],
         "price_match_tolerance_ms": 24 * 3600 * 1000,
     },
+    # Micro (ADR-030/ADR-034, couche ML btc-research-lab en shadow) : fenêtre
+    # alignée sur l'expiry 2h du publisher. Klines 15m comme le flash →
+    # même tolérance 30 min. Seuils : rampe flash prolongée en √t.
+    "micro": {
+        "rows": [
+            {"label": "15min", "hours": 0.25, "threshold_pct": 0.10},
+            {"label": "30min", "hours": 0.50, "threshold_pct": 0.15},
+            {"label": "1h", "hours": 1.00, "threshold_pct": 0.30},
+            {"label": "2h", "hours": 2.00, "threshold_pct": 0.40},
+        ],
+        "price_match_tolerance_ms": 30 * 60 * 1000,
+    },
 }
 
 

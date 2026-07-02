@@ -125,9 +125,30 @@ async def ingest_micro_signal(
     Réutilise `publisher._publish_signal` (mêmes garanties timezone/DB/Redis que
     les signaux internes). La veracity n'est PAS gonflée : défaut conservateur
     0.70 si l'appelant n'en fournit pas (Axe #1 — pas de vernis de certitude).
+
+    Kill-switch : TIK_MICRO_INGEST_ENABLED=False (défaut) → 503, aucun signal
+    micro ne peut entrer (ADR-030/ADR-034). Whitelist d'entités
+    (TIK_MICRO_ALLOWED_ENTITIES, défaut "BTC") → 422 propre au lieu d'un 500
+    FK si le labo poste une entité inconnue (ex : BTCUSDT).
     """
+    settings = get_settings()
+    if not settings.micro_ingest_enabled:
+        raise HTTPException(
+            status_code=503,
+            detail="Ingestion micro désactivée (TIK_MICRO_INGEST_ENABLED=false).",
+        )
+    entity_id = payload.entity_id.upper()
+    allowed = {e.strip().upper() for e in settings.micro_allowed_entities.split(",") if e.strip()}
+    if entity_id not in allowed:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Entité {entity_id!r} non autorisée pour l'ingestion micro. "
+                f"Autorisées : {', '.join(sorted(allowed))}."
+            ),
+        )
     decision = _IngestedMicroDecision(
-        entity_id=payload.entity_id.upper(),
+        entity_id=entity_id,
         timestamp=now_utc(),
         direction=payload.direction,
         confidence=payload.confidence,
@@ -139,7 +160,6 @@ async def ingest_micro_signal(
         advisory=dict(payload.advisory),
         circuit_breaker_status="degraded",  # shadow strict — non négociable
     )
-    settings = get_settings()
     redis = aioredis.from_url(settings.redis_url, decode_responses=True)
     try:
         signal = await _publish_signal(session, redis, decision, "micro")
