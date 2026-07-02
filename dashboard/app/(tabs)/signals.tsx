@@ -43,6 +43,7 @@ import { useMacroRegime } from '@/src/hooks/useMacroRegime';
 import { useSignalStream } from '@/src/hooks/useSignalStream';
 import { useTick } from '@/src/hooks/use-tick';
 import { computeDirectionStability } from '@/src/signals/stability';
+import { emptyStateMessage } from '@/src/utils/empty-states';
 import { parseUtcIso } from '@/src/utils/time';
 
 const ENTITY_FILTERS: { label: string; value: string | undefined }[] = [
@@ -432,9 +433,7 @@ export default function SignalsScreen() {
           renderItem={renderItem}
           ListHeaderComponent={ListHeader}
           ListEmptyComponent={
-            <Text style={styles.emptyText}>
-              Aucun signal pour l’instant. Le flux est ouvert, les nouveaux signaux apparaîtront ici.
-            </Text>
+            <Text style={styles.emptyText}>{emptyStateMessage(entity, horizon)}</Text>
           }
           contentContainerStyle={[styles.listContent, { paddingTop: insets.top + 12 }]}
           refreshControl={
