@@ -131,6 +131,20 @@ async def _run_briefing(session_maker, redis) -> None:
         log.error("scheduler.briefing.error", error=str(exc))
 
 
+async def _run_retention(session_maker) -> None:
+    """Purge quotidienne de rétention (décision utilisatrice 2026-07-02).
+
+    Best-effort : un échec est loggé et retenté le lendemain, jamais bloquant.
+    """
+    try:
+        from tik_core.storage.retention import purge_expired_rows
+
+        counts = await purge_expired_rows(session_maker)
+        log.info("scheduler.retention.done", **counts)
+    except Exception as exc:  # noqa: BLE001
+        log.error("scheduler.retention.error", error=str(exc))
+
+
 async def _run_alerts(session_maker, redis) -> None:
     """Alertes événements (choc prix BTC + macro imminent) — best-effort.
 
@@ -264,6 +278,21 @@ async def main() -> None:
         id="alerts",
         max_instances=1,
         coalesce=True,
+    )
+
+    # Rétention DB (audit S-1, décision 2026-07-02) : purge quotidienne à
+    # 04:30 UTC (heure creuse) — signaux/crédibilité 12 mois, headlines 3 mois,
+    # macro_events passés 12 mois. manual_trades JAMAIS purgés (journal trader).
+    scheduler.add_job(
+        _run_retention,
+        "cron",
+        hour=4,
+        minute=30,
+        args=[session_maker],
+        id="retention",
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=6 * 3600,
     )
 
     scheduler.start()

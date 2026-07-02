@@ -18,6 +18,8 @@
  * dashboard vers le core via WS.
  */
 
+import { deriveAlertTypes } from '@/src/alerts/derive';
+
 import {
   Signal,
 } from './types';
@@ -223,27 +225,13 @@ export class TikStream {
   private dispatch(signal: Signal): void {
     this.callbacks.onSignal?.(signal);
 
-    if (signal.advisory?.macro_crash_warning) {
-      this.callbacks.onCrashWarning?.(signal);
-    }
-    // Un signal micro (ADR-030/ADR-034) est TOUJOURS degraded by-design
-    // (shadow ML) et sa veracity est un defaut conservateur 0.70 — ni un
-    // desaccord de sources OSINT, ni un effondrement d'accord. On l'exclut
-    // des DEUX declencheurs pour ne pas generer de fausses alertes.
-    const isMicroShadow = signal.horizon === 'micro';
-    if (
-      signal.circuit_breaker_status &&
-      signal.circuit_breaker_status !== 'ok' &&
-      !isMicroShadow
-    ) {
-      this.callbacks.onFakeNewsDetected?.(signal);
-    }
-    if (
-      typeof signal.veracity === 'number' &&
-      signal.veracity < this.veracityCollapseThreshold &&
-      !isMicroShadow
-    ) {
-      this.callbacks.onVeracityCollapse?.(signal);
+    // Règles centralisées dans src/alerts/derive.ts (audit D-2, 2026-07-02) :
+    // le resync REST des alertes doit produire EXACTEMENT les mêmes verdicts
+    // que le flux WS — une seule implémentation pour les deux chemins.
+    for (const type of deriveAlertTypes(signal, this.veracityCollapseThreshold)) {
+      if (type === 'crash_warning') this.callbacks.onCrashWarning?.(signal);
+      else if (type === 'fake_news_detected') this.callbacks.onFakeNewsDetected?.(signal);
+      else this.callbacks.onVeracityCollapse?.(signal);
     }
   }
 

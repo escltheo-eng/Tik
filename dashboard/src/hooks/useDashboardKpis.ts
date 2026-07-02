@@ -218,7 +218,7 @@ export function useDashboardKpis(options: UseDashboardKpisOptions = {}): Dashboa
   const veracitySeries = useMemo(() => deriveVeracitySeries(signals24h, 12), [signals24h]);
   const llmStatsToday = useMemo(() => deriveLlmStats(signals24h, new Date()), [signals24h]);
 
-  useAppForeground(refresh);
+  useAppForeground(refreshNow);
 
   return {
     veracity,
