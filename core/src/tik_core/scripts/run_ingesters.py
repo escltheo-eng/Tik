@@ -16,6 +16,7 @@ from tik_core.aggregator.breaking_news_ingester import BreakingNewsIngester
 from tik_core.aggregator.btc_etf_flows_ingester import BtcEtfFlowsIngester
 from tik_core.aggregator.cftc_cot_ingester import CftcCotIngester
 from tik_core.aggregator.coingecko_sentiment_ingester import CoinGeckoSentimentIngester
+from tik_core.aggregator.cross_asset_ingester import CrossAssetIngester
 from tik_core.aggregator.cryptocompare_ingester import CryptoCompareIngester
 from tik_core.aggregator.fear_greed_ingester import FearGreedIngester
 from tik_core.aggregator.fred_calendar_ingester import FredCalendarIngester
@@ -29,6 +30,7 @@ from tik_core.aggregator.polling import INGESTER_INTERVALS_S
 from tik_core.aggregator.polymarket_ingester import PolymarketIngester
 from tik_core.aggregator.rate_probabilities_ingester import RateProbabilitiesIngester
 from tik_core.aggregator.reddit_ingester import RedditIngester
+from tik_core.aggregator.stablecoins_ingester import StablecoinsIngester
 from tik_core.aggregator.tradingview_ta_ingester import TradingViewTAIngester
 from tik_core.aggregator.yahoo_ingester import YahooPoller
 from tik_core.config import get_settings
@@ -246,6 +248,19 @@ async def main() -> None:
         # avant tout enrôlement. Lib non-officielle (scanner.tradingview.com),
         # best-effort. Polling 30 min. Retrait = retirer cette ligne.
         TradingViewTAIngester(redis, interval_s=INGESTER_INTERVALS_S["tradingview_ta"]),
+        # Masse de stablecoins + tendance (DefiLlama, sans clé) — CONTEXTE strict
+        # (ADR-036, ex-031 branche cosmique). Liquidité crypto-native (« poudre sèche ») : 3e famille macro de
+        # contexte. Publie tik.macro.stablecoins, exposé via /macro/stablecoins. NE
+        # touche jamais le combined_bias (pas d'overlay, pas de toggle). Polling 6 h
+        # (données quotidiennes). Joignabilité VPS vérifiée 2026-06-21 (HTTP 200).
+        StablecoinsIngester(redis, interval_s=INGESTER_INTERVALS_S["stablecoins"]),
+        # Corrélations cross-asset BTC ↔ actions/or/dollar (Yahoo) — CONTEXTE strict
+        # (ADR-037, ex-032 branche cosmique). « Le BTC bouge-t-il comme un actif risqué, comme l'or, ou seul ? »
+        # 4e/dernière famille macro de contexte. Publie tik.macro.cross_asset, exposé
+        # via /macro/cross_asset. Une corrélation N'EST NI prédiction NI causalité — ne
+        # touche jamais le combined_bias. Polling 6 h (cours quotidiens). Joignabilité
+        # Yahoo vérifiée 2026-06-21 (HTTP 200 sur les 5 symboles).
+        CrossAssetIngester(redis, interval_s=INGESTER_INTERVALS_S["cross_asset"]),
     ]
 
     # Breaking-news alerting (ADR-027) — gaté par toggle (défaut OFF). Capte les

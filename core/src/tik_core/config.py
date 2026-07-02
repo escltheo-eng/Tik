@@ -103,6 +103,16 @@ class Settings(BaseSettings):
     # le combined_bias). Toggle env : TIK_BREAKING_NEWS_ENABLED.
     breaking_news_enabled: bool = False
 
+    # --- Ingestion micro (ADR-030 Étape 2, connexion labo ADR-034) ---
+    # Kill-switch de l'endpoint POST /signals/ingest (couche ML btc-research-lab,
+    # SHADOW strict). DÉSACTIVÉ par défaut (ADR-030 : « toggle
+    # TIK_MICRO_ENABLED=False par défaut ») : tant qu'il est off, l'endpoint
+    # répond 503 et aucun signal micro ne peut entrer. Toggle env :
+    # TIK_MICRO_INGEST_ENABLED. La whitelist d'entités évite un 500 FK brut si
+    # le labo poste une entité inconnue (ADR-030 vise BTC uniquement).
+    micro_ingest_enabled: bool = False
+    micro_allowed_entities: str = "BTC"
+
     # --- Notifications Telegram (briefing du matin + alertes) ---
     # Bot créé par l'utilisatrice via @BotFather. Le token + chat_id sont des
     # secrets → définis dans core/.env (TIK_TELEGRAM_BOT_TOKEN /

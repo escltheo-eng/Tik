@@ -300,6 +300,11 @@ class HitRateOut(BaseModel):
     n_total: int  # signaux totaux trouvés (avant filtrage)
     n_evaluated: int  # signaux pour lesquels on a pu calculer un delta prix
     n_skipped: int  # signaux dont le prix n'était pas disponible
+    # Signaux DANS la fenêtre mais PAS encore assez vieux pour être mesurés
+    # (leur horizon de mesure n'est pas écoulé). Auparavant invisibles : ils
+    # étaient écartés au filtre sans être comptés → n_evaluated paraissait bas
+    # sans explication. Défaut 0 (cache antérieur parse sans erreur).
+    n_too_young: int = 0
     n_success: int  # signaux corrects
     n_flagged_excluded: int  # signaux degraded/tripped exclus (si include_flagged=False)
     include_flagged: bool
@@ -333,6 +338,9 @@ class HitRateByVeracityBucket(BaseModel):
     n_success: int
     hit_rate: float = Field(ge=0, le=1)
     avg_gain_pct: float
+    # True si le bucket est peuplé mais sous BUCKET_MIN_SAMPLE : son hit_rate
+    # n'est pas concluant (ex: 100 % sur 2 signaux). L'UI doit le signaler.
+    thin_sample: bool = False
 
 
 class HitRateByVeracityOut(BaseModel):
@@ -771,6 +779,45 @@ class GlobalLiquidityOut(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
 
+class RiskSeriesOut(BaseModel):
+    """Métriques de contexte d'une série de risque (VIX ou spread de crédit, ADR-030).
+
+    `pct_rank_1y` = rang centile de la dernière valeur sur ~1 an (0..1) ; pour le VIX
+    et les spreads, un centile élevé = stress élevé. CONTEXTE strict.
+    """
+
+    value: float | None = None
+    date: str | None = None
+    n: int | None = None
+    delta_20d: float | None = None
+    pct_rank_1y: float | None = None
+    zscore_1y: float | None = None
+    series_id: str | None = None
+
+    model_config = ConfigDict(extra="ignore")
+
+
+class RiskRegimeOut(BaseModel):
+    """Régime de RISQUE objectif (VIX + spreads de crédit FRED, ADR-030, CONTEXTE).
+
+    `risk_state` ∈ {risk_on, risk_off, neutral, unknown} décrit l'ENVIRONNEMENT de
+    risque (volatilité actions + tension crédit), JAMAIS une prédiction du prix
+    BTC/GOLD (le macro ne prédit pas BTC — mesuré 2026-06-19). Ne touche jamais
+    direction/veracity/combined_bias.
+    """
+
+    available: bool = False
+    as_of: str | None = None
+    risk_state: str | None = None
+    stress_percentile: float | None = None
+    vix: RiskSeriesOut | None = None
+    hy_oas: RiskSeriesOut | None = None
+    ig_oas: RiskSeriesOut | None = None
+    context_only: bool = True
+
+    model_config = ConfigDict(extra="ignore")
+
+
 class MacroRegimeOut(BaseModel):
     """Blob régime macro objectif publié par `MacroRegimeIngester` (CONTEXTE strict).
 
@@ -784,6 +831,7 @@ class MacroRegimeOut(BaseModel):
     net_liquidity: NetLiquidityOut | None = None
     global_liquidity: GlobalLiquidityOut | None = None
     indicators: dict[str, MacroIndicatorOut] = Field(default_factory=dict)
+    risk_regime: RiskRegimeOut | None = None
     context_only: bool = True
 
     model_config = ConfigDict(extra="ignore")
@@ -840,5 +888,73 @@ class MacroCockpitOut(BaseModel):
     cot_gold: dict[str, Any] | None = None
     polymarket_btc: dict[str, Any] | None = None
     next_macro_event: dict[str, Any] | None = None
+
+    model_config = ConfigDict(extra="ignore")
+
+
+class StablecoinBreakdownOut(BaseModel):
+    """Un stablecoin du top par capitalisation (ADR-031)."""
+
+    symbol: str | None = None
+    name: str | None = None
+    circulating_busd: float | None = None
+    share: float | None = None  # part de la masse USD-pegged totale (0..1)
+
+    model_config = ConfigDict(extra="ignore")
+
+
+class StablecoinsOut(BaseModel):
+    """Masse de stablecoins + tendance (DefiLlama, ADR-031, CONTEXTE strict).
+
+    Liquidité crypto-native (« poudre sèche »). `trend` ∈ {expansion, contraction,
+    neutral, unknown} décrit le sens du flux de capital vers les rails crypto, JAMAIS
+    une prédiction du prix BTC. Ne touche jamais direction/veracity/combined_bias.
+    """
+
+    available: bool = False
+    source: str = "defillama_stablecoins"
+    fetched_at: str | None = None
+    as_of: str | None = None
+    total_busd: float | None = None
+    total_tusd: float | None = None
+    n_days: int | None = None
+    delta_7d_busd: float | None = None
+    delta_30d_busd: float | None = None
+    pct_30d: float | None = None
+    trend: str | None = None
+    zscore_90d: float | None = None
+    breakdown: list[StablecoinBreakdownOut] = Field(default_factory=list)
+    context_only: bool = True
+
+    model_config = ConfigDict(extra="ignore")
+
+
+class CrossAssetCorrOut(BaseModel):
+    """Corrélation BTC ↔ un actif (ADR-032). `corr` ∈ [-1, 1]. CONTEXTE strict."""
+
+    key: str | None = None
+    label: str | None = None
+    corr_recent: float | None = None  # corrélation des rendements récents (~30 j ouvrés)
+    corr_full: float | None = None  # corrélation sur toute la fenêtre (~3 mois)
+    n: int | None = None
+
+    model_config = ConfigDict(extra="ignore")
+
+
+class CrossAssetOut(BaseModel):
+    """Corrélations cross-asset du BTC (Yahoo, ADR-032, CONTEXTE strict).
+
+    Avec quoi le BTC co-bouge (actions/or/dollar). `behavior` ∈ {risk_asset,
+    digital_gold, decoupled, mixed} est DESCRIPTIF (co-mouvement récent), JAMAIS une
+    prédiction ni une causalité. Ne touche jamais direction/veracity/combined_bias.
+    """
+
+    available: bool = False
+    source: str = "yahoo_cross_asset"
+    fetched_at: str | None = None
+    as_of: str | None = None
+    behavior: str | None = None
+    assets: list[CrossAssetCorrOut] = Field(default_factory=list)
+    context_only: bool = True
 
     model_config = ConfigDict(extra="ignore")

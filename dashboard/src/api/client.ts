@@ -31,17 +31,26 @@ export interface HttpClientOptions {
   baseUrl: string;
   apiKey: string | null;
   timeoutMs?: number;
+  /**
+   * Appelé quand le core répond **401** sur une requête authentifiée = la clé
+   * courante est invalide/expirée/révoquée → déconnexion globale (cf.
+   * AuthContext). N'est PAS appelé sur 403 (clé valide mais sans le scope de CET
+   * endpoint : la clé marche ailleurs, on ne déconnecte pas).
+   */
+  onAuthError?: () => void;
 }
 
 export class HttpClient {
   readonly baseUrl: string;
   readonly apiKey: string | null;
   readonly timeoutMs: number;
+  private readonly onAuthError?: () => void;
 
-  constructor({ baseUrl, apiKey, timeoutMs = DEFAULT_TIMEOUT_MS }: HttpClientOptions) {
+  constructor({ baseUrl, apiKey, timeoutMs = DEFAULT_TIMEOUT_MS, onAuthError }: HttpClientOptions) {
     this.baseUrl = baseUrl.replace(/\/+$/, '');
     this.apiKey = apiKey;
     this.timeoutMs = timeoutMs;
+    this.onAuthError = onAuthError;
   }
 
   async get<T>(
@@ -164,6 +173,11 @@ export class HttpClient {
     }
     const bodyExcerpt = (await response.text()).slice(0, 200);
     if (status === 401 || status === 403) {
+      // 401 = clé invalide/expirée → déconnexion globale (la clé ne marche plus
+      // nulle part). 403 = clé valide mais sans le scope de cet endpoint → on
+      // NE déconnecte PAS (sinon une clé lecture-seule se ferait éjecter en
+      // tapant un endpoint write).
+      if (status === 401) this.onAuthError?.();
       throw new AuthError(`${status} ${response.statusText}: ${bodyExcerpt}`);
     }
     if (status === 404) {

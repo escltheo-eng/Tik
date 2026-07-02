@@ -3,25 +3,30 @@ import React from 'react';
 
 import { HapticTab } from '@/components/haptic-tab';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { Cosmic } from '@/constants/cosmic';
 import { useAlerts } from '@/src/alerts/AlertsContext';
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
   const { unreadCount } = useAlerts();
 
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
+        // Barre d'onglets cosmique (refonte γ, bout 6) — 5 onglets, sombre, accent ambre.
+        tabBarActiveTintColor: Cosmic.accent,
+        tabBarInactiveTintColor: Cosmic.textFaint,
         headerShown: false,
         tabBarButton: HapticTab,
+        tabBarStyle: {
+          backgroundColor: Cosmic.bgDeep,
+          borderTopColor: Cosmic.border,
+        },
       }}>
+      {/* --- 5 onglets visibles : Cockpit · Signals · Sources · Carnet · Plus --- */}
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Home',
+          title: 'Cockpit',
           tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
         }}
       />
@@ -35,10 +40,10 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="watchlist"
+        name="sources"
         options={{
-          title: 'Watchlist',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="star.fill" color={color} />,
+          title: 'Sources',
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="globe" color={color} />,
         }}
       />
       <Tabs.Screen
@@ -49,32 +54,23 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="alerts"
+        name="plus"
         options={{
-          title: 'Alerts',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="bell.fill" color={color} />,
+          title: 'Plus',
+          tabBarIcon: ({ color }) => (
+            <IconSymbol size={28} name="person.crop.circle.fill" color={color} />
+          ),
+          // Le badge alertes non-lues remonte ici (Alerts vit dans le hub Plus).
           tabBarBadge: unreadCount > 0 ? String(unreadCount) : undefined,
         }}
       />
-      <Tabs.Screen
-        name="bots"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="config"
-        options={{
-          title: 'Config',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="gearshape.fill" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="about"
-        options={{
-          href: null,
-        }}
-      />
+
+      {/* --- Écrans hors barre du bas (accessibles depuis le hub Plus) --- */}
+      <Tabs.Screen name="watchlist" options={{ href: null }} />
+      <Tabs.Screen name="alerts" options={{ href: null }} />
+      <Tabs.Screen name="config" options={{ href: null }} />
+      <Tabs.Screen name="bots" options={{ href: null }} />
+      <Tabs.Screen name="about" options={{ href: null }} />
     </Tabs>
   );
 }

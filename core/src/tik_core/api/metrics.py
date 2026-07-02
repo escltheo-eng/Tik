@@ -136,6 +136,8 @@ TRACK_RECORD_BINANCE_PARAMS: dict[str, dict] = {
     "flash": {"interval": "15m", "limit": 672},
     "swing": {"interval": "1h", "limit": 1000},
     "macro": {"interval": "1d", "limit": 365},
+    # Micro (ADR-030/ADR-034) : mêmes klines 15m que flash, fenêtre 2h.
+    "micro": {"interval": "15m", "limit": 672},
 }
 TRACK_RECORD_YAHOO_PARAMS: dict[str, dict] = {
     # Pas de flash GOLD (cf. ADR-005 — Yahoo a 15 min de délai, incompatible
@@ -152,7 +154,7 @@ async def get_hit_rate(
     ),
     horizon: str = Query(
         ...,
-        pattern="^(flash|swing|macro)$",
+        pattern="^(flash|swing|macro|micro)$",
         description="Horizon Tik. flash=mesure 1h, swing=mesure 5j, macro=mesure 30j.",
     ),
     since_days: int = Query(30, ge=1, le=90, description="Fenêtre temporelle en jours (1-90)."),
@@ -242,6 +244,16 @@ async def get_hit_rate(
             include_flagged=include_flagged,
         )
 
+        # Signaux dans la fenêtre mais pas encore mûrs (horizon de mesure non
+        # écoulé) : écartés par le filtre sans être comptés. On les expose pour
+        # que `n_evaluated` bas soit explicable (« trop jeune » ≠ « prix manquant »).
+        cutoff_mature = now - timedelta(hours=HORIZON_MEASURE_HOURS[horizon])
+        n_too_young = sum(
+            1
+            for s in all_signals
+            if s.horizon == horizon and s.entity_id == entity_id and s.timestamp > cutoff_mature
+        )
+
         # Fetch history seulement pour l'entity demandée. Si entity inconnue
         # (futur multi-domaines), on saute le fetch et compute_hit_rate
         # retournera 0 évalués.
@@ -290,12 +302,18 @@ async def get_hit_rate(
             baselines["hit_rates"] if baselines["n_evaluated"] > 0 else {},
         )
 
+        young_note = (
+            f" {n_too_young} signaux encore trop jeunes pour être mesurés." if n_too_young else ""
+        )
         sample_warning: str | None = None
         if stats["n_evaluated"] == 0:
-            sample_warning = "Aucun signal éligible — fenêtre trop courte ou prix indisponibles."
+            sample_warning = (
+                "Aucun signal éligible — fenêtre trop courte ou prix indisponibles." + young_note
+            )
         elif stats["n_evaluated"] < 30:
             sample_warning = (
                 f"Échantillon faible ({stats['n_evaluated']} signaux, 30 mini recommandé)."
+                + young_note
             )
 
         out = HitRateOut(
@@ -307,6 +325,7 @@ async def get_hit_rate(
             n_total=len(eligible) + n_flagged_excluded,
             n_evaluated=stats["n_evaluated"],
             n_skipped=stats["n_skipped"],
+            n_too_young=n_too_young,
             n_success=stats["n_success"],
             n_flagged_excluded=n_flagged_excluded,
             include_flagged=include_flagged,
@@ -341,7 +360,7 @@ async def get_hit_rate_by_veracity(
     ),
     horizon: str = Query(
         ...,
-        pattern="^(flash|swing|macro)$",
+        pattern="^(flash|swing|macro|micro)$",
         description="Horizon Tik. flash=mesure 1h, swing=mesure 5j, macro=mesure 30j.",
     ),
     since_days: int = Query(30, ge=1, le=90, description="Fenêtre temporelle en jours (1-90)."),
@@ -465,6 +484,16 @@ async def get_hit_rate_by_veracity(
             sample_warning = (
                 f"Échantillon faible (total {total_evaluated} signaux, 30 mini recommandé)."
             )
+        else:
+            # Même avec un total suffisant, un bucket de HAUTE veracity peut afficher
+            # un hit_rate flatteur sur 2-3 signaux. On le signale explicitement
+            # (anti-fausse-confiance, Axe #1 : veracity ≠ edge).
+            thin = [b.bucket_label for b in buckets if b.thin_sample]
+            if thin:
+                sample_warning = (
+                    f"Bucket(s) à très peu de signaux ({', '.join(thin)}) : "
+                    "leur taux n'est pas concluant."
+                )
 
         out = HitRateByVeracityOut(
             entity_id=entity_id,
@@ -564,13 +593,14 @@ async def get_signal_track_record(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=(
                     f"Horizon non supporté pour le track record : {signal.horizon!r}. "
-                    "Valeurs attendues : flash, swing, macro."
+                    "Valeurs attendues : flash, swing, macro, micro."
                 ),
             )
 
         # Fail-fast ADR-005 : pas de track record flash GOLD (Yahoo 15 min
-        # de délai → incompatible avec mesure 15min/30min).
-        if signal.horizon == "flash" and signal.entity_id == "GOLD":
+        # de délai → incompatible avec mesure 15min/30min). Idem micro (mêmes
+        # fenêtres courtes 15min/30min ; l'ingest whiteliste BTC de toute façon).
+        if signal.horizon in ("flash", "micro") and signal.entity_id == "GOLD":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=(
@@ -675,7 +705,12 @@ async def get_signal_freshness(
     Lecture seule, pas de cache (une requête max() indexée est triviale).
     Garde-fou 1 inchangé, ADR-003 inchangé (pas d'action d'exécution).
     """
-    result = await session.execute(select(func.max(Signal.timestamp)))
+    # Les signaux micro (ADR-030/ADR-034) viennent du labo EXTERNE : ils ne
+    # prouvent pas que les moteurs swing/flash internes tournent. On les exclut
+    # du max() pour que la bannière « panne silencieuse » reste fiable.
+    result = await session.execute(
+        select(func.max(Signal.timestamp)).where(Signal.horizon != "micro")
+    )
     last_ts = result.scalar_one_or_none()
     fr = compute_signal_freshness(last_ts, now_utc_naive(), threshold_seconds)
     return SignalFreshnessOut(

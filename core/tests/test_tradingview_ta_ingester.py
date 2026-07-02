@@ -28,7 +28,7 @@ from tik_core.aggregator.tradingview_ta_ingester import (
 REDIS_KEY_MICRO_BTC = REDIS_KEY_MICRO_TPL.format(entity="btc")
 REDIS_KEY_MICRO_GOLD = REDIS_KEY_MICRO_TPL.format(entity="gold")
 
-T_DXY = TVTarget("DXY", "macro", "cfd", "TVC", "DXY", "1d")
+T_DXY = TVTarget("DXY", "macro", "1d", (("cfd", "TVC", "DXY"),))
 
 
 class FakeAnalysis:
@@ -62,7 +62,7 @@ class TestSafeFloat:
 
 class TestBuildItem:
     def test_full_valid(self):
-        item = _build_item(T_DXY, VALID)
+        item = _build_item(T_DXY, VALID, "TVC:DXY")
         assert item is not None
         assert item["label"] == "DXY"
         assert item["symbol"] == "TVC:DXY"
@@ -78,19 +78,19 @@ class TestBuildItem:
 
     def test_none_analysis(self):
         # La lib renvoie None quand TradingView manque de données.
-        assert _build_item(T_DXY, None) is None
+        assert _build_item(T_DXY, None, "TVC:DXY") is None
 
     def test_missing_summary(self):
-        assert _build_item(T_DXY, FakeAnalysis(summary=None)) is None
+        assert _build_item(T_DXY, FakeAnalysis(summary=None), "TVC:DXY") is None
 
     def test_empty_recommendation(self):
         bad = FakeAnalysis(summary={"RECOMMENDATION": "", "BUY": 0})
-        assert _build_item(T_DXY, bad) is None
+        assert _build_item(T_DXY, bad, "TVC:DXY") is None
 
     def test_partial_indicators(self):
         # Pas d'oscillateurs/MA/indicateurs → item produit, champs optionnels None.
         a = FakeAnalysis(summary={"RECOMMENDATION": "SELL", "BUY": 2, "SELL": 14, "NEUTRAL": 8})
-        item = _build_item(T_DXY, a)
+        item = _build_item(T_DXY, a, "TVC:DXY")
         assert item is not None
         assert item["recommendation"] == "SELL"
         assert item["osc_recommendation"] is None
@@ -138,6 +138,28 @@ class TestFetchTargetSync:
         ing = TradingViewTAIngester(redis=None)
         assert ing._fetch_target_sync(T_DXY) is None
         FakeHandler.result = VALID
+
+    def test_falls_back_to_second_variant(self, monkeypatch):
+        # 1re variante (BAD:X) lève → on doit basculer sur la 2e (TVC:GOLD) qui répond.
+        target = TVTarget(
+            "Or", "macro", "1d", (("cfd", "BAD", "X"), ("cfd", "TVC", "GOLD"))
+        )
+
+        class VariantHandler:
+            def __init__(self, *, exchange, symbol, **kwargs):
+                self.resolved = f"{exchange}:{symbol}"
+
+            def get_analysis(self):
+                if self.resolved == "BAD:X":
+                    raise RuntimeError("Exchange or symbol not found.")
+                return VALID
+
+        monkeypatch.setattr(mod, "TA_Handler", VariantHandler)
+        ing = TradingViewTAIngester(redis=None)
+        item = ing._fetch_target_sync(target)
+        assert item is not None
+        # Le symbole retenu est la variante qui a effectivement répondu.
+        assert item["symbol"] == "TVC:GOLD"
 
 
 class FakeRedis:

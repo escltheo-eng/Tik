@@ -22,8 +22,10 @@ import {
   HitRateByVeracity,
   MacroCockpit,
   MacroEvent,
+  CrossAsset,
   MacroRegime,
   RateProbabilities,
+  Stablecoins,
   ManualTrade,
   ManualTradeCloseInput,
   ManualTradeInput,
@@ -275,6 +277,14 @@ export async function getMacroCockpit(client: HttpClient): Promise<MacroCockpit>
 
 export async function getRateProbabilities(client: HttpClient): Promise<RateProbabilities> {
   return client.get<RateProbabilities>('/macro/rate_probabilities');
+}
+
+export async function getStablecoins(client: HttpClient): Promise<Stablecoins> {
+  return client.get<Stablecoins>('/macro/stablecoins');
+}
+
+export async function getCrossAsset(client: HttpClient): Promise<CrossAsset> {
+  return client.get<CrossAsset>('/macro/cross_asset');
 }
 
 // ----- Hit rate (Phase A.2 trading manuel J+10) -----

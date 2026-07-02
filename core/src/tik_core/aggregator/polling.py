@@ -59,6 +59,10 @@ INGESTER_INTERVALS_S: dict[str, int] = {
     "tradingview_ta": 30 * 60,
     # --- Macro / calendriers (non surveillés par source_health) ---
     "fred_macro": _H,
+    # Contexte macro cosmique (ADR-036/037, réconciliation 2026-07-02) :
+    # données quotidiennes → 6 h suffit, ne touche jamais le combined_bias.
+    "stablecoins": 6 * _H,
+    "cross_asset": 6 * _H,
     "macro_regime": 6 * _H,
     "rate_probabilities": 6 * _H,
     "cftc_cot": 24 * _H,

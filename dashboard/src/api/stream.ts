@@ -226,10 +226,23 @@ export class TikStream {
     if (signal.advisory?.macro_crash_warning) {
       this.callbacks.onCrashWarning?.(signal);
     }
-    if (signal.circuit_breaker_status && signal.circuit_breaker_status !== 'ok') {
+    // Un signal micro (ADR-030/ADR-034) est TOUJOURS degraded by-design
+    // (shadow ML) et sa veracity est un defaut conservateur 0.70 — ni un
+    // desaccord de sources OSINT, ni un effondrement d'accord. On l'exclut
+    // des DEUX declencheurs pour ne pas generer de fausses alertes.
+    const isMicroShadow = signal.horizon === 'micro';
+    if (
+      signal.circuit_breaker_status &&
+      signal.circuit_breaker_status !== 'ok' &&
+      !isMicroShadow
+    ) {
       this.callbacks.onFakeNewsDetected?.(signal);
     }
-    if (typeof signal.veracity === 'number' && signal.veracity < this.veracityCollapseThreshold) {
+    if (
+      typeof signal.veracity === 'number' &&
+      signal.veracity < this.veracityCollapseThreshold &&
+      !isMicroShadow
+    ) {
       this.callbacks.onVeracityCollapse?.(signal);
     }
   }
