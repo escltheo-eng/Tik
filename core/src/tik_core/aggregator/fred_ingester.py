@@ -15,11 +15,18 @@ import structlog
 from redis.asyncio import Redis
 
 from tik_core.aggregator.base import BaseIngester, MacroDataPoint
+from tik_core.aggregator.task_supervision import supervise_task
 from tik_core.utils.time import now_utc
 
 log = structlog.get_logger()
 
 FRED_BASE = "https://api.stlouisfed.org/fred/series/observations"
+
+# TTL des clés `tik.macro.last.{series}`. Historiquement écrites en SET sans TTL
+# (audit 2026-07-02) : si l'ingester meurt, les consommateurs lisaient des valeurs
+# périmées indéfiniment sans pouvoir le détecter. 25 h = polling horaire + marge
+# large ; la clé expire donc d'elle-même si le refresh s'arrête.
+MACRO_LAST_TTL_S = 25 * 3600
 
 # Séries utiles pour trading BTC/Gold
 DEFAULT_SERIES = [
@@ -58,7 +65,7 @@ class FredIngester(BaseIngester):
             log.warning("fred.ingester.no_api_key_skipping")
             return
         self._running = True
-        self._task = asyncio.create_task(self._run())
+        self._task = supervise_task(asyncio.create_task(self._run()), self.name)
         log.info(
             "fred.ingester.started",
             series=self.series_ids,
@@ -73,6 +80,10 @@ class FredIngester(BaseIngester):
                 await self._task
             except asyncio.CancelledError:
                 pass
+            except Exception as exc:  # noqa: BLE001
+                # Task déjà morte : on logge sans propager pour ne pas casser
+                # l'arrêt gracieux du runner (audit 2026-07-02).
+                log.warning("fred.ingester.stop_error", error=str(exc))
         log.info("fred.ingester.stopped")
 
     async def _fetch_series(
@@ -136,14 +147,22 @@ class FredIngester(BaseIngester):
                             "value": point.value,
                             "timestamp": point.timestamp.isoformat(),
                         }
-                        await self.redis.publish(
-                            f"tik.macro.{point.series_id}",
-                            json.dumps(payload),
-                        )
-                        await self.redis.set(
-                            f"tik.macro.last.{point.series_id}",
-                            json.dumps(payload),
-                        )
+                        try:
+                            # Écritures Redis protégées : une panne Redis ne doit
+                            # pas tuer la boucle — on log et on passe à la série
+                            # suivante (pattern polymarket, audit 2026-07-02).
+                            await self.redis.publish(
+                                f"tik.macro.{point.series_id}",
+                                json.dumps(payload),
+                            )
+                            # setex (et non SET sans TTL) : cf. MACRO_LAST_TTL_S.
+                            await self.redis.setex(
+                                f"tik.macro.last.{point.series_id}",
+                                MACRO_LAST_TTL_S,
+                                json.dumps(payload),
+                            )
+                        except Exception as exc:  # noqa: BLE001
+                            log.warning("fred.redis.error", series=point.series_id, error=str(exc))
                     # Rate limit FRED : 120 req/min. On laisse de la marge.
                     await asyncio.sleep(1)
 

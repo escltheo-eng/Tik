@@ -82,6 +82,12 @@ async def upsert_macro_event(
     générer de doublons. Met à jour `updated_at`, `event_name`, `importance`,
     `assets_impacted`, `source`, `release_id` au cas où on aurait corrigé
     une métadonnée dans `macro_calendar_data.py`.
+
+    L'exécution est isolée dans un SAVEPOINT (`begin_nested`) : une erreur SQL
+    sur CET event est rollbackée localement sans avorter la transaction du
+    caller (cf. audit 2026-07-02 constat S-2 — sans savepoint, un event
+    invalide avortait la transaction Postgres du batch entier et faisait
+    perdre TOUT le calendrier macro du cycle, dont les FOMC HIGH ±4h).
     """
     scheduled_for_naive = to_naive_utc(scheduled_for)
     now = now_utc_naive()
@@ -109,7 +115,14 @@ async def upsert_macro_event(
         },
     )
     try:
-        await session.execute(stmt)
+        # SAVEPOINT par event : en Postgres, une erreur SQL avorte toute la
+        # transaction courante — sans ce begin_nested, le `return False`
+        # ci-dessous laissait la transaction du batch en état "aborted" et
+        # tous les upserts suivants + le commit échouaient en cascade.
+        # Le context manager rollback le savepoint sur exception, la
+        # transaction externe reste utilisable.
+        async with session.begin_nested():
+            await session.execute(stmt)
         return True
     except SQLAlchemyError as exc:
         log.warning(
@@ -128,6 +141,12 @@ async def upsert_many(
     """Upsert N events macro dans une seule transaction. Retourne le compte inséré/maj.
 
     **Best-effort** : si la transaction échoue, on log warning et retourne 0.
+
+    **Résilience par event** : chaque `upsert_macro_event` tourne dans son
+    propre SAVEPOINT (cf. sa docstring) — un event invalide est perdu (False,
+    log warning) mais les autres sont bien commités. Avant ce fix (audit
+    2026-07-02 constat S-2), un seul event invalide faisait perdre tout le
+    calendrier du cycle.
 
     Le caller (FredCalendarIngester) construit les dicts à partir des specs
     statiques + des release_dates fetchées par release_id.

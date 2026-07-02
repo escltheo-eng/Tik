@@ -10,6 +10,7 @@ import { Collapsible } from '@/components/ui/collapsible';
 import { InfoTooltip } from '@/components/ui/info-tooltip';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { HttpClient } from '@/src/api/client';
 import { getSignal, getSignalTrackRecord } from '@/src/api/endpoints';
 import { TikError } from '@/src/api/errors';
 import { Signal, SignalTrackRecord, TrackRecordRow } from '@/src/api/types';
@@ -165,7 +166,7 @@ function TrackRecordSection({
   borderColor,
 }: {
   signalId: string;
-  client: unknown;
+  client: HttpClient;
   borderColor: string;
 }) {
   const [record, setRecord] = useState<SignalTrackRecord | null>(null);
@@ -175,7 +176,7 @@ function TrackRecordSection({
     let cancelled = false;
     (async () => {
       try {
-        const data = await getSignalTrackRecord(client as any, signalId);
+        const data = await getSignalTrackRecord(client, signalId);
         if (!cancelled) setRecord(data);
       } catch {
         // Échec silencieux : le track record est une feature optionnelle

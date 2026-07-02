@@ -816,7 +816,18 @@ async def analyze_swing_btc(
     # combien ça bouge), PAS une prévision du sens (poids 0 sur la décision,
     # comme l'ATR — cf. ADR-018).
     decision.advisory["expected_amplitude_pct"] = median_abs_return_pct(df["close"], 30)
-    decision.advisory["ref_price"] = round(float(df["close"].iloc[-1]), 2)
+    if len(df) < 60:
+        # Traçabilité (audit 2026-07-02) : l'hypothèse technique « Insufficient
+        # historical data » est écrasée ensuite par la décision OSINT — on en
+        # garde la trace dans l'advisory pour l'audit (aucun effet décisionnel).
+        decision.advisory["technical_note"] = "insufficient_history"
+    if not df.empty:
+        decision.advisory["ref_price"] = round(float(df["close"].iloc[-1]), 2)
+    else:
+        # Garde (audit 2026-07-02) : une réponse API valide mais vide (0 kline)
+        # levait IndexError sur iloc[-1] → cycle entier perdu silencieusement.
+        # ref_price est Optional côté schéma (Advisory), on l'omet simplement.
+        log.warning("swing.klines_empty", entity=decision.entity_id)
 
     settings = get_settings()
 
@@ -975,6 +986,9 @@ def _compute_dxy_bias(history: list[dict]) -> tuple[float, str, float, float] | 
         return None
 
     recent = valid_values[0]
+    # past_idx = nombre de pas réellement couverts : 5 en régime nominal, 4 si
+    # l'historique n'a que 5 valeurs valides (audit 2026-07-02 — le libellé
+    # « var 5d » était alors faux, il est désormais dynamique côté caller).
     past_idx = min(5, len(valid_values) - 1)
     past = valid_values[past_idx]
     if past == 0:
@@ -982,14 +996,14 @@ def _compute_dxy_bias(history: list[dict]) -> tuple[float, str, float, float] | 
     var_pct = (recent - past) / past * 100
 
     if var_pct >= 1.0:
-        return -1.0, "dxy_strong_up", recent, past
+        return -1.0, "dxy_strong_up", recent, past, past_idx
     if var_pct >= 0.3:
-        return -0.5, "dxy_up", recent, past
+        return -0.5, "dxy_up", recent, past, past_idx
     if var_pct <= -1.0:
-        return 1.0, "dxy_strong_down", recent, past
+        return 1.0, "dxy_strong_down", recent, past, past_idx
     if var_pct <= -0.3:
-        return 0.5, "dxy_down", recent, past
-    return 0.0, "dxy_stable", recent, past
+        return 0.5, "dxy_down", recent, past, past_idx
+    return 0.0, "dxy_stable", recent, past, past_idx
 
 
 def _enrich_with_dxy(decision: SwingDecision, history: list[dict]) -> float | None:
@@ -1001,7 +1015,7 @@ def _enrich_with_dxy(decision: SwingDecision, history: list[dict]) -> float | No
     result = _compute_dxy_bias(history)
     if result is None:
         return None
-    bias, zone, recent, past = result
+    bias, zone, recent, past, n_steps = result
     var_pct = (recent - past) / past * 100
 
     bias_label = (
@@ -1012,7 +1026,7 @@ def _enrich_with_dxy(decision: SwingDecision, history: list[dict]) -> float | No
         {
             "source": "fred_dtwexbgs",
             "score": get_effective_score("fred_dtwexbgs", SOURCE_SCORES),
-            "fact": f"DXY={recent:.2f} (var 5d {var_pct:+.2f}%)",
+            "fact": f"DXY={recent:.2f} (var {n_steps}d {var_pct:+.2f}%)",
         }
     )
     decision.triggers.append(
@@ -1204,7 +1218,18 @@ async def analyze_swing_gold(
     # swing (~5 j). Bougies 1h → ~5 j ouvrés ≈ 120 barres. CONTEXTE de
     # volatilité, PAS une prévision du sens (cf. ADR-018 / ADR-025).
     decision.advisory["expected_amplitude_pct"] = median_abs_return_pct(df["close"], 120)
-    decision.advisory["ref_price"] = round(float(df["close"].iloc[-1]), 2)
+    if len(df) < 60:
+        # Traçabilité (audit 2026-07-02) : l'hypothèse technique « Insufficient
+        # historical data » est écrasée ensuite par la décision OSINT — on en
+        # garde la trace dans l'advisory pour l'audit (aucun effet décisionnel).
+        decision.advisory["technical_note"] = "insufficient_history"
+    if not df.empty:
+        decision.advisory["ref_price"] = round(float(df["close"].iloc[-1]), 2)
+    else:
+        # Garde (audit 2026-07-02) : une réponse API valide mais vide (0 kline)
+        # levait IndexError sur iloc[-1] → cycle entier perdu silencieusement.
+        # ref_price est Optional côté schéma (Advisory), on l'omet simplement.
+        log.warning("swing.klines_empty", entity=decision.entity_id)
 
     settings = get_settings()
 

@@ -16,6 +16,7 @@ rebuild Docker via vérification de la clé `tik.sentiment.reddit.btc`.
 from __future__ import annotations
 
 import math
+import time
 from unittest.mock import MagicMock
 
 import httpx
@@ -23,6 +24,8 @@ import pytest
 
 from tik_core.aggregator.news_classifier import NewsClassifier
 from tik_core.aggregator.reddit_ingester import (
+    BACKOFF_403_S,
+    BACKOFF_403_THRESHOLD,
     REDIS_KEY_TPL,
     RedditIngester,
 )
@@ -645,6 +648,99 @@ async def test_fetch_reddit_headlines_published_at_iso():
     # created_utc=1714521600 → 2024-04-30T22:40:00Z
     assert h["published_at"] is not None
     assert h["published_at"].startswith("2024-")
+
+
+# =============================================================================
+# Backoff 403 (audit 2026-07-02) — ne plus marteler l'IP bannie (Bug 11)
+# =============================================================================
+
+
+def _make_403_exc() -> httpx.HTTPStatusError:
+    """Fabrique l'exception exacte levée par raise_for_status() sur un 403."""
+    req = httpx.Request("GET", "https://www.reddit.com/r/Bitcoin/hot.json")
+    resp = httpx.Response(403, request=req)
+    return httpx.HTTPStatusError("403 Blocked", request=req, response=resp)
+
+
+async def test_backoff_armed_after_three_consecutive_403():
+    """3 échecs 403 consécutifs → backoff 6h armé, subs restants non martelés."""
+    ing = _make_ingester()
+    client = _FakeClient(raise_exc=_make_403_exc())
+
+    # Cycle 1 : 2 subs → 2×403 (compteur à 2, pas encore de backoff).
+    await ing._fetch(client)
+    assert ing._consecutive_403 == 2
+    assert ing._in_backoff_403() is False
+
+    # Cycle 2 : le 3e 403 arme le backoff, le 2e sub n'est plus appelé (break).
+    await ing._fetch(client)
+    assert ing._consecutive_403 == BACKOFF_403_THRESHOLD
+    assert ing._in_backoff_403() is True
+    assert len(client.calls) == 3  # 2 (cycle 1) + 1 (cycle 2, break après le 3e)
+
+
+async def test_backoff_resets_on_first_success():
+    """Auto-récupération unban : le 1er succès HTTP remet tout à zéro."""
+    ing = _make_ingester()
+    bad = _FakeClient(raise_exc=_make_403_exc())
+    await ing._fetch(bad)
+    assert ing._consecutive_403 == 2
+
+    good = _FakeClient(responses_by_sub={"Bitcoin": REDDIT_FIXTURE_BITCOIN})
+    await ing._fetch(good)
+    assert ing._consecutive_403 == 0
+    assert ing._in_backoff_403() is False
+
+
+async def test_backoff_expires_then_probes_again():
+    """Backoff expiré → on re-sonde (rien ne reste bloqué définitivement)."""
+    ing = _make_ingester()
+    ing._consecutive_403 = BACKOFF_403_THRESHOLD
+    ing._backoff_until = time.monotonic() - 1  # fenêtre 6h écoulée
+    assert ing._in_backoff_403() is False
+
+    # La re-sonde qui échoue en 403 ré-arme immédiatement le backoff
+    # (1 requête / 6h tant que le ban dure).
+    client = _FakeClient(raise_exc=_make_403_exc())
+    await ing._fetch(client)
+    assert ing._in_backoff_403() is True
+    assert len(client.calls) == 1  # une seule sonde, pas de martelage
+
+
+async def test_non_403_errors_do_not_feed_backoff():
+    """Une panne réseau ordinaire ne doit PAS déclencher le backoff 403."""
+    ing = _make_ingester()
+    client = _FakeClient(raise_exc=httpx.ConnectError("network down"))
+    await ing._fetch(client)
+    await ing._fetch(client)
+    assert ing._consecutive_403 == 0
+    assert ing._in_backoff_403() is False
+
+
+async def test_run_skips_cycles_during_backoff(monkeypatch):
+    """Pendant le backoff, _run saute le cycle sans fetch (log explicite)."""
+    ing = _make_ingester()
+    ing._consecutive_403 = BACKOFF_403_THRESHOLD
+    ing._backoff_until = time.monotonic() + BACKOFF_403_S
+
+    fetch_calls = {"n": 0}
+
+    async def fake_fetch(_client):
+        fetch_calls["n"] += 1
+        return
+
+    ing._fetch = fake_fetch
+
+    async def fake_sleep(_s) -> None:
+        ing._running = False  # coupe la boucle après le 1er cycle
+
+    monkeypatch.setattr(
+        "tik_core.aggregator.reddit_ingester.asyncio.sleep",
+        fake_sleep,
+    )
+    ing._running = True
+    await ing._run()
+    assert fetch_calls["n"] == 0  # cycle sauté : Reddit pas martelé
 
 
 def test_build_permalink_handles_relative_and_absolute():

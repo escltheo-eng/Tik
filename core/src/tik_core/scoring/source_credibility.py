@@ -213,8 +213,13 @@ async def get_source_score(redis: Redis | None, source: str) -> float | None:
     """Score dynamique d'une source depuis Redis.
 
     Retourne le score si présent dans `tik.source_credibility.<source>`,
-    `None` si miss ou Redis indisponible. Le fallback statique est
-    responsabilité du caller (cf. `get_effective_score`).
+    `None` si miss, si `redis is None`, ou si la valeur stockée est invalide
+    (ValueError/TypeError captées). ⚠ Une panne Redis (ConnectionError...)
+    n'est PAS captée ici : elle remonte au caller et fait échouer le cycle —
+    comportement assumé (sans Redis le cycle est de toute façon inutilisable ;
+    docstring corrigée à l'audit 2026-07-02, elle promettait à tort None).
+    Le fallback statique est responsabilité du caller (cf.
+    `get_effective_score`).
     """
     if redis is None:
         return None

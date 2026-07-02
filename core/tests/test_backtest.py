@@ -9,7 +9,9 @@ l'utilisatrice (cartes dashboard, track record, mesure officielle J+10) — un b
 ici corromprait silencieusement la décision go/no-go. D'où la couverture.
 """
 
+import math
 from datetime import UTC, datetime, timedelta
+from statistics import mean
 from types import SimpleNamespace
 
 import pytest
@@ -22,8 +24,12 @@ from tik_core.scripts.backtest import (
     evaluate_signal,
     evaluate_tik_baseline,
     find_closest_price,
+    format_coverage_warning,
+    klines_coverage_start,
+    non_overlapping_subsample,
     normal_cdf,
     paired_gain_significance,
+    split_out_of_coverage,
 )
 
 # Base temporelle commune (aware UTC) pour construire les historiques de prix.
@@ -69,10 +75,13 @@ def _result(direction: str, delta_pct: float, success: bool | None = None) -> di
         ("short", 2.0, -2.0),  # marché monte → on perd notre short
         ("short", -1.5, 1.5),  # marché baisse → on gagne sur le short
         ("short", 0.0, 0.0),
-        # NEUTRAL : "réussi" si stable, donc gain = -|delta|
-        ("neutral", 2.0, -2.0),  # gros mouvement → loupé
-        ("neutral", -1.5, -1.5),  # ditto en baisse
-        ("neutral", 0.0, 0.0),  # marché stable → "réussi"
+        # NEUTRAL : pas de position → gain 0 quel que soit le mouvement.
+        # Convention unifiée 2026-07-02 (audit) : l'ancienne convention
+        # -|delta| pénalisait Tik dans les tests appariés alors
+        # qu'analyze_colinearity modélisait déjà neutral = 0.
+        ("neutral", 2.0, 0.0),
+        ("neutral", -1.5, 0.0),
+        ("neutral", 0.0, 0.0),
     ],
 )
 def test_gain_for(direction, delta_pct, expected_gain):
@@ -324,3 +333,156 @@ class TestPairedGainSignificance:
         assert out["mean_diff"] > 0
         assert out["z"] is not None and out["z"] > 0
         assert out["p"] is not None and out["p"] < 0.05
+
+    def test_neutral_convention_is_zero_in_paired_gains(self):
+        # Convention 2026-07-02 : neutral = pas de position → gain Tik = 0,
+        # alignée sur analyze_colinearity (avant : -|delta|, biais vers le bas).
+        results = [_result("neutral", d) for d in (-2.0, 3.0, -1.0)]
+        out = paired_gain_significance(results, "short")
+        assert out["tik_gain"] == pytest.approx(0.0)
+        # baseline short : mean(-(-2), -(3), -(-1)) = mean(2, -3, 1) = 0
+        assert out["baseline_gain"] == pytest.approx(0.0)
+
+
+# ----- non_overlapping_subsample -----
+
+
+def _ts_row(direction: str, delta_pct: float, ts) -> dict:
+    """Résultat minimal avec timestamp (clé 'ts', datetime ou ISO str)."""
+    return {"direction": direction, "delta_pct": delta_pct, "ts": ts}
+
+
+class TestNonOverlappingSubsample:
+    """Constat C-1 audit 2026-07-02 : le sous-échantillonnage non chevauchant
+    est le prérequis de toute p-value honnête sur des signaux denses."""
+
+    def test_dense_rows_collapse_to_one_window(self):
+        # 300 signaux espacés de 1 min sur un horizon 24h → 1 seule fenêtre
+        rows = [_ts_row("long", 1.0, _BASE + timedelta(minutes=i)) for i in range(300)]
+        out = non_overlapping_subsample(rows, timedelta(hours=24))
+        assert len(out) == 1
+        assert out[0]["ts"] == _BASE  # le premier chronologiquement
+
+    def test_exact_spacing_keeps_all_rows(self):
+        rows = [_ts_row("long", 1.0, _BASE + timedelta(hours=24 * i)) for i in range(10)]
+        out = non_overlapping_subsample(rows, timedelta(hours=24))
+        assert len(out) == 10
+
+    def test_accepts_iso_strings_with_and_without_z(self):
+        rows = [
+            _ts_row("long", 1.0, _BASE.isoformat()),
+            _ts_row("long", 1.0, (_BASE + timedelta(hours=25)).replace(tzinfo=None).isoformat()),
+            _ts_row("long", 1.0, (_BASE + timedelta(hours=50)).isoformat() + "Z"),
+        ]
+        # Hétérogène aware/naïf/Z-suffixé : tous normalisés en naïf UTC
+        rows[0]["ts"] = _BASE.replace(tzinfo=None).isoformat()
+        out = non_overlapping_subsample(rows, timedelta(hours=24))
+        assert len(out) == 3
+
+    def test_unsorted_input_is_sorted_first(self):
+        rows = [
+            _ts_row("long", 1.0, _BASE + timedelta(hours=48)),
+            _ts_row("long", 1.0, _BASE),
+            _ts_row("long", 1.0, _BASE + timedelta(minutes=30)),  # chevauche le 1er
+        ]
+        out = non_overlapping_subsample(rows, timedelta(hours=24))
+        assert [r["ts"] for r in out] == [_BASE, _BASE + timedelta(hours=48)]
+
+    def test_empty_returns_empty(self):
+        assert non_overlapping_subsample([], timedelta(hours=24)) == []
+
+
+class TestPairedGainSignificanceNonOverlapping:
+    """La significativité doit venir du sous-échantillon non chevauchant
+    (constat C-1 CRITIQUE audit 2026-07-02) : un z-test plein échantillon sur
+    des fenêtres partagées à ~99 % affiche des p minuscules sans fondement."""
+
+    @staticmethod
+    def _dense_results() -> list[dict]:
+        # 300 signaux long espacés de 1 min (5 h au total) : avec un horizon
+        # 24h ils partagent quasiment toute leur fenêtre forward. Deltas
+        # variés (sin) à moyenne positive ~0.2 pour créer une pseudo-signif.
+        return [
+            _ts_row("long", 0.2 + math.sin(i), _BASE + timedelta(minutes=i)) for i in range(300)
+        ]
+
+    def test_full_sample_p_is_inflated_without_horizon(self):
+        # Rétrocompat sans horizon_td : z/p plein échantillon → illusion de
+        # significativité (c'est exactement le piège que corrige horizon_td).
+        out = paired_gain_significance(self._dense_results(), "neutral")
+        assert out["p"] is not None and out["p"] < 0.05
+        assert out["n_indep"] is None
+
+    def test_dense_sample_yields_no_claimable_significance(self):
+        out = paired_gain_significance(
+            self._dense_results(), "neutral", horizon_td=timedelta(hours=24)
+        )
+        # 300 signaux en 5 h = UNE seule fenêtre 24h indépendante → pas de p
+        assert out["n"] == 300
+        assert out["n_indep"] == 1
+        assert out["z"] is None
+        assert out["p"] is None
+        # Les stats descriptives restent plein échantillon
+        assert out["tik_gain"] == pytest.approx(mean(0.2 + math.sin(i) for i in range(300)))
+
+    def test_spaced_results_keep_significance(self):
+        # Signaux espacés de 25h ≥ horizon 24h → réellement indépendants,
+        # la significativité reste établissable.
+        results = [
+            _ts_row("long", 1.0 + 0.1 * (i % 2), _BASE + timedelta(hours=25 * i)) for i in range(30)
+        ]
+        out = paired_gain_significance(results, "neutral", horizon_td=timedelta(hours=24))
+        assert out["n_indep"] == 30
+        assert out["p"] is not None and out["p"] < 0.05
+        assert out["mean_diff_indep"] == pytest.approx(out["mean_diff"])
+
+
+# ----- Couverture klines (anti-troncature silencieuse) -----
+
+
+class TestKlinesCoverage:
+    """Binance plafonne à 1000 bougies (~41,6 j en 1h) : la troncature de la
+    fenêtre demandée doit être explicite (WARNING + compteur dédié)."""
+
+    def test_coverage_start_empty_history(self):
+        assert klines_coverage_start([]) is None
+
+    def test_coverage_start_is_first_candle_naive_utc(self):
+        history = [(_ms(_BASE), 100.0), (_ms(_BASE + timedelta(hours=1)), 101.0)]
+        start = klines_coverage_start(history)
+        assert start == _BASE.replace(tzinfo=None)
+        assert start.tzinfo is None  # cohérent timestamps DB naïfs (Bug 9)
+
+    def test_split_out_of_coverage_dedicated_counter(self):
+        cov = {"BTC": _BASE.replace(tzinfo=None), "GOLD": None}
+        signals = [
+            SimpleNamespace(
+                entity_id="BTC", timestamp=_BASE.replace(tzinfo=None) - timedelta(days=2)
+            ),
+            SimpleNamespace(
+                entity_id="BTC", timestamp=_BASE.replace(tzinfo=None) + timedelta(days=1)
+            ),
+            # GOLD sans couverture connue → conservé
+            SimpleNamespace(
+                entity_id="GOLD", timestamp=_BASE.replace(tzinfo=None) - timedelta(days=9)
+            ),
+        ]
+        kept, excluded_by_entity = split_out_of_coverage(signals, cov)
+        assert len(kept) == 2
+        assert excluded_by_entity == {"BTC": 1}
+
+    def test_format_coverage_warning_none_when_covered(self):
+        cov = _BASE.replace(tzinfo=None)
+        assert format_coverage_warning("BTC", cov, cov + timedelta(days=1), 0) is None
+        assert format_coverage_warning("BTC", None, cov, 0) is None
+
+    def test_format_coverage_warning_explicit_when_truncated(self):
+        cov = _BASE.replace(tzinfo=None)
+        requested = cov - timedelta(days=10)
+        msg = format_coverage_warning("BTC", cov, requested, 42)
+        assert msg is not None
+        assert "WARNING" in msg
+        assert "TRONQUÉE" in msg
+        assert "42 signaux exclus" in msg
+        assert cov.isoformat() in msg
+        assert requested.isoformat() in msg

@@ -224,7 +224,10 @@ def _compute_technical_evidence_flash(df: pd.DataFrame) -> FlashDecision:
     current_atr = float(atr_14.iloc[-1])
 
     # Momentum 15m : variation % entre la dernière clôture et la clôture il y a 15 bougies
-    momentum_15m_pct = (current_price / float(close.iloc[-15]) - 1.0) * 100.0
+    # iloc[-16] : 15 intervalles de 1 min entre la clôture d'il y a 15 bougies
+    # et la dernière (iloc[-15] n'en couvrait que 14 — off-by-one, audit
+    # 2026-07-02). Indicateur informatif seulement (poids 0, cf. ADR-018).
+    momentum_15m_pct = (current_price / float(close.iloc[-16]) - 1.0) * 100.0
 
     triggers: list[dict] = []
     evidence: list[dict] = []
@@ -653,7 +656,16 @@ async def analyze_flash_btc(
     # flash (~1 h). Bougies 1m → 1 h = 60 barres. CONTEXTE de volatilité, PAS
     # une prévision du sens (cf. ADR-018 / ADR-025).
     decision.advisory["expected_amplitude_pct"] = median_abs_return_pct(df["close"], 60)
-    decision.advisory["ref_price"] = round(float(df["close"].iloc[-1]), 2)
+    if len(df) < 60:
+        # Traçabilité (audit 2026-07-02) : trace de l'insuffisance d'historique
+        # conservée dans l'advisory (l'hypothèse technique est écrasée ensuite).
+        decision.advisory["technical_note"] = "insufficient_history"
+    if not df.empty:
+        decision.advisory["ref_price"] = round(float(df["close"].iloc[-1]), 2)
+    else:
+        # Garde (audit 2026-07-02) : 0 kline levait IndexError → cycle perdu.
+        # ref_price est Optional côté schéma, on l'omet simplement.
+        log.warning("flash.klines_empty", entity=decision.entity_id)
 
     settings = get_settings()
 

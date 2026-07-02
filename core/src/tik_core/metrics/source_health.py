@@ -15,9 +15,12 @@ Une clé absente = source qui ne publie pas (ex. Reddit 403) ; une clé trop vie
 
 Logique pure (zéro IO) : l'endpoint lit les clés Redis et passe les valeurs brutes
 ici. `parse_fetched_at` / `classify_source` / `compute_source_health` / `summarize`
-sont testables seuls. Intervalles de polling vérifiés dans `run_ingesters.py`
-(2026-05-28) ; `max_age_s ≈ 3× l'intervalle` pour tolérer un cycle manqué sans
-faux positif.
+sont testables seuls. Intervalles de polling centralisés dans
+`aggregator/polling.py` (source unique de vérité) ; règle `max_age_s ≥ 3× l'intervalle`
+pour tolérer des cycles manqués sans faux positif, verrouillée par
+`tests/test_polling_intervals.py` (audit 2026-07-02, constat M-1 : la spec
+CryptoCompare était restée à 3 h alors que le Bug 15 avait porté le polling à 12 h
+→ fausse alerte critique quasi permanente dès le retour du quota).
 """
 
 from __future__ import annotations
@@ -42,8 +45,9 @@ class SourceSpec:
     note: str = ""
 
 
-# Intervalles réels (run_ingesters.py) : FG/CC/CoinGecko/Polymarket=3600s,
-# GoogleNews/Reddit/GDELT=1800s, last_price.BTC=WS continu, GOLD=60s.
+# Intervalles réels : cf. aggregator/polling.py (INGESTER_INTERVALS_S), croisés
+# automatiquement avec ces specs dans tests/test_polling_intervals.py.
+# last_price.BTC = flux WS continu (pas de polling, absent du dict).
 SOURCE_SPECS: tuple[SourceSpec, ...] = (
     SourceSpec(
         "fear_greed",
@@ -57,7 +61,11 @@ SOURCE_SPECS: tuple[SourceSpec, ...] = (
         "cryptocompare_news",
         "tik.sentiment.cryptocompare.btc",
         "fetched_at",
-        3 * _H,
+        # 36 h = 3× le polling 12 h (invariant anti-quota Bug 15 : free tier
+        # 100 req/mois). Resynchronisé 2026-07-02 (audit M-1) — l'ancien 3 h datait
+        # du polling horaire et aurait déclenché une fausse alerte critique ~75 %
+        # du temps dès le retour du quota.
+        36 * _H,
         True,
         "overlay news BTC",
     ),
@@ -81,7 +89,10 @@ SOURCE_SPECS: tuple[SourceSpec, ...] = (
         "gdelt_gold",
         "tik.sentiment.gdelt.gold",
         "fetched_at",
-        4 * 30 * _M,
+        # 6 h = 3× le polling 2 h (mitigation 429 du 2026-06-11). Resynchronisé
+        # 2026-07-02 (audit M-1) — l'ancien 2 h = 1× l'intervalle flaggait « stale »
+        # au moindre cycle raté. Aligné sur le TTL Redis 6 h de l'ingester.
+        6 * _H,
         False,
         "overlay tone GOLD — rate-limit 429 fréquent (backlog #9), tolérance large",
     ),

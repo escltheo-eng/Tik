@@ -37,7 +37,7 @@ from tik_core.api.headlines import (
     _iter_headlines_from_payload,
 )
 from tik_core.config import Settings, get_settings
-from tik_core.notify.telegram import send_message
+from tik_core.notify.telegram import escape_html, send_message
 from tik_core.scoring.indicators import ema, rsi
 from tik_core.scoring.swing_engine import SOURCE_SCORES
 from tik_core.scripts.backtest import (
@@ -205,17 +205,9 @@ def _fmt_derivatives_lines(deriv: dict | None) -> list[str]:
         lines.append("• " + " · ".join(parts))
     if deriv.get("long_pct_retail") is not None:
         div = deriv.get("divergent")
-        tail = (
-            " (alignés)"
-            if div is False
-            else " (divergent ⚠)"
-            if div is True
-            else ""
-        )
+        tail = " (alignés)" if div is False else " (divergent ⚠)" if div is True else ""
         top = (
-            f" / {deriv['long_pct_top']:.0f}% top"
-            if deriv.get("long_pct_top") is not None
-            else ""
+            f" / {deriv['long_pct_top']:.0f}% top" if deriv.get("long_pct_top") is not None else ""
         )
         lines.append(f"• longs {deriv['long_pct_retail']:.0f}% retail{top}{tail}")
     return lines
@@ -290,9 +282,11 @@ def format_briefing(
     lines.append("📅 <b>Macro HIGH — prochaines 24h</b>")
     if events:
         for ev in events:
-            assets = "/".join(ev.get("assets") or []) or "?"
+            # Contenu externe (API FRED / calendriers) → escape_html obligatoire
+            # (un « < » brut casserait tout le message, cf. notify/telegram.py).
+            assets = "/".join(escape_html(a) for a in (ev.get("assets") or [])) or "?"
             lines.append(
-                f"• <b>{ev['event_name']}</b> — {ev['hours_until_str']} "
+                f"• <b>{escape_html(ev['event_name'])}</b> — {ev['hours_until_str']} "
                 f"({assets}) · {ev['when_utc']} UTC"
             )
     else:
@@ -322,8 +316,9 @@ def format_briefing(
         lines.append("📰 <b>Titres clés (BTC)</b>")
         for h in headlines:
             emo = _sentiment_emoji(h.get("sentiment", "neutral"))
-            pub = h.get("publisher") or "?"
-            lines.append(f"{emo} {h['title']} — <i>{pub}</i>")
+            # Titres + publishers = contenu externe brut → escape_html.
+            pub = escape_html(h.get("publisher") or "?")
+            lines.append(f"{emo} {escape_html(h['title'])} — <i>{pub}</i>")
         lines.append("")
 
     # --- Positionnement dérivés BTC (shadow ADR-023, observation) ---

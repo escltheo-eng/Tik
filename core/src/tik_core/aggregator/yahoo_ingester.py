@@ -17,6 +17,7 @@ import structlog
 from redis.asyncio import Redis
 
 from tik_core.aggregator.base import BaseIngester, MarketTick
+from tik_core.aggregator.task_supervision import supervise_task
 from tik_core.utils.time import now_utc
 
 log = structlog.get_logger()
@@ -47,7 +48,7 @@ class YahooPoller(BaseIngester):
 
     async def start(self) -> None:
         self._running = True
-        self._task = asyncio.create_task(self._run())
+        self._task = supervise_task(asyncio.create_task(self._run()), self.name)
         log.info(
             "yahoo.poller.started",
             symbol=self.symbol,
@@ -63,6 +64,11 @@ class YahooPoller(BaseIngester):
                 await self._task
             except asyncio.CancelledError:
                 pass
+            except Exception as exc:  # noqa: BLE001
+                # Une task déjà morte re-lève son exception au await : on la
+                # logge sans la propager, sinon l'arrêt gracieux du runner
+                # s'interromprait au premier ingester fautif (audit 2026-07-02).
+                log.warning("yahoo.poller.stop_error", error=str(exc))
         log.info("yahoo.poller.stopped")
 
     async def _fetch_quote(self, client: httpx.AsyncClient) -> MarketTick | None:
@@ -112,13 +118,19 @@ class YahooPoller(BaseIngester):
                         "timestamp": tick.timestamp.isoformat(),
                         "extra": tick.extra or {},
                     }
-                    await self.redis.publish(
-                        f"tik.tick.{tick.entity_id}.{tick.source}",
-                        json.dumps(payload),
-                    )
-                    await self.redis.setex(
-                        f"tik.last_price.{tick.entity_id}",
-                        300,
-                        json.dumps(payload),
-                    )
+                    try:
+                        # Écritures Redis protégées : une panne Redis transitoire
+                        # ne doit pas tuer la boucle — on log et on retente au
+                        # cycle suivant (pattern polymarket, audit 2026-07-02).
+                        await self.redis.publish(
+                            f"tik.tick.{tick.entity_id}.{tick.source}",
+                            json.dumps(payload),
+                        )
+                        await self.redis.setex(
+                            f"tik.last_price.{tick.entity_id}",
+                            300,
+                            json.dumps(payload),
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        log.warning("yahoo.redis.error", error=str(exc))
                 await asyncio.sleep(self.interval_s)

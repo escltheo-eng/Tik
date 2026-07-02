@@ -156,3 +156,13 @@ class TestSpecsIntegrity:
     def test_critical_set_expected(self):
         crit = {s.name for s in SOURCE_SPECS if s.critical}
         assert crit == {"fear_greed", "cryptocompare_news", "google_news_btc", "price_btc"}
+
+    def test_max_age_resynced_with_slow_pollers(self):
+        # Régression audit 2026-07-02 (M-1) : les max_age_s doivent suivre les
+        # intervalles réels (3×). CryptoCompare polle toutes les 12 h depuis le
+        # Bug 15 (anti-quota 100 req/mois) → 36 h ; GDELT toutes les 2 h depuis la
+        # mitigation 429 du 2026-06-11 → 6 h. Croisement systématique avec
+        # aggregator/polling.py dans test_polling_intervals.py.
+        by_name = {s.name: s for s in SOURCE_SPECS}
+        assert by_name["cryptocompare_news"].max_age_s == 36 * 3600
+        assert by_name["gdelt_gold"].max_age_s == 6 * 3600

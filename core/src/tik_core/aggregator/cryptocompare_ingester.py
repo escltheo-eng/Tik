@@ -6,9 +6,10 @@ des titres via un `NewsClassifier` injecté (keywords ou LLM via Ollama).
 
 API CryptoCompare (rebranded CoinDesk Data) : free tier = 100 req/MOIS
 (mesuré 2026-06-11 via /stats/rate/limit ; l'ancien "~11k/mois" est périmé
-depuis le rebrand CoinDesk). On polle toutes les 8h (3/jour ≈ 90 req/mois)
-pour rester sous le plafond — cf. bug quota explosé du 2026-06-10 (polling
-horaire = ~720 req/mois = 7× la limite, BTC swing privé de l'overlay).
+depuis le rebrand CoinDesk). On polle toutes les 12h (2/jour ≈ 60 req/mois,
+cf. `aggregator/polling.py`) pour rester sous le plafond avec de la marge —
+cf. bug quota explosé du 2026-06-10 (polling horaire = ~720 req/mois = 7× la
+limite, BTC swing privé de l'overlay).
 
 Champ `headlines` (Phase 1 trading manuel J+10) : liste des titres bruts
 classifiés, persistée dans le payload Redis aux côtés des agrégats. Cap
@@ -27,13 +28,16 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tik_core.aggregator.base import BaseIngester
 from tik_core.aggregator.news_classifier import NewsClassifier
+from tik_core.aggregator.task_supervision import supervise_task
 from tik_core.scoring.anomaly_detector import detect_publisher_diversity_spike
 from tik_core.storage.headlines_repo import persist_headlines
 
 log = structlog.get_logger()
 
 NEWS_URL = "https://min-api.cryptocompare.com/data/v2/news/"
-REDIS_TTL_S = 13 * 3600  # 13h, couvre le polling 12h (free tier 100 req/mois — bug quota 2026-06-10, marge élargie 2026-06-14)
+# 13h : couvre le polling 12h avec marge (free tier 100 req/mois — bug quota
+# 2026-06-10, marge élargie 2026-06-14).
+REDIS_TTL_S = 13 * 3600
 MAX_HEADLINES = 25
 
 # Baseline diversité éditeurs P6 (backlog #8, Option B) — stockée en Redis
@@ -77,7 +81,7 @@ class CryptoCompareIngester(BaseIngester):
             log.warning("cryptocompare.ingester.no_api_key_skipping")
             return
         self._running = True
-        self._task = asyncio.create_task(self._run())
+        self._task = supervise_task(asyncio.create_task(self._run()), self.name)
         log.info(
             "cryptocompare.ingester.started",
             currency=self.currency,
@@ -93,6 +97,10 @@ class CryptoCompareIngester(BaseIngester):
                 await self._task
             except asyncio.CancelledError:
                 pass
+            except Exception as exc:  # noqa: BLE001
+                # Task déjà morte : on logge sans propager pour ne pas casser
+                # l'arrêt gracieux du runner (audit 2026-07-02).
+                log.warning("cryptocompare.ingester.stop_error", error=str(exc))
         await self.classifier.aclose()
         log.info("cryptocompare.ingester.stopped")
 
@@ -262,8 +270,17 @@ class CryptoCompareIngester(BaseIngester):
                 if point is not None:
                     payload = json.dumps(point)
                     key = f"tik.sentiment.cryptocompare.{self.currency.lower()}"
-                    await self.redis.setex(key, REDIS_TTL_S, payload)
-                    await self.redis.publish(key, payload)
+                    try:
+                        # Écritures Redis protégées : une panne Redis transitoire
+                        # ne doit pas tuer la boucle — on log, on garde le reste
+                        # du cycle (persistance DB) et on retentera au cycle
+                        # suivant (pattern polymarket, audit 2026-07-02).
+                        await self.redis.setex(key, REDIS_TTL_S, payload)
+                        await self.redis.publish(key, payload)
+                    except Exception as exc:  # noqa: BLE001
+                        log.warning(
+                            "cryptocompare.redis.error", currency=self.currency, error=str(exc)
+                        )
                     # Lacune A J+10 — persistance DB des titres bruts.
                     n_persisted = await persist_headlines(
                         self.session_maker,

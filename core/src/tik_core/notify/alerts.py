@@ -33,7 +33,7 @@ from tik_core.notify.briefing import (
     _sentiment_emoji,
     technical_read,
 )
-from tik_core.notify.telegram import send_message
+from tik_core.notify.telegram import escape_html, send_message
 from tik_core.scripts.backtest import fetch_btc_history, find_closest_price
 from tik_core.storage.macro_events_repo import fetch_upcoming
 from tik_core.storage.models import MacroEvent
@@ -138,16 +138,21 @@ def format_shock_alert(
         lines.append("📰 <b>Contexte</b>")
         for h in headlines[:N_ALERT_HEADLINES]:
             emo = _sentiment_emoji(h.get("sentiment", "neutral"))
-            lines.append(f"{emo} {h['title']} — <i>{h.get('publisher', '?')}</i>")
+            # Titres + publishers = contenu externe brut → escape_html obligatoire
+            # (un « < » brut casserait tout le message, cf. notify/telegram.py).
+            title = escape_html(h["title"])
+            pub = escape_html(h.get("publisher", "?"))
+            lines.append(f"{emo} {title} — <i>{pub}</i>")
     lines.append("")
     lines.append("ℹ️ <i>Détection, pas prédiction. À toi de juger.</i>")
     return "\n".join(lines)
 
 
 def format_macro_alert(*, event_name: str, minutes: int, when_utc: str, assets: list[str]) -> str:
-    a = "/".join(assets or []) or "?"
+    # Nom d'event + assets viennent d'une API tierce (FRED…) → escape_html.
+    a = "/".join(escape_html(x) for x in (assets or [])) or "?"
     return (
-        f"⏰ <b>Alerte macro — {event_name} dans {minutes} min</b>\n"
+        f"⏰ <b>Alerte macro — {escape_html(event_name)} dans {minutes} min</b>\n"
         f"{when_utc} UTC · impacte {a}\n"
         f"Discipline : pas d'entrée swing ±4h, sizing /2 si tu trades "
         f"(Garde-fou 2-bis)."

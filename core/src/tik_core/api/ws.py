@@ -17,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tik_core.auth.api_key import hash_key
+from tik_core.auth.provider import AuthContext
 from tik_core.config import get_settings
 
 # IMPORTANT: import the module, NOT the variable. The module attribute
@@ -26,7 +27,6 @@ from tik_core.config import get_settings
 # import time (which is `None`), so every WS would close with 1011 and
 # the client would see a 403 forever. Accessing `database._session_maker`
 # at runtime ensures we read the live value.
-from tik_core.auth.provider import AuthContext
 from tik_core.storage import database
 from tik_core.storage.models import ApiKey
 from tik_core.utils.time import now_utc_naive
@@ -134,9 +134,7 @@ async def ws_signals(
                 # boucle côté dashboard + tracebacks en spam (Bug 16, mesuré le
                 # 2026-06-15 : 48 reconnexions/30 min). On encaisse l'inactivité et on
                 # continue d'écouter.
-                message = await pubsub.get_message(
-                    ignore_subscribe_messages=True, timeout=30
-                )
+                message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=30)
             except RedisTimeoutError:
                 continue  # inactivité normale, on continue d'écouter
             except RedisError as exc:
@@ -169,7 +167,21 @@ async def ws_signals(
     except WebSocketDisconnect:
         log.info("ws.disconnected", client_id=key.client_id)
     finally:
-        hb_task.cancel()
-        await pubsub.punsubscribe(pattern)
-        await pubsub.aclose()
-        await redis.aclose()
+        # Cleanup DÉFENSIF : chaque étape est protégée individuellement (audit
+        # 2026-07-02). Si on est sorti de la boucle sur RedisError (Redis down),
+        # `punsubscribe` lèverait à son tour → les `aclose()` sauteraient →
+        # fuite d'une connexion Redis + pubsub par client WS pendant toute la
+        # panne (même famille que Bug 10/16 : ressources non libérées).
+        hb_task.cancel()  # ne lève jamais (simple demande d'annulation)
+        try:
+            await pubsub.punsubscribe(pattern)
+        except Exception as exc:  # noqa: BLE001
+            log.debug("ws.cleanup_punsubscribe_failed", error=str(exc))
+        try:
+            await pubsub.aclose()
+        except Exception as exc:  # noqa: BLE001
+            log.debug("ws.cleanup_pubsub_aclose_failed", error=str(exc))
+        try:
+            await redis.aclose()
+        except Exception as exc:  # noqa: BLE001
+            log.debug("ws.cleanup_redis_aclose_failed", error=str(exc))

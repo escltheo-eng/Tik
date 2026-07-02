@@ -23,6 +23,7 @@ from __future__ import annotations
 import asyncio
 import json
 import math
+import time
 from collections import Counter
 from datetime import UTC, datetime
 
@@ -33,6 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tik_core.aggregator.base import BaseIngester
 from tik_core.aggregator.news_classifier import NewsClassifier
+from tik_core.aggregator.task_supervision import supervise_task
 from tik_core.scoring.anomaly_detector import detect_brigading_reddit
 from tik_core.storage.headlines_repo import persist_headlines
 
@@ -44,6 +46,13 @@ REDIS_TTL_S = 2 * 3600  # 2h, comme les autres sources textuelles
 REDIS_KEY_TPL = "tik.sentiment.reddit.{entity}"
 MIN_SCORE_THRESHOLD = 5  # filtre brigading bas étage (cf. ADR-009 décision 3)
 MAX_HEADLINES = 25
+# Backoff sur 403 répétés (Bug 11 — IP-ban Reddit) : marteler une IP bannie
+# toutes les 30 min maintient l'IP « chaude » côté anti-abus et n'apporte rien.
+# Après BACKOFF_403_THRESHOLD échecs 403 consécutifs, on saute les cycles
+# pendant BACKOFF_403_S, puis on re-sonde (1 requête / 6 h) : l'auto-récupération
+# reste automatique quand l'unban arrivera (le 1er succès reset tout).
+BACKOFF_403_THRESHOLD = 3
+BACKOFF_403_S = 6 * 3600
 
 
 class RedditIngester(BaseIngester):
@@ -73,10 +82,13 @@ class RedditIngester(BaseIngester):
         self.session_maker = session_maker
         self._running = False
         self._task: asyncio.Task | None = None
+        # État backoff 403 (en mémoire process — reset au restart, voulu).
+        self._consecutive_403 = 0
+        self._backoff_until: float | None = None  # time.monotonic() cible
 
     async def start(self) -> None:
         self._running = True
-        self._task = asyncio.create_task(self._run())
+        self._task = supervise_task(asyncio.create_task(self._run()), self.name)
         log.info(
             "reddit.ingester.started",
             entity_id=self.entity_id,
@@ -93,8 +105,37 @@ class RedditIngester(BaseIngester):
                 await self._task
             except asyncio.CancelledError:
                 pass
+            except Exception as exc:  # noqa: BLE001
+                # Task déjà morte : on logge sans propager pour ne pas casser
+                # l'arrêt gracieux du runner (audit 2026-07-02).
+                log.warning(
+                    "reddit.ingester.stop_error",
+                    entity_id=self.entity_id,
+                    error=str(exc),
+                )
         await self.classifier.aclose()
         log.info("reddit.ingester.stopped", entity_id=self.entity_id)
+
+    def _in_backoff_403(self) -> bool:
+        """True si on est dans la fenêtre de backoff post-403 (cycles sautés)."""
+        return self._backoff_until is not None and time.monotonic() < self._backoff_until
+
+    def _note_403(self) -> None:
+        """Comptabilise un 403 ; arme le backoff 6h au seuil d'échecs consécutifs."""
+        self._consecutive_403 += 1
+        if self._consecutive_403 >= BACKOFF_403_THRESHOLD:
+            self._backoff_until = time.monotonic() + BACKOFF_403_S
+            log.warning(
+                "reddit.backoff_403",
+                entity_id=self.entity_id,
+                consecutive_403=self._consecutive_403,
+                backoff_h=BACKOFF_403_S / 3600,
+            )
+
+    def _note_success(self) -> None:
+        """Premier succès HTTP → reset complet du backoff (auto-récupération unban)."""
+        self._consecutive_403 = 0
+        self._backoff_until = None
 
     async def _fetch_sub(self, client: httpx.AsyncClient, sub: str) -> list[dict] | None:
         """Fetch un sub. Retourne la liste de `children` ou None si erreur.
@@ -115,6 +156,9 @@ class RedditIngester(BaseIngester):
             r.raise_for_status()
             data = r.json()
         except Exception as exc:  # noqa: BLE001
+            # 403 = IP-ban probable (Bug 11) → alimente le compteur de backoff.
+            if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 403:
+                self._note_403()
             log.warning(
                 "reddit.fetch.error",
                 entity_id=self.entity_id,
@@ -122,6 +166,7 @@ class RedditIngester(BaseIngester):
                 error=str(exc),
             )
             return None
+        self._note_success()
 
         try:
             children = data["data"]["children"]
@@ -200,6 +245,10 @@ class RedditIngester(BaseIngester):
         # 1. Récupérer les posts de tous les subs, filtrer
         all_posts: list[tuple[str, dict]] = []
         for sub in self.subreddits:
+            if self._in_backoff_403():
+                # Backoff armé en cours de cycle (3e 403 consécutif) : inutile
+                # de marteler les subs restants, ils partagent la même IP bannie.
+                break
             children = await self._fetch_sub(client, sub)
             if not children:
                 continue
@@ -294,12 +343,34 @@ class RedditIngester(BaseIngester):
     async def _run(self) -> None:
         async with httpx.AsyncClient() as client:
             while self._running:
+                if self._in_backoff_403():
+                    # IP bannie (≥ 3 échecs 403 consécutifs) : on saute le cycle
+                    # au lieu de marteler Reddit. Re-sonde automatique à
+                    # l'expiration du backoff (auto-récupération post-unban).
+                    log.info(
+                        "reddit.backoff_403.cycle_skipped",
+                        entity_id=self.entity_id,
+                        consecutive_403=self._consecutive_403,
+                    )
+                    await asyncio.sleep(self.interval_s)
+                    continue
                 point = await self._fetch(client)
                 if point is not None:
                     payload = json.dumps(point)
                     key = REDIS_KEY_TPL.format(entity=self.entity_id.lower())
-                    await self.redis.setex(key, REDIS_TTL_S, payload)
-                    await self.redis.publish(key, payload)
+                    try:
+                        # Écritures Redis protégées : une panne Redis transitoire
+                        # ne doit pas tuer la boucle — on log, on garde le reste
+                        # du cycle (persistance DB) et on retentera au cycle
+                        # suivant (pattern polymarket, audit 2026-07-02).
+                        await self.redis.setex(key, REDIS_TTL_S, payload)
+                        await self.redis.publish(key, payload)
+                    except Exception as exc:  # noqa: BLE001
+                        log.warning(
+                            "reddit.redis.error",
+                            entity_id=self.entity_id,
+                            error=str(exc),
+                        )
                     # Lacune A J+10 — persistance DB des titres bruts.
                     n_persisted = await persist_headlines(
                         self.session_maker,

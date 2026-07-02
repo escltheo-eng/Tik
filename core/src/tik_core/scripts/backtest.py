@@ -14,6 +14,15 @@ Limitations connues (à garder en tête) :
   pas pour conclure statistiquement.
 - Coûts de transaction non comptés (spread, fees, slippage).
 - Pas de gestion de risque (stops, take-profits, sizing).
+- Fenêtres chevauchantes : les signaux sont émis toutes les 15-30 min avec des
+  horizons de plusieurs jours → toute significativité (z/p) doit être calculée
+  sur le sous-échantillon NON chevauchant (cf. `non_overlapping_subsample` et
+  `paired_gain_significance(horizon_td=...)`) — audit 2026-07-02, constat C-1.
+- Convention gain : neutral = 0 (pas de position) depuis le 2026-07-02,
+  cf. docstring `_gain_for`.
+- Couverture klines : Binance plafonne à 1000 bougies (~41,6 j en 1h) ; les
+  signaux antérieurs à la première bougie sont exclus avec un compteur dédié
+  et un WARNING explicite (cf. `klines_coverage_start`).
 """
 
 import argparse
@@ -139,6 +148,68 @@ def find_closest_price(
     return best[1]
 
 
+# ----- Couverture temporelle des klines (anti-troncature silencieuse) -----
+
+
+def klines_coverage_start(history: list[tuple[int, float]]) -> datetime | None:
+    """Timestamp (naïf UTC) de la PREMIÈRE bougie disponible, ou None si vide.
+
+    Les APIs klines plafonnent la profondeur (Binance : 1000 bougies max, soit
+    ~41,6 j en 1h) : toute fenêtre de mesure plus ancienne que la première
+    bougie est silencieusement amputée. Ce helper rend la couverture réelle
+    explicite pour la comparer à la fenêtre demandée (audit 2026-07-02).
+    """
+    if not history:
+        return None
+    return datetime.fromtimestamp(history[0][0] / 1000, tz=UTC).replace(tzinfo=None)
+
+
+def split_out_of_coverage(
+    signals: list,
+    coverage_by_entity: dict[str, datetime | None],
+) -> tuple[list, dict[str, int]]:
+    """Écarte les signaux antérieurs à la première bougie de leur actif.
+
+    Retourne ``(signaux évaluables, exclus par entity)``. Le compteur est
+    DÉDIÉ : ces exclusions doivent être affichées séparément des « ignorés »
+    (prix non trouvé ponctuellement), sinon la troncature de la fenêtre
+    klines passe inaperçue et la mesure semble couvrir --since-iso alors
+    qu'elle ne couvre que la profondeur klines réelle (~41,6 j en 1h Binance).
+    Un signal dont l'entity n'a pas de couverture connue (None) est conservé.
+    """
+    kept: list = []
+    excluded_by_entity: dict[str, int] = {}
+    for sig in signals:
+        start = coverage_by_entity.get(sig.entity_id)
+        if start is not None and sig.timestamp < start:
+            excluded_by_entity[sig.entity_id] = excluded_by_entity.get(sig.entity_id, 0) + 1
+            continue
+        kept.append(sig)
+    return kept, excluded_by_entity
+
+
+def format_coverage_warning(
+    entity: str,
+    coverage_start: datetime | None,
+    requested_start: datetime,
+    n_excluded: int,
+) -> str | None:
+    """Message WARNING si la fenêtre demandée déborde la couverture klines.
+
+    Retourne None si la couverture couvre la fenêtre demandée (ou si
+    l'historique est vide — signalé ailleurs). Sinon un warning explicite
+    avec le nombre de signaux exclus pour cette raison (compteur dédié).
+    """
+    if coverage_start is None or requested_start >= coverage_start:
+        return None
+    return (
+        f"  ⚠ WARNING {entity} : klines disponibles seulement depuis "
+        f"{coverage_start.isoformat()} UTC alors que la fenêtre demandée commence le "
+        f"{requested_start.isoformat()} — mesure TRONQUÉE, {n_excluded} signaux exclus "
+        "(antérieurs à la couverture klines)."
+    )
+
+
 # ----- Évaluation -----
 
 
@@ -195,13 +266,23 @@ def _gain_for(direction: str, delta_pct: float) -> float:
 
     - long : on profite du delta tel quel (positif si le marché monte)
     - short : on profite de l'inverse du delta (positif si le marché baisse)
-    - neutral : on considère réussi un signal stable, donc précis quand |delta| est petit
+    - neutral : 0.0 — pas de position prise, donc ni gain ni perte
+
+    Changement de convention (2026-07-02, audit modules E2E) : neutral valait
+    historiquement ``-abs(delta_pct)`` (pénalité d'imprécision), alors que
+    `analyze_colinearity.py` modélise neutral = 0 (on ne trade pas). Les deux
+    scripts ne mesuraient donc pas la même chose, et le Δ Tik − baseline des
+    tests appariés était biaisé vers le bas dès que Tik émettait beaucoup de
+    neutres (ex. 79 neutral / 192 sur un échantillon récent). Convention
+    unifiée : neutral = 0 partout dans le chemin des gains appariés. Le hit
+    rate, lui, juge toujours un neutral via |delta| < threshold
+    (cf. `_success_for`, inchangé).
     """
     if direction == "long":
         return delta_pct
     if direction == "short":
         return -delta_pct
-    return -abs(delta_pct)
+    return 0.0
 
 
 def _success_for(direction: str, delta_pct: float, threshold_pct: float) -> bool:
@@ -212,6 +293,50 @@ def _success_for(direction: str, delta_pct: float, threshold_pct: float) -> bool
     return abs(delta_pct) < threshold_pct
 
 
+# ----- Sous-échantillonnage non chevauchant (significativité honnête) -----
+
+
+def _row_ts(row: dict) -> datetime:
+    """Timestamp d'un résultat de backtest, normalisé en datetime naïf UTC.
+
+    Accepte un datetime (naïf ou aware) ou une chaîne ISO (avec ou sans suffixe
+    ``Z``) — les deux formats produits par `evaluate_signal` /
+    `_evaluate_signal_td` dans la clé ``ts``.
+    """
+    ts = row["ts"]
+    if isinstance(ts, str):
+        ts = datetime.fromisoformat(ts.rstrip("Z"))
+    if ts.tzinfo is not None:
+        ts = ts.astimezone(UTC).replace(tzinfo=None)
+    return ts
+
+
+def non_overlapping_subsample(rows: list[dict], horizon_td: timedelta) -> list[dict]:
+    """Sous-échantillon de résultats espacés d'au moins ``horizon_td`` (clé "ts").
+
+    Les fenêtres forward de signaux émis toutes les ~15-30 min avec un horizon
+    de plusieurs jours se CHEVAUCHENT à ~99 % : deux signaux consécutifs
+    mesurent quasiment le même mouvement de marché. Les écarts par signal ne
+    sont donc PAS indépendants, ce qui gonfle massivement tout z-test calculé
+    sur le plein échantillon (Hansen-Hodrick 1980 ; les corrections HAC
+    n'aident pas à cette densité). On extrait un sous-ensemble à fenêtres NON
+    chevauchantes (greedy sur timestamps triés) : c'est sur CE sous-échantillon
+    que toute p-value / verdict « significatif » doit être calculé.
+
+    Même traitement qu'`analyze_colinearity.py` (où le correctif existait
+    déjà), porté ici pour être réutilisable par les scripts de mesure
+    officiels (audit 2026-07-02, constat C-1 CRITIQUE).
+    """
+    out: list[dict] = []
+    last_ts: datetime | None = None
+    for r in sorted(rows, key=_row_ts):
+        ts = _row_ts(r)
+        if last_ts is None or (ts - last_ts) >= horizon_td:
+            out.append(r)
+            last_ts = ts
+    return out
+
+
 # ----- Test de significativité Tik vs baseline (apparié sur le gain) -----
 
 
@@ -220,7 +345,11 @@ def normal_cdf(x: float) -> float:
     return 0.5 * (1 + math.erf(x / math.sqrt(2)))
 
 
-def paired_gain_significance(results: list[dict], baseline_direction: str) -> dict | None:
+def paired_gain_significance(
+    results: list[dict],
+    baseline_direction: str,
+    horizon_td: timedelta | None = None,
+) -> dict | None:
     """Test apparié Tik vs une baseline constante, sur le GAIN par signal.
 
     Pour chaque signal évalué, compare le gain de la direction prédite par Tik
@@ -235,34 +364,55 @@ def paired_gain_significance(results: list[dict], baseline_direction: str) -> di
     à elle ? » Random est une baseline faible en marché tendanciel ; le bon
     comparateur est la baseline de tendance (souvent Always SHORT/LONG).
 
-    Retourne None si ``results`` est vide. ``z`` et ``p`` valent None si n < 2
-    ou si l'écart-type des écarts est nul (Tik ≡ baseline sur tous les signaux,
-    aucune variance à tester).
+    Chevauchement des fenêtres (audit 2026-07-02, constat C-1 CRITIQUE) : les
+    stats DESCRIPTIVES (``tik_gain``, ``baseline_gain``, ``mean_diff``) sont
+    calculées sur le plein échantillon (``n``). Mais si ``horizon_td`` est
+    fourni, ``z`` / ``p`` sont calculés UNIQUEMENT sur le sous-échantillon non
+    chevauchant (signaux espacés ≥ horizon_td, cf.
+    `non_overlapping_subsample`) — des signaux émis toutes les 15-30 min avec
+    un horizon 5 j partagent ~99 % de leur fenêtre forward, et un z-test plein
+    échantillon suppose à tort leur indépendance (p massivement gonflée). Le
+    dict retourné expose alors ``n_indep`` (fenêtres réellement indépendantes)
+    et ``mean_diff_indep``. Sans ``horizon_td`` (rétrocompat), z/p sont plein
+    échantillon : valide UNIQUEMENT si les résultats fournis sont déjà non
+    chevauchants — à proscrire pour toute mesure officielle.
+
+    Retourne None si ``results`` est vide. ``z`` et ``p`` valent None si le
+    sous-échantillon retenu a n < 2 ou un écart-type des écarts nul (Tik ≡
+    baseline sur tous les signaux, aucune variance à tester).
     """
     n = len(results)
     if n == 0:
         return None
-    diffs = [
-        _gain_for(r["direction"], r["delta_pct"]) - _gain_for(baseline_direction, r["delta_pct"])
-        for r in results
-    ]
+
+    def _diff(r: dict) -> float:
+        return _gain_for(r["direction"], r["delta_pct"]) - _gain_for(
+            baseline_direction, r["delta_pct"]
+        )
+
     tik_gain = mean(_gain_for(r["direction"], r["delta_pct"]) for r in results)
     base_gain = mean(_gain_for(baseline_direction, r["delta_pct"]) for r in results)
-    mean_diff = mean(diffs)
+    mean_diff = mean(_diff(r) for r in results)
+
+    # Échantillon de significativité : non chevauchant si horizon fourni.
+    sig_rows = non_overlapping_subsample(results, horizon_td) if horizon_td else results
+    sig_diffs = [_diff(r) for r in sig_rows]
     z: float | None = None
     p: float | None = None
-    if n >= 2:
-        sd = stdev(diffs)
+    if len(sig_diffs) >= 2:
+        sd = stdev(sig_diffs)
         if sd > 0:
-            se = sd / math.sqrt(n)
-            z = mean_diff / se
+            se = sd / math.sqrt(len(sig_diffs))
+            z = mean(sig_diffs) / se
             p = 2 * (1 - normal_cdf(abs(z)))
     return {
         "n": n,
+        "n_indep": len(sig_rows) if horizon_td else None,
         "baseline_direction": baseline_direction,
         "tik_gain": tik_gain,
         "baseline_gain": base_gain,
         "mean_diff": mean_diff,
+        "mean_diff_indep": mean(sig_diffs) if (horizon_td and sig_diffs) else None,
         "z": z,
         "p": p,
     }
@@ -640,16 +790,41 @@ async def main() -> None:
     print(f"  → BTC : {len(btc_history)} klines 1h récupérées")
     print(f"  → GOLD : {len(gold_history)} klines 1h récupérées")
 
+    # Couverture réelle des klines vs fenêtre demandée (audit 2026-07-02) :
+    # Binance plafonne à 1000 bougies (~41,6 j en 1h) — sans ce contrôle, les
+    # signaux plus anciens sortent silencieusement de la mesure.
+    coverage = {
+        "BTC": klines_coverage_start(btc_history),
+        "GOLD": klines_coverage_start(gold_history),
+    }
+    requested_start = eligible[0].timestamp  # signaux triés ascendant
+    evaluable, excluded_by_entity = split_out_of_coverage(eligible, coverage)
+    for entity, cov in coverage.items():
+        if cov is not None:
+            print(
+                f"  → couverture klines {entity} : depuis {cov.isoformat()} UTC "
+                f"(fenêtre demandée depuis {requested_start.isoformat()})"
+            )
+        warning = format_coverage_warning(
+            entity, cov, requested_start, excluded_by_entity.get(entity, 0)
+        )
+        if warning:
+            print(warning)
+    n_excluded_coverage = sum(excluded_by_entity.values())
+
     print("\nÉvaluation des signaux...")
     results = []
     skipped = 0
-    for sig in eligible:
+    for sig in evaluable:
         ev = evaluate_signal(sig, args.horizon_days, args.threshold, btc_history, gold_history)
         if ev is None:
             skipped += 1
             continue
         results.append(ev)
-    print(f"  → {len(results)} évalués, {skipped} ignorés (prix non trouvé dans la fenêtre)")
+    print(
+        f"  → {len(results)} évalués, {skipped} ignorés (prix non trouvé dans la fenêtre), "
+        f"{n_excluded_coverage} exclus (antérieurs à la couverture klines)"
+    )
 
     print_report(results, args.horizon_days, args.threshold)
 

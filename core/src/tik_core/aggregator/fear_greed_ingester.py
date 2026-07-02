@@ -13,6 +13,7 @@ import structlog
 from redis.asyncio import Redis
 
 from tik_core.aggregator.base import BaseIngester
+from tik_core.aggregator.task_supervision import supervise_task
 
 log = structlog.get_logger()
 
@@ -35,7 +36,7 @@ class FearGreedIngester(BaseIngester):
 
     async def start(self) -> None:
         self._running = True
-        self._task = asyncio.create_task(self._run())
+        self._task = supervise_task(asyncio.create_task(self._run()), self.name)
         log.info("fear_greed.ingester.started", interval_s=self.interval_s)
 
     async def stop(self) -> None:
@@ -46,6 +47,10 @@ class FearGreedIngester(BaseIngester):
                 await self._task
             except asyncio.CancelledError:
                 pass
+            except Exception as exc:  # noqa: BLE001
+                # Task déjà morte : on logge sans propager pour ne pas casser
+                # l'arrêt gracieux du runner (audit 2026-07-02).
+                log.warning("fear_greed.ingester.stop_error", error=str(exc))
         log.info("fear_greed.ingester.stopped")
 
     async def _fetch(self, client: httpx.AsyncClient) -> dict | None:
@@ -80,11 +85,18 @@ class FearGreedIngester(BaseIngester):
                 point = await self._fetch(client)
                 if point is not None:
                     payload = json.dumps(point)
-                    await self.redis.setex(REDIS_KEY, REDIS_TTL_S, payload)
-                    await self.redis.publish("tik.sentiment.fear_greed", payload)
-                    log.info(
-                        "fear_greed.published",
-                        value=point["value"],
-                        classification=point["classification"],
-                    )
+                    try:
+                        # Écritures Redis protégées : une panne Redis transitoire
+                        # ne doit pas tuer la boucle — on log et on retente au
+                        # cycle suivant (pattern polymarket, audit 2026-07-02).
+                        await self.redis.setex(REDIS_KEY, REDIS_TTL_S, payload)
+                        await self.redis.publish("tik.sentiment.fear_greed", payload)
+                    except Exception as exc:  # noqa: BLE001
+                        log.warning("fear_greed.redis.error", error=str(exc))
+                    else:
+                        log.info(
+                            "fear_greed.published",
+                            value=point["value"],
+                            classification=point["classification"],
+                        )
                 await asyncio.sleep(self.interval_s)

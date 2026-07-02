@@ -4,6 +4,7 @@ Point d'entrée principal. Compose les routers, middlewares, et services.
 """
 
 import logging
+import re
 from contextlib import asynccontextmanager
 
 import structlog
@@ -34,10 +35,49 @@ from tik_core.storage.database import close_engine, init_engine
 # Endpoints qui n'exigent pas de clé API (cadenas masqué dans Swagger).
 PUBLIC_PATHS: set[str] = {"/api/v1/health"}
 
+# Motif d'une clé API passée en query string (ex. `?api_key=tik_xxx`).
+# La valeur s'arrête au prochain séparateur d'URL, guillemet ou espace.
+_API_KEY_QUERY_RE = re.compile(r"(api_key=)[^&\s\"']+")
+
+
+def _redact_api_key(text: str) -> str:
+    """Masque la valeur d'une clé API dans une chaîne (URL, ligne de log).
+
+    Fonction pure : `api_key=tik_secret` → `api_key=***REDACTED***`, le reste
+    de la chaîne (autres paramètres, méthode, status) est préservé.
+    """
+    return _API_KEY_QUERY_RE.sub(r"\1***REDACTED***", text)
+
+
+class ApiKeyRedactionFilter(logging.Filter):
+    """Redacte la clé API des logs uvicorn (audit 2026-07-02, constat A-1/E2E-2).
+
+    L'auth WebSocket passe la clé en query string (`?api_key=...`, compromis
+    navigateur assumé — cf. api/ws.py) et uvicorn logue l'URL complète : sans
+    ce filtre, quiconque lit `docker compose logs core` récupère une clé
+    valide en clair. On nettoie `record.msg` ET `record.args` (uvicorn passe
+    le path en argument de format `%s`, dans un tuple).
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.msg, str) and "api_key=" in record.msg:
+            record.msg = _redact_api_key(record.msg)
+        args = record.args
+        if isinstance(args, tuple) and any(isinstance(a, str) and "api_key=" in a for a in args):
+            record.args = tuple(_redact_api_key(a) if isinstance(a, str) else a for a in args)
+        return True
+
 
 def _configure_logging(log_level: str) -> None:
-    """Configure structlog + stdlib logging."""
+    """Configure structlog + stdlib logging + redaction des clés API."""
     logging.basicConfig(level=log_level, format="%(message)s")
+    # Les loggers uvicorn (accès HTTP + connexions WebSocket) loguent l'URL
+    # complète, y compris `?api_key=...` : on installe le filtre de redaction.
+    # Idempotent : pas de doublon si `create_app()` est rappelé (tests).
+    for uvicorn_logger_name in ("uvicorn.access", "uvicorn.error"):
+        uvicorn_logger = logging.getLogger(uvicorn_logger_name)
+        if not any(isinstance(f, ApiKeyRedactionFilter) for f in uvicorn_logger.filters):
+            uvicorn_logger.addFilter(ApiKeyRedactionFilter())
     structlog.configure(
         processors=[
             structlog.contextvars.merge_contextvars,
@@ -82,6 +122,11 @@ def create_app() -> FastAPI:
         version=__version__,
         docs_url="/docs" if not settings.is_production else None,
         redoc_url="/redoc" if not settings.is_production else None,
+        # En production, le schéma OpenAPI est masqué comme docs/redoc (audit
+        # 2026-07-02) : le VPS expose IP:8200, inutile d'offrir la carte des
+        # 37 routes à un scanner. En dev, l'override `custom_openapi` ci-dessous
+        # (Bug 5, bouton Authorize Swagger) continue de fonctionner.
+        openapi_url="/openapi.json" if not settings.is_production else None,
         lifespan=lifespan,
     )
 

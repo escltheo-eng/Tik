@@ -3,6 +3,11 @@
 Couvre le filtre mots-clés (précision/recall, dont l'anti-bruit "Trump seul"),
 la dédup par titre, la fraîcheur, le parsing de date et le formatage groupé.
 Sans réseau ni DB.
+
+Ajout audit 2026-07-02 (T3) : tests du cycle `scan_once` (warm-up en mémoire
+process — bug « clé Redis warm expirée = cycle d'alertes avalé » — et intervalle
+configurable par env TIK_BREAKING_NEWS_INTERVAL_S), avec un FakeRedis en mémoire
+et Telegram mocké.
 """
 
 from __future__ import annotations
@@ -12,6 +17,9 @@ from datetime import UTC, datetime, timedelta
 
 from tik_core.aggregator.breaking_news_ingester import (
     KEYWORD_CATEGORIES,
+    WARM_KEY,
+    BreakingNewsIngester,
+    _env_interval_s,
     category_context,
     category_emoji,
     dedup_hash,
@@ -24,6 +32,7 @@ from tik_core.aggregator.breaking_news_ingester import (
     reaction_label,
     strip_gnews_suffix,
 )
+from tik_core.config import Settings
 
 # ---------- normalize_title / dedup_hash ----------
 
@@ -314,7 +323,12 @@ def test_format_reaction_with_gold():
 
 def test_format_reaction_gold_closed():
     msg = format_reaction_alert(
-        category="guerre/géopol", title="x", horizon_h=4, pct=2.0, p0=100.0, p1=102.0,
+        category="guerre/géopol",
+        title="x",
+        horizon_h=4,
+        pct=2.0,
+        p0=100.0,
+        p1=102.0,
         gold_closed=True,
     )
     assert "marché fermé" in msg
@@ -350,3 +364,211 @@ def test_blackrock_now_requires_market_context():
     # Avec contexte marché → matche.
     cat, _ = match_keyword("BlackRock CEO turns bullish on crypto markets")
     assert cat == "personnalités"
+
+
+# =============================================================================
+# Warm-up (audit 2026-07-02) — flag mémoire process, clé Redis = garde restart
+# =============================================================================
+
+
+class FakeRedis:
+    """Mock Redis en mémoire, minimal pour `scan_once` (SET NX/EX + listes)."""
+
+    def __init__(self) -> None:
+        self.store: dict[str, str] = {}
+        self.lists: dict[str, list[str]] = {}
+
+    async def set(self, key, value, nx=False, ex=None):  # noqa: ARG002
+        if nx and key in self.store:
+            return None
+        self.store[key] = value
+        return True
+
+    async def get(self, key):
+        return self.store.get(key)
+
+    async def delete(self, *keys) -> None:
+        for key in keys:
+            self.store.pop(key, None)
+            self.lists.pop(key, None)
+
+    async def lpush(self, key, *values) -> None:
+        self.lists.setdefault(key, [])[:0] = list(reversed(values))
+
+    async def rpush(self, key, *values) -> None:
+        self.lists.setdefault(key, []).extend(values)
+
+    async def ltrim(self, key, start, stop) -> None:
+        if key in self.lists:
+            self.lists[key] = self.lists[key][start : stop + 1]
+
+    async def expire(self, key, ttl) -> bool:  # noqa: ARG002
+        return True
+
+    async def lrange(self, key, start, stop):
+        values = self.lists.get(key, [])
+        return values[start:] if stop == -1 else values[start : stop + 1]
+
+    async def rename(self, src, dst) -> None:
+        if src in self.lists:
+            self.lists[dst] = self.lists.pop(src)
+
+
+def _settings() -> Settings:
+    return Settings(telegram_bot_token="token-test", telegram_chat_id="chat-test")
+
+
+def _item(title: str) -> dict:
+    return {"title": title, "source": "BBC World", "url": None, "published_at": None}
+
+
+def _make_scan_ingester(redis: FakeRedis, monkeypatch) -> tuple[BreakingNewsIngester, list[str]]:
+    """Ingester prêt pour `scan_once` : 1 flux factice, Telegram + traduction mockés."""
+    ing = BreakingNewsIngester(
+        redis,  # type: ignore[arg-type]
+        settings=_settings(),
+        feeds=[{"name": "BBC World", "url": "http://fake.local/rss"}],
+        interval_s=300,
+    )
+    sent: list[str] = []
+
+    async def fake_send(_token, _chat_id, text, **_kwargs) -> bool:
+        sent.append(text)
+        return True
+
+    monkeypatch.setattr("tik_core.aggregator.breaking_news_ingester.send_message", fake_send)
+
+    async def noop_translate(_fresh) -> None:
+        return None
+
+    ing._translate_fresh = noop_translate
+    return ing, sent
+
+
+def _set_feed(ing: BreakingNewsIngester, items: list[dict]) -> None:
+    """Court-circuite le fetch réseau : le flux retourne `items` tels quels."""
+
+    async def fake_fetch(_client, _feed) -> list[dict]:
+        return items
+
+    ing._fetch_feed = fake_fetch
+
+
+async def test_warmup_first_cycle_seeds_without_alerting(monkeypatch):
+    """1er démarrage (clé Redis absente) : le 1er cycle utile amorce la dédup
+    sans alerter ; un titre déjà vu n'alerte plus, un nouveau titre alerte."""
+    redis = FakeRedis()
+    ing, sent = _make_scan_ingester(redis, monkeypatch)
+
+    _set_feed(ing, [_item("Iran ceasefire collapses after strikes")])
+    out = await ing.scan_once()
+    assert out == []  # warm-up : amorcé, pas d'alerte
+    assert sent == []
+    assert WARM_KEY in redis.store  # garde anti-restart posée
+
+    # Même titre au cycle suivant → dédup 48h, rien de neuf, pas d'alerte.
+    fresh = await ing.scan_once()
+    assert fresh == []
+    assert sent == []
+
+    # Nouveau titre → alerte envoyée (le warm-up ne mange qu'UN cycle).
+    _set_feed(ing, [_item("Fed announces emergency rate decision")])
+    fresh = await ing.scan_once()
+    assert len(fresh) == 1
+    assert len(sent) == 1
+
+
+async def test_warmup_not_rearmed_when_redis_key_expires_on_hot_process(monkeypatch):
+    """Reproduction du bug audit 2026-07-02 : process « chaud » (déjà warmé) +
+    clé Redis warm EXPIRÉE (TTL 7 j) → les alertes doivent quand même partir.
+
+    Avant le fix, `scan_once` re-consultait SET NX à chaque cycle : la clé
+    expirée re-déclenchait un warm-up → la fournée d'items était consommée par
+    la dédup 48 h SANS alerte Telegram (cycle d'alertes avalé en silence)."""
+    redis = FakeRedis()
+    ing, sent = _make_scan_ingester(redis, monkeypatch)
+
+    # Cycle 1 : vrai 1er démarrage → warm-up normal.
+    _set_feed(ing, [_item("Iran ceasefire collapses after strikes")])
+    assert await ing.scan_once() == []
+    assert sent == []
+
+    # Simule l'expiration de la clé Redis warm (7 j) sur un process qui tourne.
+    await redis.delete(WARM_KEY)
+    assert WARM_KEY not in redis.store
+
+    # Cycle N : nouveau breaking → l'alerte DOIT partir (flag mémoire process).
+    _set_feed(ing, [_item("Fed announces emergency rate decision")])
+    fresh = await ing.scan_once()
+    assert len(fresh) == 1
+    assert len(sent) == 1, "cycle d'alertes avalé : le warm-up s'est réarmé à tort"
+
+
+async def test_warmup_skipped_on_restart_when_redis_key_still_present(monkeypatch):
+    """Restart rapide (clé Redis warm encore vivante) : pas de re-warm-up —
+    la dédup 48 h est déjà amorcée, les alertes partent dès le 1er cycle."""
+    redis = FakeRedis()
+    redis.store[WARM_KEY] = "1"  # posée par le run précédent, non expirée
+    ing, sent = _make_scan_ingester(redis, monkeypatch)  # instance neuve = restart
+
+    _set_feed(ing, [_item("Fed announces emergency rate decision")])
+    fresh = await ing.scan_once()
+    assert len(fresh) == 1
+    assert len(sent) == 1
+
+
+async def test_warmup_not_consumed_by_empty_cycles(monkeypatch):
+    """Finding revue #4 préservé : un 1er cycle sans item frais ne grille pas
+    le warm-up (sinon le cycle suivant alerterait sur tout le backlog)."""
+    redis = FakeRedis()
+    ing, sent = _make_scan_ingester(redis, monkeypatch)
+
+    _set_feed(ing, [])  # flux vides au boot
+    assert await ing.scan_once() == []
+    assert WARM_KEY not in redis.store  # warm-up pas consommé
+    assert ing._first_cycle_done is False
+
+    # 1er cycle UTILE → warm-up, pas d'alerte.
+    _set_feed(ing, [_item("Iran ceasefire collapses after strikes")])
+    assert await ing.scan_once() == []
+    assert sent == []
+    assert ing._first_cycle_done is True
+
+
+# =============================================================================
+# Intervalle configurable TIK_BREAKING_NEWS_INTERVAL_S (audit 2026-07-02)
+# =============================================================================
+
+
+def test_env_interval_default_is_300(monkeypatch):
+    monkeypatch.delenv("TIK_BREAKING_NEWS_INTERVAL_S", raising=False)
+    assert _env_interval_s() == 300
+
+
+def test_env_interval_override(monkeypatch):
+    monkeypatch.setenv("TIK_BREAKING_NEWS_INTERVAL_S", "120")
+    assert _env_interval_s() == 120
+
+
+def test_env_interval_floor_60s(monkeypatch):
+    # Borne basse anti-matraquage : jamais sous 60 s même si l'env le demande.
+    monkeypatch.setenv("TIK_BREAKING_NEWS_INTERVAL_S", "5")
+    assert _env_interval_s() == 60
+
+
+def test_env_interval_invalid_falls_back_to_default(monkeypatch):
+    monkeypatch.setenv("TIK_BREAKING_NEWS_INTERVAL_S", "abc")
+    assert _env_interval_s() == 300
+
+
+def test_ingester_interval_from_env_and_explicit(monkeypatch):
+    monkeypatch.setenv("TIK_BREAKING_NEWS_INTERVAL_S", "600")
+    ing = BreakingNewsIngester(FakeRedis(), settings=_settings())  # type: ignore[arg-type]
+    assert ing.interval_s == 600
+    # Un interval_s explicite garde la priorité sur l'env.
+    explicit = BreakingNewsIngester(
+        FakeRedis(),  # type: ignore[arg-type]
+        settings=_settings(),
+        interval_s=90,
+    )
+    assert explicit.interval_s == 90

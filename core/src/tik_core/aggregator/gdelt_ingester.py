@@ -28,6 +28,7 @@ import structlog
 from redis.asyncio import Redis
 
 from tik_core.aggregator.base import BaseIngester
+from tik_core.aggregator.task_supervision import supervise_task
 
 log = structlog.get_logger()
 
@@ -72,7 +73,7 @@ class GdeltIngester(BaseIngester):
 
     async def start(self) -> None:
         self._running = True
-        self._task = asyncio.create_task(self._run())
+        self._task = supervise_task(asyncio.create_task(self._run()), self.name)
         log.info(
             "gdelt.ingester.started",
             entity_id=self.entity_id,
@@ -90,6 +91,14 @@ class GdeltIngester(BaseIngester):
                 await self._task
             except asyncio.CancelledError:
                 pass
+            except Exception as exc:  # noqa: BLE001
+                # Task déjà morte : on logge sans propager pour ne pas casser
+                # l'arrêt gracieux du runner (audit 2026-07-02).
+                log.warning(
+                    "gdelt.ingester.stop_error",
+                    entity_id=self.entity_id,
+                    error=str(exc),
+                )
         log.info("gdelt.ingester.stopped", entity_id=self.entity_id)
 
     async def _fetch(self, client: httpx.AsyncClient) -> dict | None:
@@ -177,13 +186,24 @@ class GdeltIngester(BaseIngester):
                 if point is not None:
                     payload = json.dumps(point)
                     key = REDIS_KEY_TPL.format(entity=self.entity_id.lower())
-                    await self.redis.setex(key, REDIS_TTL_S, payload)
-                    await self.redis.publish(key, payload)
-                    log.info(
-                        "gdelt.published",
-                        entity_id=self.entity_id,
-                        tone=point["tone"],
-                        n_points=point["n_points"],
-                        timespan=point["timespan"],
-                    )
+                    try:
+                        # Écritures Redis protégées : une panne Redis transitoire
+                        # ne doit pas tuer la boucle — on log et on retente au
+                        # cycle suivant (pattern polymarket, audit 2026-07-02).
+                        await self.redis.setex(key, REDIS_TTL_S, payload)
+                        await self.redis.publish(key, payload)
+                    except Exception as exc:  # noqa: BLE001
+                        log.warning(
+                            "gdelt.redis.error",
+                            entity_id=self.entity_id,
+                            error=str(exc),
+                        )
+                    else:
+                        log.info(
+                            "gdelt.published",
+                            entity_id=self.entity_id,
+                            tone=point["tone"],
+                            n_points=point["n_points"],
+                            timespan=point["timespan"],
+                        )
                 await asyncio.sleep(self.interval_s)

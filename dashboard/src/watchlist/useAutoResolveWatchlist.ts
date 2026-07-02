@@ -53,8 +53,6 @@ export interface UseAutoResolveWatchlistOptions {
 export interface UseAutoResolveWatchlistApi {
   /** Lance un cycle de résolution maintenant. Idempotent (re-entrant safe). */
   runOnce: () => Promise<void>;
-  /** True pendant qu'un cycle est en cours. */
-  busy: boolean;
 }
 
 export function useAutoResolveWatchlist(
@@ -157,10 +155,11 @@ export function useAutoResolveWatchlist(
     return () => clearInterval(id);
   }, [enabled, hydrated, isAuthenticated, pollIntervalMs, runOnce]);
 
-  return {
-    runOnce,
-    busy: busyRef.current,
-  };
+  // Audit 2026-07-02 : `busy: busyRef.current` (lu au render, jamais de
+  // re-render déclenché → valeur quasi toujours périmée) retiré du retour.
+  // Aucun consommateur ne l'utilisait (watchlist.tsx ignore le retour) ; si
+  // un besoin d'indicateur apparaît, exposer un vrai useState synchronisé.
+  return { runOnce };
 }
 
 /**

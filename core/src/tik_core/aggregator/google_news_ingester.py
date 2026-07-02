@@ -36,6 +36,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tik_core.aggregator.base import BaseIngester
 from tik_core.aggregator.news_classifier import NewsClassifier
+from tik_core.aggregator.task_supervision import supervise_task
 from tik_core.scoring.anomaly_detector import detect_publisher_dominance
 from tik_core.storage.headlines_repo import persist_headlines
 
@@ -43,7 +44,9 @@ log = structlog.get_logger()
 
 GOOGLE_NEWS_RSS_TPL = "https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en"
 USER_AGENT = "Mozilla/5.0 (compatible; TikBot/0.1)"
-REDIS_TTL_S = 2 * 3600  # 2h, comme CryptoCompare
+REDIS_TTL_S = 2 * 3600  # 2h — couvre le polling 30 min avec 4× de marge
+# (l'ancien commentaire « comme CryptoCompare » est périmé : CC est passée à
+# un polling 12h / TTL 13h depuis le Bug 15 quota, cf. cryptocompare_ingester).
 REDIS_KEY_TPL = "tik.sentiment.google_news.{entity}"
 MAX_HEADLINES = 25
 
@@ -76,7 +79,7 @@ class GoogleNewsIngester(BaseIngester):
 
     async def start(self) -> None:
         self._running = True
-        self._task = asyncio.create_task(self._run())
+        self._task = supervise_task(asyncio.create_task(self._run()), self.name)
         log.info(
             "google_news.ingester.started",
             entity_id=self.entity_id,
@@ -93,6 +96,14 @@ class GoogleNewsIngester(BaseIngester):
                 await self._task
             except asyncio.CancelledError:
                 pass
+            except Exception as exc:  # noqa: BLE001
+                # Task déjà morte : on logge sans propager pour ne pas casser
+                # l'arrêt gracieux du runner (audit 2026-07-02).
+                log.warning(
+                    "google_news.ingester.stop_error",
+                    entity_id=self.entity_id,
+                    error=str(exc),
+                )
         await self.classifier.aclose()
         log.info("google_news.ingester.stopped", entity_id=self.entity_id)
 
@@ -274,8 +285,19 @@ class GoogleNewsIngester(BaseIngester):
                 if point is not None:
                     payload = json.dumps(point)
                     key = REDIS_KEY_TPL.format(entity=self.entity_id.lower())
-                    await self.redis.setex(key, REDIS_TTL_S, payload)
-                    await self.redis.publish(key, payload)
+                    try:
+                        # Écritures Redis protégées : une panne Redis transitoire
+                        # ne doit pas tuer la boucle — on log, on garde le reste
+                        # du cycle (persistance DB) et on retentera au cycle
+                        # suivant (pattern polymarket, audit 2026-07-02).
+                        await self.redis.setex(key, REDIS_TTL_S, payload)
+                        await self.redis.publish(key, payload)
+                    except Exception as exc:  # noqa: BLE001
+                        log.warning(
+                            "google_news.redis.error",
+                            entity_id=self.entity_id,
+                            error=str(exc),
+                        )
                     # Lacune A J+10 — persistance DB des titres bruts pour
                     # audit historique. Best-effort, non bloquant.
                     n_persisted = await persist_headlines(

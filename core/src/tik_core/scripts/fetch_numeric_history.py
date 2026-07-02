@@ -30,6 +30,14 @@ DXY_SERIES_ID = "DTWEXBGS"
 CFTC_URL = "https://publicreporting.cftc.gov/resource/72hh-3qpy.json"
 GOLD_COMEX_CODE = "088691"
 
+# Anti-look-ahead COT (audit 2026-07-02) : le `report_date` CFTC est le MARDI
+# de la photo des positions, mais le rapport n'est PUBLIÉ que le vendredi
+# suivant (~15h30 ET), soit ~3 jours plus tard. Dater un point au mardi fait
+# « trader » le backtest 3 jours avant que l'information n'existe publiquement
+# → IC/hit rate du COT gonflés. On décale donc la date effective de chaque
+# point à `report_date + 3 jours` (mardi → vendredi de publication).
+COT_PUBLICATION_LAG_DAYS = 3
+
 GDELT_USER_AGENT = "tik-osint-bot/0.1 (research; contact escltheo@gmail.com)"
 
 # GDELT impose un rate limit de 1 requête / 5 secondes par IP (cf. message
@@ -254,6 +262,12 @@ async def fetch_cot_history(
     """Récupère l'historique CFTC COT GOLD COMEX sur N jours.
 
     Rapport hebdomadaire (vendredi, snapshot mardi précédent). Sur 12m → ~52 points.
+
+    Anti-look-ahead (audit 2026-07-02) : `date` = date de PUBLICATION du
+    rapport (report_date + COT_PUBLICATION_LAG_DAYS, mardi → vendredi), pour
+    que le backtest n'utilise la donnée qu'à partir du moment où elle est
+    réellement disponible. Le `report_date` original (mardi de la photo) est
+    conservé dans chaque point pour traçabilité.
     """
     own_client = client is None
     if own_client:
@@ -300,11 +314,19 @@ async def fetch_cot_history(
             net_pct = (mm_long - mm_short) / total
             # report_date est ISO datetime du Socrata (T00:00:00.000), on garde la date
             date_only = report_date.split("T")[0] if "T" in report_date else report_date
-            if date_only < cutoff:
+            # Date effective = date de publication (vendredi), pas le mardi de
+            # la photo — cf. COT_PUBLICATION_LAG_DAYS (anti-look-ahead).
+            try:
+                report_dt = datetime.fromisoformat(date_only).date()
+            except ValueError:
+                continue
+            effective_date = (report_dt + timedelta(days=COT_PUBLICATION_LAG_DAYS)).isoformat()
+            if effective_date < cutoff:
                 continue
             points.append(
                 {
-                    "date": date_only,
+                    "date": effective_date,
+                    "report_date": date_only,
                     "value": round(net_pct, 4),
                     "mm_long": mm_long,
                     "mm_short": mm_short,

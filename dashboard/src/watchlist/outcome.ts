@@ -7,6 +7,7 @@
  */
 
 import type { FeedbackOutcome, SignalTrackRecord, TrackRecordRow } from '@/src/api/types';
+import { parseUtcIso } from '@/src/utils/time';
 import type { WatchlistOutcome } from './WatchlistContext';
 
 export interface DerivedOutcome {
@@ -204,7 +205,9 @@ export function isOutcomeLikelyAvailable(
   const referenceHours = REFERENCE_HOURS_BY_HORIZON[signalHorizon];
   if (referenceHours === undefined) return false;
 
-  const signalDate = new Date(signalTimestamp);
+  // parseUtcIso (Bug 8) : seul site qui bypassait le filet — un ISO backend
+  // sans timezone serait interprété en heure locale (audit 2026-07-02).
+  const signalDate = parseUtcIso(signalTimestamp);
   if (Number.isNaN(signalDate.getTime())) return false;
 
   const elapsedHours = (now.getTime() - signalDate.getTime()) / (1000 * 60 * 60);

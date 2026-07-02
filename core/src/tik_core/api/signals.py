@@ -12,7 +12,7 @@ from tik_core.auth import AuthContext, require_scope
 from tik_core.config import get_settings
 from tik_core.scoring.publisher import _publish_signal
 from tik_core.storage.database import get_session
-from tik_core.storage.models import Signal
+from tik_core.storage.models import Entity, Signal
 from tik_core.storage.schemas import MicroSignalIn, SignalOut
 from tik_core.utils.time import now_utc, now_utc_naive
 
@@ -146,6 +146,14 @@ async def ingest_micro_signal(
                 f"Entité {entity_id!r} non autorisée pour l'ingestion micro. "
                 f"Autorisées : {', '.join(sorted(allowed))}."
             ),
+        )
+    # Audit 2026-07-02 : complémentaire à la whitelist ADR-034 — une entité
+    # autorisée mais absente de la table `entities` violait la FK au flush
+    # → 500 opaque. On répond un 422 explicite.
+    if await session.get(Entity, entity_id) is None:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Entity '{entity_id}' inconnue — créez-la via POST /entities avant d'ingérer.",
         )
     decision = _IngestedMicroDecision(
         entity_id=entity_id,
