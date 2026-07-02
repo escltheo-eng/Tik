@@ -55,8 +55,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from datetime import UTC, date, datetime, timedelta
+from statistics import NormalDist, fmean, pvariance
 
 import httpx
 from redis import Redis
@@ -144,6 +146,56 @@ def aligned_flow_returns(
             flows.append(float(f))
             rets.append((p1 - p0) / p0)
     return flows, rets
+
+
+def _nonoverlap(xs: list[float], ys: list[float], horizon: int) -> tuple[list[float], list[float]]:
+    """Sous-échantillon NON chevauchant : un point tous les `horizon` pas."""
+    nx: list[float] = []
+    ny: list[float] = []
+    last = -(10**9)
+    for i, (x, y) in enumerate(zip(xs, ys, strict=True)):
+        if i - last >= horizon:
+            nx.append(x)
+            ny.append(y)
+            last = i
+    return nx, ny
+
+
+def ic_noise_band(n_indep: int, m_tests: int, alpha: float = 0.05) -> float | None:
+    """|IC| critique sous H0 (rho ~ N(0, 1/(N−1))), corrigé Bonferroni (m tests).
+
+    On rejette « IC = bruit » si |IC| dépasse z_{α'/2}/sqrt(N−1), α' = α/m. None si
+    N < 8 (honnête : trop peu pour conclure).
+    """
+    if n_indep < 8:
+        return None
+    z = NormalDist().inv_cdf(1.0 - (alpha / max(1, m_tests)) / 2.0)
+    return z / math.sqrt(n_indep - 1)
+
+
+def extreme_quantile(xs: list[float], ys: list[float], top_frac: float = 0.2) -> dict[str, float | int | None]:
+    """Rendement forward moyen du quintile HAUT de la métrique vs le reste.
+
+    Pour le momentum ETF : gros inflow (quintile haut) → rendement PLUS HAUT
+    attendu (diff > 0). t de Welch (normal). xs/ys doivent être NON chevauchants.
+    """
+    n = len(xs)
+    empty = {"n": n, "n_top": 0, "mean_top": None, "mean_rest": None, "diff": None, "t": None}
+    if n < 20:
+        return empty
+    thr = sorted(xs)[int((1.0 - top_frac) * n)]
+    top = [y for x, y in zip(xs, ys, strict=True) if x >= thr]
+    rest = [y for x, y in zip(xs, ys, strict=True) if x < thr]
+    if len(top) < 5 or len(rest) < 5:
+        return {**empty, "n_top": len(top)}
+    mt = fmean(top)
+    mr = fmean(rest)
+    se = math.sqrt(pvariance(top) / len(top) + pvariance(rest) / len(rest))
+    if se > 0:
+        t = (mt - mr) / se
+    else:
+        t = 0.0 if mt == mr else math.copysign(99.0, mt - mr)
+    return {"n": n, "n_top": len(top), "mean_top": mt, "mean_rest": mr, "diff": mt - mr, "t": t}
 
 
 def _stats(vals: list[float]) -> dict[str, float | int | None]:
@@ -234,9 +286,62 @@ def main() -> int:
         f"(N chevauchant={len(flows)}) | non chevauchant = {_fmt(ic_indep)} (N={len(nx)})"
     )
 
+    # --- Balayage multi-horizon : IC NON chevauchant vs bruit corrigé ---
+    sweep_h = [1, 3, 5, 10]
+    print(
+        f"\n--- Balayage multi-horizon : IC NON chevauchant vs bruit "
+        f"(Bonferroni m={len(sweep_h)}) ---"
+    )
+    robust: list[tuple[int, float, int]] = []
+    for h in sweep_h:
+        fl, re_ = aligned_flow_returns(daily, closes, lag, h)
+        nfx, nfy = _nonoverlap(fl, re_, h)
+        ic_h = spearman_correlation(nfx, nfy) if len(nfx) >= 5 else None
+        crit = ic_noise_band(len(nfx), len(sweep_h))
+        flag = ""
+        if ic_h is not None and crit is not None and abs(ic_h) > crit:
+            flag = "  ⟵ AU-DELÀ du bruit corrigé"
+            robust.append((h, ic_h, len(nfx)))
+        print(f"  flux net @ {h:>2}j : IC_indep={_fmt(ic_h):>7} (N={len(nfx):<4}) | bruit ±{_fmt(crit)}{flag}")
+
+    # --- Test du MÉCANISME momentum : gros inflow (quintile haut) → rendement + ---
+    print("\n--- Mécanisme momentum : rendement forward du quintile HAUT d'inflow vs reste ---")
+    mech_hits: list[tuple[int, float, float]] = []
+    mech_h = [3, 5]
+    t_crit = NormalDist().inv_cdf(1.0 - (0.05 / len(mech_h)) / 2.0)
+    for h in mech_h:
+        fl, re_ = aligned_flow_returns(daily, closes, lag, h)
+        nfx, nfy = _nonoverlap(fl, re_, h)
+        ex = extreme_quantile(nfx, nfy)
+        if ex["mean_top"] is None:
+            print(f"  flux net @ {h:>2}j : N non chevauchant={ex['n']} → sous-puissant")
+            continue
+        t_val = ex["t"]
+        flag = ""
+        if t_val is not None and abs(t_val) >= t_crit:
+            flag = "  ⟵ significatif (Bonferroni)"
+            mech_hits.append((h, ex["diff"], t_val))  # type: ignore[arg-type]
+        print(
+            f"  flux net @ {h:>2}j : top={ex['mean_top'] * 100:+.2f}% "  # type: ignore[operator]
+            f"vs reste={ex['mean_rest'] * 100:+.2f}% "  # type: ignore[operator]
+            f"(Δ={ex['diff'] * 100:+.2f}%, t={_fmt(t_val, 2)}, N_top={ex['n_top']}){flag}"  # type: ignore[operator]
+        )
+    print(f"  (momentum attendu : Δ>0 ; seuil |t| Bonferroni m={len(mech_h)} : {t_crit:.2f})")
+
     print("\n--- VERDICT ---")
     if len(flows) < args.min_days:
         print(f"  ⚠ N={len(flows)} < {args.min_days} → PRÉLIMINAIRE (échantillon trop faible).")
+    if robust or mech_hits:
+        print("  🟡 Signal CANDIDAT au-delà du bruit (multiple-testing corrigé) :")
+        for h, ic_h, n in robust:
+            print(f"     - IC flux @ {h}j = {round(ic_h, 3)} (N non chevauchant={n})")
+        for h, diff, t_val in mech_hits:
+            print(f"     - mécanisme @ {h}j : Δ top vs reste = {diff * 100:+.2f}% (t={round(t_val, 2)})")
+        print("    → JUSTIFIE l'étape 2 : backtest tradable (vs Always-SHORT / buy&hold, hors-")
+        print("    échantillon, après coûts). ⚠ vérifier la colinéarité prix avant tout enrôlement.")
+    else:
+        print("  ⚪ AUCUN signal robuste (ni IC, ni mécanisme momentum) au-delà du bruit.")
+        print("    → Pas d'edge ETF détectable à ce stade — cohérent avec le NO-GO.")
     print("  ⚠ IC backfill = in-sample + régime-dépendant ; à confirmer hors échantillon.")
     print("  ⚠ Les inflows peuvent SUIVRE le prix (colinéaire au trend) → IC ≠ edge.")
     print("  ⚠ IC sur rendements chevauchants gonfle la significativité → se fier au N")

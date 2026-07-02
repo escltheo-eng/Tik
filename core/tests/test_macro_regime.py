@@ -8,17 +8,19 @@ MILLIONS de $, RRP en MILLIARDS de $. Oublier la normalisation = erreur ×1000.
 """
 
 from tik_core.aggregator.macro_regime_ingester import (
+    _rrp_for_date,
+    _series_metrics,
+    _value_on_or_before,
     compute_global_liquidity_series,
     compute_global_regime,
     compute_net_liquidity_series,
     compute_regime,
+    compute_risk_regime,
     latest_valid,
     parse_observations,
-    _rrp_for_date,
-    _value_on_or_before,
 )
 from tik_core.api.macro import _polymarket_summary, _subset
-from tik_core.storage.schemas import MacroRegimeOut
+from tik_core.storage.schemas import MacroRegimeOut, RiskRegimeOut
 
 
 def _mk_weekly(values: list[float], start: str = "2026-01-07") -> list[tuple[str, float]]:
@@ -197,6 +199,124 @@ class TestComputeRegime:
         out = compute_regime(series)
         assert out["regime"] == "unknown"
         assert out["delta_13w_busd"] is None
+
+
+def _mk_daily(values: list[float], start: str = "2025-06-02") -> dict[str, float]:
+    """Construit une série quotidienne {date_iso: value} sur jours consécutifs."""
+    from datetime import date, timedelta
+
+    d0 = date.fromisoformat(start)
+    return {(d0 + timedelta(days=i)).isoformat(): v for i, v in enumerate(values)}
+
+
+class TestSeriesMetrics:
+    def test_ascending_percentile_and_delta(self):
+        # 40 valeurs croissantes 1..40 → dernière = max → centile 1.0.
+        m = _series_metrics(_mk_daily([float(i) for i in range(1, 41)]))
+        assert m is not None
+        assert m["value"] == 40.0
+        assert m["n"] == 40
+        assert m["pct_rank_1y"] == 1.0  # dernier point = sommet
+        assert m["delta_20d"] == 20.0  # 40 − values[-21] (=20)
+        assert m["zscore_1y"] > 0
+
+    def test_descending_low_percentile(self):
+        # 40 valeurs décroissantes 40..1 → dernière = min → centile bas.
+        m = _series_metrics(_mk_daily([float(i) for i in range(40, 0, -1)]))
+        assert m is not None
+        assert m["value"] == 1.0
+        assert m["pct_rank_1y"] == round(1 / 40, 2)  # seul lui-même est ≤ lui
+
+    def test_short_series_no_rank(self):
+        # < 30 points → pas de centile/z-score (mais value présente).
+        m = _series_metrics(_mk_daily([10.0, 11.0, 12.0]))
+        assert m is not None
+        assert m["value"] == 12.0
+        assert m["pct_rank_1y"] is None
+        assert m["zscore_1y"] is None
+
+    def test_empty_returns_none(self):
+        assert _series_metrics({}) is None
+
+
+class TestComputeRiskRegime:
+    def test_risk_off_high_stress(self):
+        # VIX + HY tous deux au sommet → centile moyen 1.0 ≥ 0.70 → risk_off.
+        asc = _mk_daily([float(i) for i in range(1, 41)])
+        out = compute_risk_regime(asc, asc, asc)
+        assert out["available"] is True
+        assert out["risk_state"] == "risk_off"
+        assert out["stress_percentile"] == 1.0
+        assert out["vix"]["series_id"] == "VIXCLS"
+        assert out["hy_oas"]["series_id"] == "BAMLH0A0HYM2"
+        assert out["as_of"] == max(asc)  # dernière date
+        assert out["context_only"] is True
+
+    def test_risk_on_calm(self):
+        # VIX + HY au plancher → centile bas ≤ 0.30 → risk_on.
+        desc = _mk_daily([float(i) for i in range(40, 0, -1)])
+        out = compute_risk_regime(desc, desc, desc)
+        assert out["risk_state"] == "risk_on"
+        assert out["stress_percentile"] <= 0.30
+
+    def test_neutral_mixed(self):
+        # VIX au sommet (1.0), HY au plancher (~0.03) → moyenne ~0.51 → neutral.
+        asc = _mk_daily([float(i) for i in range(1, 41)])
+        desc = _mk_daily([float(i) for i in range(40, 0, -1)])
+        out = compute_risk_regime(asc, desc, {})
+        assert out["risk_state"] == "neutral"
+        assert 0.30 < out["stress_percentile"] < 0.70
+
+    def test_ig_excluded_from_label(self):
+        # IG fourni mais NE compte PAS dans le label (seuls VIX+HY le décident).
+        asc = _mk_daily([float(i) for i in range(1, 41)])
+        desc = _mk_daily([float(i) for i in range(40, 0, -1)])
+        # VIX sommet, HY absent → label sur VIX seul (1.0) → risk_off, IG (bas) ignoré.
+        out = compute_risk_regime(asc, {}, desc)
+        assert out["risk_state"] == "risk_off"
+        assert out["ig_oas"]["series_id"] == "BAMLC0A0CM"  # exposé en détail
+
+    def test_unknown_when_too_short(self):
+        # Séries trop courtes → pas de centile → state unknown (mais available True).
+        short = _mk_daily([10.0, 11.0, 12.0])
+        out = compute_risk_regime(short, short, short)
+        assert out["available"] is True
+        assert out["risk_state"] == "unknown"
+        assert out["stress_percentile"] is None
+
+    def test_empty_all(self):
+        assert compute_risk_regime({}, {}, {}) == {"available": False}
+
+
+class TestRiskRegimeSchema:
+    def test_construct_and_extra_ignored(self):
+        out = RiskRegimeOut(
+            available=True,
+            as_of="2026-06-19",
+            risk_state="risk_off",
+            stress_percentile=0.82,
+            vix={"value": 21.4, "date": "2026-06-19", "pct_rank_1y": 0.8, "series_id": "VIXCLS"},
+            hy_oas={"value": 3.6, "date": "2026-06-19", "pct_rank_1y": 0.84},
+        )
+        assert out.risk_state == "risk_off"
+        assert out.vix.value == 21.4
+        assert out.hy_oas.pct_rank_1y == 0.84
+        assert out.ig_oas is None
+
+    def test_risk_regime_survives_in_macro_blob(self):
+        blob = {
+            "available": True,
+            "risk_regime": {
+                "available": True,
+                "risk_state": "neutral",
+                "stress_percentile": 0.5,
+                "vix": {"value": 16.0, "date": "2026-06-19", "series_id": "VIXCLS"},
+            },
+        }
+        out = MacroRegimeOut(**blob)
+        assert out.risk_regime is not None
+        assert out.risk_regime.risk_state == "neutral"
+        assert out.risk_regime.vix.value == 16.0
 
 
 class TestMacroRegimeSchema:

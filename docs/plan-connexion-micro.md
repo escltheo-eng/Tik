@@ -59,7 +59,7 @@
 - [ ] **O1 — Le Mac doit joindre le VPS** : `curl http://<ip-vps>:8200/api/v1/health` depuis le Mac DOIT répondre avant tout. Si la box/le FAI bloque le port 8200 sortant → rien ne passera. *Détection : timeout curl. Mitigation : tester d'abord, sinon Tailscale.*
 - [ ] **O2 — HTTP en clair sur Internet** : la clé API transite non chiffrée vers `ip:8200`. *Mitigation acceptée court terme (clé au scope minimal, révocable) ; moyen terme : reverse-proxy TLS ou Tailscale — à décider avec l'hébergement (docs/hosting-and-app-options.md).*
 - [ ] **O3 — IP du VPS qui change / VPS réinstallé** : `TIK_BASE_URL` devient invalide silencieusement (l'adaptateur loggue des warnings, le labo continue). *Détection : `grep tik_adapter` dans les logs labo + compteur signaux micro à 0.*
-- [ ] **O4 — Le labo tourne sur le Mac** : s'il est éteint/en veille, plus de signaux micro. C'est ACCEPTÉ (shadow). *Ne PAS conclure « le micro est mort » sans vérifier que dashboard.py tournait.*
+- [x] **O4 — CADUC (découvert au merge 2026-07-02)** : en prod le labo tourne dans un conteneur `micro` **sur le VPS** (`/opt/btc-research-lab`, pont `tik_bridge.py`, ACTIF depuis le 2026-06-24) — pas sur le Mac. `tik_adapter.py` (ce plan) reste la version committée/testée, OFF par défaut → **réconcilier les deux ponts** (nouvel obstacle O21).
 
 ### Obstacles clé API / auth
 - [ ] **O5 — Scope `write:signals` ABSENT des scopes par défaut** de `create_api_key.py` : une clé créée sans `--scopes read:signals,write:signals` → 403 systématique. La commande exacte est dans `.env.example` du labo.
@@ -78,8 +78,9 @@
 - [ ] **O14 — Volume trop faible** : à ~10-50 signaux/jour dont beaucoup de neutral, 2 semaines peuvent ne pas suffire pour une puissance statistique correcte → prolonger plutôt que conclure faible.
 
 ### Obstacles d'exploitation
+- [ ] **O21 — DEUX ponts labo→Tik en parallèle** (découvert au merge) : `tik_bridge.py` (prod VPS, actif 24/06) vs `tik_adapter.py` (committé ici, OFF). Un seul doit survivre à terme ; en attendant, ne JAMAIS activer les deux en même temps (doublons de signaux). Le kill-switch serveur `TIK_MICRO_INGEST_ENABLED` doit rester `true` en prod sinon le pont reçoit 503 (incident ~30-60 min le 02/07).
 - [ ] **O15 — Divergence des dashboards** : les correctifs UI sont sur `main` ; l'app DÉPLOYÉE vient de `refonte-cosmique` qui a 2 trous (cf. §6). Tant que non portés : fausses alertes « Effondrement de l'accord » + un micro peut s'afficher en tuile héro du Cockpit.
-- [ ] **O16 — Collision de numérotation ADR entre branches** : main 030=fusion/031=TradingView ; cosmique 030=risk-regime/031=stablecoins/033=fusion. C'est pourquoi la connexion est documentée en **ADR-034** (numéro libre des deux côtés). Réconciliation à faire au merge des branches.
+- [x] **O16 — Collision de numérotation ADR — RÉSOLUE 2026-07-02** (merge des branches) : cosmiques renumérotés 030→035 (risk-regime), 031→036 (stablecoins), 032→037 (cross-asset) ; 033-fusion = doublon historique du 030 canonique ; « ADR-034 verdict » cosmique réservé → **ADR-038**. Références code mises à jour.
 - [ ] **O17 — Déploiement VPS ≠ ce repo** : le VPS tourne sur le dépôt de prod (`Lolasiku-prog/Tik`) ; les changements backend d'ici doivent y être appliqués (git apply / copie des fichiers, comme fait pour TradingView) puis `docker restart tik-core` (bind-mount → pas de rebuild, aucune nouvelle dépendance).
 - [ ] **O18 — Le micro ne doit pas masquer une panne** : réglé côté `/signal_freshness` (micro exclu du max), mais `source_health` n'a PAS de sentinelle « labo » → si le labo s'arrête, aucune alerte. Accepté en shadow ; à revoir si enrôlement.
 - [ ] **O19 — Notifications Telegram** : les micro n'y apparaissent PAS (volontaire en shadow). Ne pas s'étonner de leur absence dans le briefing.

@@ -16,6 +16,8 @@ import { TikError } from '@/src/api/errors';
 import { Headline } from '@/src/api/types';
 import { useAuth } from '@/src/auth/AuthContext';
 
+import { useAppForeground } from './use-app-foreground';
+
 const REFRESH_INTERVAL_MS = 60_000;
 
 export interface UseTopHeadlinesResult {
@@ -88,6 +90,8 @@ export function useTopHeadlines(
       clearInterval(id);
     };
   }, [refresh, apiKey, refreshIntervalMs, entityId]);
+
+  useAppForeground(refresh);
 
   return { headlines, loading, error, refresh };
 }

@@ -453,7 +453,7 @@ export default function SignalDetailScreen() {
               {ampl.pointsLabel ? ` (${ampl.pointsLabel})` : ''} sur {ampl.windowLabel}
             </ThemedText>
             <ThemedText style={styles.amplNote}>
-              Volatilité typique sur l'horizon — ce n'est PAS une prévision du sens.
+              {"Volatilité typique sur l'horizon — ce n'est PAS une prévision du sens."}
             </ThemedText>
           </ThemedView>
         ) : null}

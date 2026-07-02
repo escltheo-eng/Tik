@@ -1,21 +1,8 @@
-import { useEffect, useState } from 'react';
-import { useColorScheme as useRNColorScheme } from 'react-native';
-
 /**
- * To support static rendering, this value needs to be re-calculated on the client side for web
+ * App forcée en thème SOMBRE (refonte cosmique γ, bout 5) — variante web.
+ * Même choix que `use-color-scheme.ts` : esthétique sombre unique, on ignore le
+ * réglage système. Réversible (restaurer la version basée sur useRNColorScheme).
  */
-export function useColorScheme() {
-  const [hasHydrated, setHasHydrated] = useState(false);
-
-  useEffect(() => {
-    setHasHydrated(true);
-  }, []);
-
-  const colorScheme = useRNColorScheme();
-
-  if (hasHydrated) {
-    return colorScheme;
-  }
-
-  return 'light';
+export function useColorScheme(): 'light' | 'dark' {
+  return 'dark';
 }

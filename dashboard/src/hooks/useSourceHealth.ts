@@ -11,6 +11,7 @@
  */
 
 import { useEffect, useState } from 'react';
+import { AppState } from 'react-native';
 
 import { getSourceHealth } from '@/src/api/endpoints';
 import { SourceHealth } from '@/src/api/types';
@@ -49,9 +50,14 @@ export function useSourceHealth(
     };
     void run();
     const id = setInterval(() => void run(), refreshIntervalMs);
+    // Retour au premier plan : l'OS gèle setInterval en arrière-plan → refetch immédiat.
+    const fgSub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') void run();
+    });
     return () => {
       cancelled = true;
       clearInterval(id);
+      fgSub.remove();
     };
   }, [client, apiKey, refreshIntervalMs]);
 

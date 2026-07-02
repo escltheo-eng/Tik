@@ -1,5 +1,5 @@
 /**
- * HitRateByVeracityCard — détail du hit rate par tranche de veracity.
+ * HitRateByVeracityCard — détail du hit rate par tranche d'accord entre sources.
  *
  * Phase A.2-bis trading manuel J+10. Insight critique du backtest 2026-05-05 :
  * le filtre veracity ≥ 0,90 transforme un hit rate perdant (22%) en gagnant
@@ -9,8 +9,11 @@
  * props. Pas de sélecteurs propres pour économiser la place et éviter la
  * désynchronisation visuelle.
  *
+ * Refonte cosmique : View/Text + tokens Cosmic (rendue uniquement dans l'onglet
+ * Plus, fond sombre forcé). « veracity » est nommée « accord » côté UI (A9).
+ *
  * UX :
- * - 4 lignes (1 par bucket veracity)
+ * - 4 lignes (1 par bucket d'accord)
  * - Chaque ligne : label + barre de couleur selon hit rate + N entre parenthèses
  * - Bucket avec N<10 → opacité réduite + warning "échantillon faible"
  * - Bucket vide → grisé total
@@ -20,13 +23,11 @@
  * - Période bullish/bearish biaise globalement (même filtre)
  */
 
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
 import { InfoTooltip } from '@/components/ui/info-tooltip';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { Cosmic } from '@/constants/cosmic';
+import { Fonts } from '@/constants/theme';
 import { HitRateByVeracity, HitRateByVeracityBucket } from '@/src/api/types';
 
 const MIN_SAMPLE_SIZE = 10;
@@ -40,12 +41,11 @@ export interface HitRateByVeracityCardProps {
 }
 
 function bucketColor(hitRate: number, lowSample: boolean, empty: boolean): string {
-  if (empty) return '#7f8c8d';
-  if (lowSample) return '#95a5a6';
-  if (hitRate < 0.5) return '#c0392b';
-  if (hitRate < 0.6) return '#e67e22';
-  if (hitRate < 0.75) return '#27ae60';
-  return '#16a085';
+  if (empty) return Cosmic.textFaint;
+  if (lowSample) return Cosmic.textFaint;
+  if (hitRate < 0.5) return Cosmic.short;
+  if (hitRate < 0.6) return Cosmic.neutral;
+  return Cosmic.long;
 }
 
 function BucketRow({ bucket }: { bucket: HitRateByVeracityBucket }) {
@@ -55,29 +55,29 @@ function BucketRow({ bucket }: { bucket: HitRateByVeracityBucket }) {
   const barWidth = empty ? 0 : Math.max(bucket.hit_rate * 100, 2); // 2% mini visible
 
   return (
-    <ThemedView style={[styles.bucketRow, { backgroundColor: 'transparent' }]}>
-      <ThemedView style={[styles.bucketLabelCol, { backgroundColor: 'transparent' }]}>
-        <ThemedText style={styles.bucketLabel}>veracity {bucket.bucket_label}</ThemedText>
-        <ThemedText style={styles.bucketMeta}>
+    <View style={styles.bucketRow}>
+      <View style={styles.bucketLabelCol}>
+        <Text style={styles.bucketLabel}>accord {bucket.bucket_label}</Text>
+        <Text style={styles.bucketMeta}>
           {empty
             ? 'aucun signal'
             : `${bucket.n_success} / ${bucket.n_evaluated} corrects · gain moy ${bucket.avg_gain_pct >= 0 ? '+' : ''}${bucket.avg_gain_pct.toFixed(2)}%`}
-        </ThemedText>
+        </Text>
         {lowSample ? (
-          <ThemedText style={styles.lowSampleLabel}>
+          <Text style={styles.lowSampleLabel}>
             ⚠ échantillon faible (N&lt;{MIN_SAMPLE_SIZE})
-          </ThemedText>
+          </Text>
         ) : null}
-      </ThemedView>
-      <ThemedView style={[styles.bucketRateCol, { backgroundColor: 'transparent' }]}>
-        <ThemedText style={[styles.bucketRate, { color }]}>
+      </View>
+      <View style={styles.bucketRateCol}>
+        <Text style={[styles.bucketRate, { color }]}>
           {empty ? '—' : `${(bucket.hit_rate * 100).toFixed(0)}%`}
-        </ThemedText>
+        </Text>
         <View style={styles.barTrack}>
           <View style={[styles.barFill, { width: `${barWidth}%`, backgroundColor: color }]} />
         </View>
-      </ThemedView>
-    </ThemedView>
+      </View>
+    </View>
   );
 }
 
@@ -88,55 +88,54 @@ export function HitRateByVeracityCard({
   loading,
   error,
 }: HitRateByVeracityCardProps) {
-  const scheme = useColorScheme() ?? 'light';
-  const palette = Colors[scheme];
-
   return (
-    <ThemedView style={[styles.card, { borderColor: palette.icon }]}>
-      <ThemedView style={[styles.header, { backgroundColor: 'transparent' }]}>
+    <View style={styles.card}>
+      <View style={styles.header}>
         <View style={styles.titleRow}>
-          <ThemedText type="defaultSemiBold">Hit rate par veracity</ThemedText>
+          <Text style={styles.title}>Hit rate par accord</Text>
           <InfoTooltip entryKey="veracity" />
         </View>
-        <ThemedText style={styles.periodLabel}>
+        <Text style={styles.periodLabel}>
           {entityId} · {horizon}
-        </ThemedText>
-      </ThemedView>
+        </Text>
+      </View>
 
       {error ? (
-        <ThemedText style={styles.errorText}>Indisponible : {error}</ThemedText>
+        <Text style={styles.errorText}>Indisponible : {error}</Text>
       ) : loading && !data ? (
-        <ThemedView style={[styles.loading, { backgroundColor: 'transparent' }]}>
-          <ActivityIndicator size="small" />
-        </ThemedView>
+        <View style={styles.loading}>
+          <ActivityIndicator size="small" color={Cosmic.accent} />
+        </View>
       ) : data ? (
         <>
-          <ThemedView style={[styles.bucketsList, { backgroundColor: 'transparent' }]}>
+          <View style={styles.bucketsList}>
             {data.buckets.map((b) => (
               <BucketRow key={b.bucket_label} bucket={b} />
             ))}
-          </ThemedView>
+          </View>
 
           {data.sample_warning ? (
-            <ThemedText style={styles.warningLabel}>⚠ {data.sample_warning}</ThemedText>
+            <Text style={styles.warningLabel}>⚠ {data.sample_warning}</Text>
           ) : null}
 
-          <ThemedText style={styles.footer}>
-            Plus la veracity est haute, plus Tik est confiant. Filtre clé pour calibrer le sizing.
-          </ThemedText>
+          <Text style={styles.footer}>
+            Plus l’accord entre sources est haut, plus Tik est confiant. Filtre clé pour calibrer le
+            sizing.
+          </Text>
         </>
       ) : null}
-    </ThemedView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   card: {
+    backgroundColor: Cosmic.card,
+    borderColor: Cosmic.border,
     borderWidth: 1,
     borderRadius: 12,
     padding: 16,
     gap: 10,
-    marginTop: 16,
   },
   header: {
     flexDirection: 'row',
@@ -150,16 +149,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
   },
+  title: {
+    color: Cosmic.text,
+    fontSize: 15,
+    fontWeight: '700',
+  },
   periodLabel: {
+    color: Cosmic.textFaint,
     fontSize: 12,
-    opacity: 0.6,
+    fontFamily: Fonts.mono,
   },
   loading: {
     alignItems: 'center',
     paddingVertical: 16,
   },
   errorText: {
-    color: '#c0392b',
+    color: Cosmic.short,
     fontSize: 13,
   },
   bucketsList: {
@@ -176,17 +181,17 @@ const styles = StyleSheet.create({
     gap: 1,
   },
   bucketLabel: {
+    color: Cosmic.text,
     fontSize: 13,
     fontWeight: '600',
   },
   bucketMeta: {
+    color: Cosmic.textDim,
     fontSize: 11,
-    opacity: 0.7,
   },
   lowSampleLabel: {
     fontSize: 11,
-    opacity: 0.7,
-    color: '#7f8c8d',
+    color: Cosmic.textFaint,
     fontStyle: 'italic',
   },
   bucketRateCol: {
@@ -198,11 +203,12 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: 'bold',
     lineHeight: 26,
+    fontFamily: Fonts.mono,
   },
   barTrack: {
     width: 80,
     height: 4,
-    backgroundColor: 'rgba(127, 140, 141, 0.2)',
+    backgroundColor: 'rgba(255,255,255,0.1)',
     borderRadius: 2,
     overflow: 'hidden',
   },
@@ -212,13 +218,14 @@ const styles = StyleSheet.create({
   },
   warningLabel: {
     fontSize: 12,
-    color: '#7f8c8d',
+    color: Cosmic.textFaint,
     marginTop: 4,
   },
   footer: {
+    color: Cosmic.textFaint,
     fontSize: 11,
-    opacity: 0.5,
     marginTop: 4,
     fontStyle: 'italic',
+    lineHeight: 16,
   },
 });

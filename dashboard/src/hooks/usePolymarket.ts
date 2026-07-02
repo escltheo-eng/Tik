@@ -14,6 +14,8 @@ import { TikError } from '@/src/api/errors';
 import { PolymarketSnapshot } from '@/src/api/types';
 import { useAuth } from '@/src/auth/AuthContext';
 
+import { useAppForeground } from './use-app-foreground';
+
 const REFRESH_INTERVAL_MS = 120_000;
 
 export interface UsePolymarketResult {
@@ -79,6 +81,8 @@ export function usePolymarket(
       clearInterval(id);
     };
   }, [refresh, apiKey, refreshIntervalMs, entityId]);
+
+  useAppForeground(refresh);
 
   return { snapshot, loading, error, refresh };
 }

@@ -6,16 +6,16 @@ import {
   ScrollView,
   StyleSheet,
   Switch,
+  Text,
   TextInput,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Collapsible } from '@/components/ui/collapsible';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { CosmicBackground } from '@/components/cosmic/cosmic-background';
+import { CosmicCollapsible } from '@/components/cosmic/cosmic-collapsible';
+import { Cosmic, TitleShadow, serifTitleFamily } from '@/constants/cosmic';
+import { Fonts } from '@/constants/theme';
 import { HttpClient } from '@/src/api/client';
 import { getHealth, listEntities } from '@/src/api/endpoints';
 import { AuthError, NetworkError, TikError } from '@/src/api/errors';
@@ -38,19 +38,15 @@ function GlossaryRow({ entryKey }: { entryKey: keyof typeof GLOSSARY }) {
   if (!entry) return null;
   return (
     <View style={styles.glossaryRow}>
-      <ThemedText style={styles.glossaryTerm}>{entry.term}</ThemedText>
-      <ThemedText style={styles.glossaryShort}>{entry.short}</ThemedText>
-      {entry.ref ? (
-        <ThemedText style={styles.glossaryRef}>— {entry.ref}</ThemedText>
-      ) : null}
+      <Text style={styles.glossaryTerm}>{entry.term}</Text>
+      <Text style={styles.glossaryShort}>{entry.short}</Text>
+      {entry.ref ? <Text style={styles.glossaryRef}>— {entry.ref}</Text> : null}
     </View>
   );
 }
 
 export default function ConfigScreen() {
   const insets = useSafeAreaInsets();
-  const colorScheme = useColorScheme() ?? 'light';
-  const palette = Colors[colorScheme];
   const { baseUrl, apiKey, signIn, signOut } = useAuth();
 
   const [editing, setEditing] = useState(false);
@@ -161,313 +157,300 @@ export default function ConfigScreen() {
     setPushLoading(false);
   };
 
-  const inputStyle = [
-    styles.input,
-    {
-      color: palette.text,
-      borderColor: palette.icon,
-      backgroundColor: colorScheme === 'dark' ? '#1c2024' : '#fafafa',
-    },
-  ];
-
   return (
-    <ScrollView contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 8 }]}>
-      <View style={styles.header}>
-        <ThemedText type="title">Config</ThemedText>
-        <ThemedText style={styles.subtitle}>
-          Connexion au core, notifications, version et déconnexion.
-        </ThemedText>
-      </View>
+    <CosmicBackground>
+      <ScrollView contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 8 }]}>
+        <View style={styles.header}>
+          <Text style={styles.title}>Config</Text>
+          <Text style={styles.subtitle}>
+            Connexion au core, notifications, version et déconnexion.
+          </Text>
+        </View>
 
-      <ThemedView style={[styles.card, { borderColor: palette.icon }]}>
-        <ThemedText type="subtitle">Connexion au core</ThemedText>
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Connexion au core</Text>
 
-        {!editing ? (
-          <>
-            <ThemedView style={[styles.kv, { backgroundColor: 'transparent' }]}>
-              <ThemedText style={styles.kvLabel}>URL</ThemedText>
-              <ThemedText style={styles.kvValue}>{baseUrl}</ThemedText>
-            </ThemedView>
-            <ThemedView style={[styles.kv, { backgroundColor: 'transparent' }]}>
-              <ThemedText style={styles.kvLabel}>Clé API</ThemedText>
-              <ThemedText style={styles.kvValue}>{maskApiKey(apiKey)}</ThemedText>
-            </ThemedView>
+          {!editing ? (
+            <>
+              <View style={styles.kv}>
+                <Text style={styles.kvLabel}>URL</Text>
+                <Text style={styles.kvValue}>{baseUrl}</Text>
+              </View>
+              <View style={styles.kv}>
+                <Text style={styles.kvLabel}>Clé API</Text>
+                <Text style={styles.kvValue}>{maskApiKey(apiKey)}</Text>
+              </View>
 
-            <View style={styles.btnRow}>
-              <Pressable
-                onPress={() => void onTestConnection()}
-                disabled={submitting}
-                style={({ pressed }) => [
-                  styles.secondaryBtn,
-                  { borderColor: palette.icon, opacity: pressed || submitting ? 0.6 : 1 },
-                ]}>
-                {submitting ? (
-                  <ActivityIndicator size="small" />
-                ) : (
-                  <ThemedText style={{ color: palette.text }}>Tester la connexion</ThemedText>
-                )}
-              </Pressable>
-              <Pressable
-                onPress={() => {
-                  setEditing(true);
-                  setUpdateError(null);
-                  setUpdateSuccess(null);
-                }}
-                style={({ pressed }) => [
-                  styles.primaryBtn,
-                  { backgroundColor: palette.tint, opacity: pressed ? 0.7 : 1 },
-                ]}>
-                <ThemedText style={styles.primaryLabel}>Modifier</ThemedText>
-              </Pressable>
+              <View style={styles.btnRow}>
+                <Pressable
+                  onPress={() => void onTestConnection()}
+                  disabled={submitting}
+                  style={({ pressed }) => [
+                    styles.secondaryBtn,
+                    { opacity: pressed || submitting ? 0.6 : 1 },
+                  ]}>
+                  {submitting ? (
+                    <ActivityIndicator size="small" color={Cosmic.accent} />
+                  ) : (
+                    <Text style={styles.secondaryLabel}>Tester la connexion</Text>
+                  )}
+                </Pressable>
+                <Pressable
+                  onPress={() => {
+                    setEditing(true);
+                    setUpdateError(null);
+                    setUpdateSuccess(null);
+                  }}
+                  style={({ pressed }) => [styles.primaryBtn, { opacity: pressed ? 0.7 : 1 }]}>
+                  <Text style={styles.primaryLabel}>Modifier</Text>
+                </Pressable>
+              </View>
+            </>
+          ) : (
+            <>
+              <View style={styles.field}>
+                <Text style={styles.kvLabel}>URL</Text>
+                <TextInput
+                  value={draftBaseUrl}
+                  onChangeText={setDraftBaseUrl}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="url"
+                  placeholderTextColor={Cosmic.textFaint}
+                  style={styles.input}
+                  editable={!submitting}
+                />
+              </View>
+              <View style={styles.field}>
+                <Text style={styles.kvLabel}>Nouvelle clé API</Text>
+                <TextInput
+                  value={draftApiKey}
+                  onChangeText={setDraftApiKey}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  secureTextEntry
+                  placeholder="tik_xxxxxxxxxxxx"
+                  placeholderTextColor={Cosmic.textFaint}
+                  style={styles.input}
+                  editable={!submitting}
+                />
+              </View>
+
+              <View style={styles.btnRow}>
+                <Pressable
+                  onPress={() => {
+                    setEditing(false);
+                    setDraftBaseUrl(baseUrl);
+                    setDraftApiKey('');
+                    setUpdateError(null);
+                  }}
+                  disabled={submitting}
+                  style={({ pressed }) => [
+                    styles.secondaryBtn,
+                    { opacity: pressed || submitting ? 0.6 : 1 },
+                  ]}>
+                  <Text style={styles.secondaryLabel}>Annuler</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => void onSaveCredentials()}
+                  disabled={submitting}
+                  style={({ pressed }) => [
+                    styles.primaryBtn,
+                    { opacity: pressed || submitting ? 0.7 : 1 },
+                  ]}>
+                  {submitting ? (
+                    <ActivityIndicator color={Cosmic.bgDeep} size="small" />
+                  ) : (
+                    <Text style={styles.primaryLabel}>Enregistrer</Text>
+                  )}
+                </Pressable>
+              </View>
+            </>
+          )}
+
+          {updateError ? (
+            <Text style={styles.errorText}>{updateError}</Text>
+          ) : updateSuccess ? (
+            <Text style={styles.successText}>{updateSuccess}</Text>
+          ) : null}
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Notifications push</Text>
+          <Text style={styles.muted}>
+            {Platform.OS === 'web'
+              ? 'Push non disponible en web. Utiliser un build natif (EAS) pour activer.'
+              : 'Récupère un token Expo Push pour recevoir les alertes hors-app. Nécessite un build natif (Expo Go ne supporte plus le push remote depuis SDK 53).'}
+          </Text>
+
+          <View style={styles.kv}>
+            <Text style={styles.kvLabel}>Statut</Text>
+            <Text style={styles.kvValue}>{pushStatus}</Text>
+          </View>
+          <View style={styles.kv}>
+            <Text style={styles.kvLabel}>Token</Text>
+            <Text style={styles.kvValue}>{pushToken ? `${pushToken.slice(0, 24)}…` : '—'}</Text>
+          </View>
+
+          {pushReason ? <Text style={styles.muted}>{pushReason}</Text> : null}
+
+          <Pressable
+            onPress={() => void onActivatePush()}
+            disabled={pushLoading || Platform.OS === 'web'}
+            style={({ pressed }) => [
+              styles.primaryBtn,
+              { opacity: pressed || pushLoading || Platform.OS === 'web' ? 0.5 : 1 },
+            ]}>
+            {pushLoading ? (
+              <ActivityIndicator color={Cosmic.bgDeep} size="small" />
+            ) : (
+              <Text style={styles.primaryLabel}>
+                {pushToken ? 'Régénérer le token' : 'Activer les notifications'}
+              </Text>
+            )}
+          </Pressable>
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Affichage</Text>
+          <View style={styles.toggleRow}>
+            <View style={styles.toggleText}>
+              <Text style={styles.toggleLabel}>Carte « Stabilité flash · BTC »</Text>
+              <Text style={styles.muted}>
+                Sur l&apos;onglet Marché : verdict de stabilité (instable / stable / indécis) et
+                croisement carnet vs flux agressif. Aide à ne pas trader sur du bruit.
+              </Text>
             </View>
-          </>
-        ) : (
-          <>
-            <ThemedView style={[styles.field, { backgroundColor: 'transparent' }]}>
-              <ThemedText style={styles.kvLabel}>URL</ThemedText>
-              <TextInput
-                value={draftBaseUrl}
-                onChangeText={setDraftBaseUrl}
-                autoCapitalize="none"
-                autoCorrect={false}
-                keyboardType="url"
-                placeholderTextColor={palette.icon}
-                style={inputStyle}
-                editable={!submitting}
-              />
-            </ThemedView>
-            <ThemedView style={[styles.field, { backgroundColor: 'transparent' }]}>
-              <ThemedText style={styles.kvLabel}>Nouvelle clé API</ThemedText>
-              <TextInput
-                value={draftApiKey}
-                onChangeText={setDraftApiKey}
-                autoCapitalize="none"
-                autoCorrect={false}
-                secureTextEntry
-                placeholder="tik_xxxxxxxxxxxx"
-                placeholderTextColor={palette.icon}
-                style={inputStyle}
-                editable={!submitting}
-              />
-            </ThemedView>
+            <Switch
+              value={flashCardEnabled}
+              onValueChange={setFlashCardEnabled}
+              trackColor={{ false: Cosmic.borderStrong, true: Cosmic.accent }}
+              thumbColor={Cosmic.text}
+            />
+          </View>
+        </View>
 
-            <View style={styles.btnRow}>
-              <Pressable
-                onPress={() => {
-                  setEditing(false);
-                  setDraftBaseUrl(baseUrl);
-                  setDraftApiKey('');
-                  setUpdateError(null);
-                }}
-                disabled={submitting}
-                style={({ pressed }) => [
-                  styles.secondaryBtn,
-                  { borderColor: palette.icon, opacity: pressed || submitting ? 0.6 : 1 },
-                ]}>
-                <ThemedText style={{ color: palette.text }}>Annuler</ThemedText>
-              </Pressable>
-              <Pressable
-                onPress={() => void onSaveCredentials()}
-                disabled={submitting}
-                style={({ pressed }) => [
-                  styles.primaryBtn,
-                  { backgroundColor: palette.tint, opacity: pressed || submitting ? 0.7 : 1 },
-                ]}>
-                {submitting ? (
-                  <ActivityIndicator color="#fff" size="small" />
-                ) : (
-                  <ThemedText style={styles.primaryLabel}>Enregistrer</ThemedText>
-                )}
-              </Pressable>
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Glossaire</Text>
+          <Text style={styles.muted}>
+            Vocabulaire technique Tik. Tape l&apos;icône ? à côté d&apos;un terme dans l&apos;app
+            pour voir sa définition rapide.
+          </Text>
+
+          <CosmicCollapsible title="Scoring du signal">
+            <View style={styles.glossaryList}>
+              {(['veracity', 'conviction', 'combinedBias', 'dispersion', 'seuil'] as const).map((k) => (
+                <GlossaryRow key={k} entryKey={k} />
+              ))}
             </View>
-          </>
-        )}
+          </CosmicCollapsible>
 
-        {updateError ? (
-          <ThemedText style={styles.errorText}>{updateError}</ThemedText>
-        ) : updateSuccess ? (
-          <ThemedText style={styles.successText}>{updateSuccess}</ThemedText>
-        ) : null}
-      </ThemedView>
+          <CosmicCollapsible title="Sources et preuves">
+            <View style={styles.glossaryList}>
+              {(['sourceScores', 'evidence', 'triggers', 'counterScenarios'] as const).map((k) => (
+                <GlossaryRow key={k} entryKey={k} />
+              ))}
+            </View>
+          </CosmicCollapsible>
 
-      <ThemedView style={[styles.card, { borderColor: palette.icon }]}>
-        <ThemedText type="subtitle">Notifications push</ThemedText>
-        <ThemedText style={styles.muted}>
-          {Platform.OS === 'web'
-            ? 'Push non disponible en web. Utiliser un build natif (EAS) pour activer.'
-            : 'Récupère un token Expo Push pour recevoir les alertes hors-app. Nécessite un build natif (Expo Go ne supporte plus le push remote depuis SDK 53).'}
-        </ThemedText>
+          <CosmicCollapsible title="Anti fake-news et fiabilité">
+            <View style={styles.glossaryList}>
+              {(['afn'] as const).map((k) => (
+                <GlossaryRow key={k} entryKey={k} />
+              ))}
+            </View>
+          </CosmicCollapsible>
 
-        <ThemedView style={[styles.kv, { backgroundColor: 'transparent' }]}>
-          <ThemedText style={styles.kvLabel}>Statut</ThemedText>
-          <ThemedText style={styles.kvValue}>{pushStatus}</ThemedText>
-        </ThemedView>
-        <ThemedView style={[styles.kv, { backgroundColor: 'transparent' }]}>
-          <ThemedText style={styles.kvLabel}>Token</ThemedText>
-          <ThemedText style={styles.kvValue}>
-            {pushToken ? `${pushToken.slice(0, 24)}…` : '—'}
-          </ThemedText>
-        </ThemedView>
+          <CosmicCollapsible title="Track record et horizons">
+            <View style={styles.glossaryList}>
+              {(['trackRecord', 'horizon'] as const).map((k) => (
+                <GlossaryRow key={k} entryKey={k} />
+              ))}
+            </View>
+          </CosmicCollapsible>
 
-        {pushReason ? <ThemedText style={styles.muted}>{pushReason}</ThemedText> : null}
+          <CosmicCollapsible title="Workflow et discipline">
+            <View style={styles.glossaryList}>
+              {(['outcome', 'hypothesis', 'advisory', 'gardeFou2bis', 'shadow'] as const).map((k) => (
+                <GlossaryRow key={k} entryKey={k} />
+              ))}
+            </View>
+          </CosmicCollapsible>
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>À propos</Text>
+          <View style={styles.kv}>
+            <Text style={styles.kvLabel}>Dashboard</Text>
+            <Text style={styles.kvValue}>tik-dashboard v{APP_VERSION}</Text>
+          </View>
+          <View style={styles.kv}>
+            <Text style={styles.kvLabel}>Core</Text>
+            <Text style={styles.kvValue}>
+              {healthInfo
+                ? `v${healthInfo.version} · env ${healthInfo.env}`
+                : healthError
+                ? `Erreur : ${healthError}`
+                : '—'}
+            </Text>
+          </View>
+          <View style={styles.kv}>
+            <Text style={styles.kvLabel}>Plateforme</Text>
+            <Text style={styles.kvValue}>{Platform.OS}</Text>
+          </View>
+          <View style={styles.kv}>
+            <Text style={styles.kvLabel}>Mode</Text>
+            <Text style={styles.kvValue}>SHADOW (lecture seule, ADR-003)</Text>
+          </View>
+
+          <View style={styles.aboutBody}>
+            <Text style={styles.aboutIntro}>
+              Tik est une plateforme OSINT modulaire qui agrège des données multi-sources, score
+              leur crédibilité et produit des signaux pondérés sur 3 horizons en parallèle (flash,
+              swing, macro).
+            </Text>
+
+            <CosmicCollapsible title="Que fait ce dashboard ?">
+              <Text style={styles.aboutText}>
+                Cette application est en LECTURE SEULE. Elle se connecte au core Tik via HTTP REST et
+                WebSocket pour visualiser les signaux en temps réel. Elle ne passe jamais
+                d&apos;ordre ni n&apos;altère les bots Zeta/Totem (cf. ADR-003).
+              </Text>
+            </CosmicCollapsible>
+
+            <CosmicCollapsible title="Architecture en 3 couches">
+              <Text style={styles.aboutText}>
+                • Couche 1 — Core engine (FastAPI) : source de vérité unique{'\n'}• Couche 2 — SDK
+                Python (tik-sdk) : utilisé par les bots backend Zeta/Totem{'\n'}• Couche 3 —
+                Dashboard Expo : ce que vous regardez (web et mobile)
+              </Text>
+            </CosmicCollapsible>
+
+            <CosmicCollapsible title="Garde-fous opérationnels">
+              <Text style={styles.aboutText}>
+                • Mode SHADOW obligatoire (3 mois minimum) avant connexion réelle Tik ↔ Zeta{'\n'}•
+                Budget de test limité à 5 % du capital pendant 1 mois après le mode shadow{'\n'}•
+                Aucun bypass du guard V01-V15 côté Zeta — ADR-003
+              </Text>
+            </CosmicCollapsible>
+
+            <CosmicCollapsible title="Paranoïa contrôlée">
+              <Text style={styles.aboutText}>
+                Chaque signal Tik livre systématiquement : une hypothèse principale, au moins 2
+                contre-scénarios avec leur probabilité estimée, des preuves (evidence) avec leur
+                source et leur score de crédibilité, et des triggers techniques pondérés.
+              </Text>
+            </CosmicCollapsible>
+          </View>
+        </View>
 
         <Pressable
-          onPress={() => void onActivatePush()}
-          disabled={pushLoading || Platform.OS === 'web'}
-          style={({ pressed }) => [
-            styles.primaryBtn,
-            {
-              backgroundColor: palette.tint,
-              opacity: pressed || pushLoading || Platform.OS === 'web' ? 0.5 : 1,
-            },
-          ]}>
-          {pushLoading ? (
-            <ActivityIndicator color="#fff" size="small" />
-          ) : (
-            <ThemedText style={styles.primaryLabel}>
-              {pushToken ? 'Régénérer le token' : 'Activer les notifications'}
-            </ThemedText>
-          )}
+          onPress={() => void signOut()}
+          style={({ pressed }) => [styles.signOutBtn, { opacity: pressed ? 0.6 : 1 }]}>
+          <Text style={styles.signOutLabel}>Se déconnecter</Text>
         </Pressable>
-      </ThemedView>
-
-      <ThemedView style={[styles.card, { borderColor: palette.icon }]}>
-        <ThemedText type="subtitle">Affichage</ThemedText>
-        <View style={styles.toggleRow}>
-          <View style={styles.toggleText}>
-            <ThemedText style={styles.toggleLabel}>Carte « Stabilité flash · BTC »</ThemedText>
-            <ThemedText style={styles.muted}>
-              Sur l&apos;onglet Marché : verdict de stabilité (instable / stable / indécis) et
-              croisement carnet vs flux agressif. Aide à ne pas trader sur du bruit.
-            </ThemedText>
-          </View>
-          <Switch value={flashCardEnabled} onValueChange={setFlashCardEnabled} />
-        </View>
-      </ThemedView>
-
-      <ThemedView style={[styles.card, { borderColor: palette.icon }]}>
-        <ThemedText type="subtitle">Glossaire</ThemedText>
-        <ThemedText style={styles.muted}>
-          Vocabulaire technique Tik. Tape l&apos;icône ? à côté d&apos;un terme dans
-          l&apos;app pour voir sa définition rapide.
-        </ThemedText>
-
-        <Collapsible title="Scoring du signal">
-          <ThemedView style={[styles.glossaryList, { backgroundColor: 'transparent' }]}>
-            {(['veracity', 'conviction', 'combinedBias', 'dispersion', 'seuil'] as const).map((k) => (
-              <GlossaryRow key={k} entryKey={k} />
-            ))}
-          </ThemedView>
-        </Collapsible>
-
-        <Collapsible title="Sources et preuves">
-          <ThemedView style={[styles.glossaryList, { backgroundColor: 'transparent' }]}>
-            {(['sourceScores', 'evidence', 'triggers', 'counterScenarios'] as const).map((k) => (
-              <GlossaryRow key={k} entryKey={k} />
-            ))}
-          </ThemedView>
-        </Collapsible>
-
-        <Collapsible title="Anti fake-news et fiabilité">
-          <ThemedView style={[styles.glossaryList, { backgroundColor: 'transparent' }]}>
-            {(['afn'] as const).map((k) => (
-              <GlossaryRow key={k} entryKey={k} />
-            ))}
-          </ThemedView>
-        </Collapsible>
-
-        <Collapsible title="Track record et horizons">
-          <ThemedView style={[styles.glossaryList, { backgroundColor: 'transparent' }]}>
-            {(['trackRecord', 'horizon'] as const).map((k) => (
-              <GlossaryRow key={k} entryKey={k} />
-            ))}
-          </ThemedView>
-        </Collapsible>
-
-        <Collapsible title="Workflow et discipline">
-          <ThemedView style={[styles.glossaryList, { backgroundColor: 'transparent' }]}>
-            {(['outcome', 'hypothesis', 'advisory', 'gardeFou2bis', 'shadow'] as const).map((k) => (
-              <GlossaryRow key={k} entryKey={k} />
-            ))}
-          </ThemedView>
-        </Collapsible>
-      </ThemedView>
-
-      <ThemedView style={[styles.card, { borderColor: palette.icon }]}>
-        <ThemedText type="subtitle">À propos</ThemedText>
-        <ThemedView style={[styles.kv, { backgroundColor: 'transparent' }]}>
-          <ThemedText style={styles.kvLabel}>Dashboard</ThemedText>
-          <ThemedText style={styles.kvValue}>tik-dashboard v{APP_VERSION}</ThemedText>
-        </ThemedView>
-        <ThemedView style={[styles.kv, { backgroundColor: 'transparent' }]}>
-          <ThemedText style={styles.kvLabel}>Core</ThemedText>
-          <ThemedText style={styles.kvValue}>
-            {healthInfo
-              ? `v${healthInfo.version} · env ${healthInfo.env}`
-              : healthError
-              ? `Erreur : ${healthError}`
-              : '—'}
-          </ThemedText>
-        </ThemedView>
-        <ThemedView style={[styles.kv, { backgroundColor: 'transparent' }]}>
-          <ThemedText style={styles.kvLabel}>Plateforme</ThemedText>
-          <ThemedText style={styles.kvValue}>{Platform.OS}</ThemedText>
-        </ThemedView>
-        <ThemedView style={[styles.kv, { backgroundColor: 'transparent' }]}>
-          <ThemedText style={styles.kvLabel}>Mode</ThemedText>
-          <ThemedText style={styles.kvValue}>SHADOW (lecture seule, ADR-003)</ThemedText>
-        </ThemedView>
-
-        <ThemedView style={[styles.aboutBody, { backgroundColor: 'transparent' }]}>
-          <ThemedText style={styles.aboutIntro}>
-            Tik est une plateforme OSINT modulaire qui agrège des données multi-sources,
-            score leur crédibilité et produit des signaux pondérés sur 3 horizons en parallèle
-            (flash, swing, macro).
-          </ThemedText>
-
-          <Collapsible title="Que fait ce dashboard ?">
-            <ThemedText>
-              Cette application est en LECTURE SEULE. Elle se connecte au core Tik via HTTP REST
-              et WebSocket pour visualiser les signaux en temps réel. Elle ne passe jamais d&apos;ordre
-              ni n&apos;altère les bots Zeta/Totem (cf. ADR-003).
-            </ThemedText>
-          </Collapsible>
-
-          <Collapsible title="Architecture en 3 couches">
-            <ThemedText>
-              • Couche 1 — Core engine (FastAPI) : source de vérité unique{'\n'}
-              • Couche 2 — SDK Python (tik-sdk) : utilisé par les bots backend Zeta/Totem{'\n'}
-              • Couche 3 — Dashboard Expo : ce que vous regardez (web et mobile)
-            </ThemedText>
-          </Collapsible>
-
-          <Collapsible title="Garde-fous opérationnels">
-            <ThemedText>
-              • Mode SHADOW obligatoire (3 mois minimum) avant connexion réelle Tik ↔ Zeta{'\n'}
-              • Budget de test limité à 5 % du capital pendant 1 mois après le mode shadow{'\n'}
-              • Aucun bypass du guard V01-V15 côté Zeta — ADR-003
-            </ThemedText>
-          </Collapsible>
-
-          <Collapsible title="Paranoïa contrôlée">
-            <ThemedText>
-              Chaque signal Tik livre systématiquement : une hypothèse principale, au moins
-              2 contre-scénarios avec leur probabilité estimée, des preuves (evidence) avec
-              leur source et leur score de crédibilité, et des triggers techniques pondérés.
-            </ThemedText>
-          </Collapsible>
-        </ThemedView>
-      </ThemedView>
-
-      <Pressable
-        onPress={() => void signOut()}
-        style={({ pressed }) => [
-          styles.signOutBtn,
-          { borderColor: '#c0392b', opacity: pressed ? 0.6 : 1 },
-        ]}>
-        <ThemedText style={{ color: '#c0392b', fontWeight: '600' }}>Se déconnecter</ThemedText>
-      </Pressable>
-    </ScrollView>
+      </ScrollView>
+    </CosmicBackground>
   );
 }
 
@@ -481,15 +464,31 @@ const styles = StyleSheet.create({
     gap: 4,
     marginBottom: 4,
   },
+  title: {
+    ...TitleShadow.glow,
+    fontFamily: serifTitleFamily,
+    color: Cosmic.text,
+    fontSize: 28,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
   subtitle: {
+    color: Cosmic.textDim,
     fontSize: 13,
-    opacity: 0.7,
+    lineHeight: 18,
   },
   card: {
+    backgroundColor: Cosmic.card,
+    borderColor: Cosmic.border,
     borderWidth: 1,
     borderRadius: 12,
     padding: 16,
     gap: 8,
+  },
+  cardTitle: {
+    color: Cosmic.text,
+    fontSize: 16,
+    fontWeight: '700',
   },
   kv: {
     flexDirection: 'row',
@@ -498,18 +497,23 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   kvLabel: {
+    color: Cosmic.textFaint,
     fontSize: 13,
-    opacity: 0.6,
   },
   kvValue: {
+    color: Cosmic.text,
     fontSize: 13,
     flexShrink: 1,
     textAlign: 'right',
+    fontFamily: Fonts.mono,
   },
   field: {
     gap: 4,
   },
   input: {
+    color: Cosmic.text,
+    borderColor: Cosmic.borderStrong,
+    backgroundColor: Cosmic.bgDeep,
     borderWidth: 1,
     borderRadius: 8,
     paddingHorizontal: 12,
@@ -527,10 +531,11 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: Cosmic.accent,
   },
   primaryLabel: {
-    color: '#ffffff',
-    fontWeight: '600',
+    color: Cosmic.bgDeep,
+    fontWeight: '700',
   },
   secondaryBtn: {
     flex: 1,
@@ -539,18 +544,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
+    borderColor: Cosmic.borderStrong,
+  },
+  secondaryLabel: {
+    color: Cosmic.text,
+    fontWeight: '600',
   },
   errorText: {
-    color: '#c0392b',
+    color: Cosmic.short,
     fontSize: 13,
   },
   successText: {
-    color: '#27ae60',
+    color: Cosmic.long,
     fontSize: 13,
   },
   muted: {
+    color: Cosmic.textDim,
     fontSize: 12,
-    opacity: 0.7,
     lineHeight: 18,
   },
   toggleRow: {
@@ -564,6 +574,7 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   toggleLabel: {
+    color: Cosmic.text,
     fontSize: 14,
     fontWeight: '600',
   },
@@ -573,16 +584,26 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
     borderWidth: 1,
+    borderColor: Cosmic.short,
+  },
+  signOutLabel: {
+    color: Cosmic.short,
+    fontWeight: '700',
   },
   aboutBody: {
     marginTop: 8,
     gap: 4,
   },
   aboutIntro: {
+    color: Cosmic.textDim,
     fontSize: 13,
-    opacity: 0.85,
     lineHeight: 20,
     marginBottom: 4,
+  },
+  aboutText: {
+    color: Cosmic.textDim,
+    fontSize: 13,
+    lineHeight: 20,
   },
   glossaryList: {
     gap: 12,
@@ -592,17 +613,18 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   glossaryTerm: {
+    color: Cosmic.text,
     fontSize: 14,
     fontWeight: '700',
   },
   glossaryShort: {
+    color: Cosmic.textDim,
     fontSize: 13,
-    opacity: 0.85,
     lineHeight: 18,
   },
   glossaryRef: {
+    color: Cosmic.textFaint,
     fontSize: 11,
-    opacity: 0.55,
     fontStyle: 'italic',
   },
 });

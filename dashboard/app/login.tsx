@@ -19,7 +19,7 @@ import { useAuth } from '@/src/auth/AuthContext';
 import { DEFAULT_BASE_URL } from '@/src/auth/storage';
 
 export default function LoginScreen() {
-  const { signIn, baseUrl: currentBaseUrl } = useAuth();
+  const { signIn, baseUrl: currentBaseUrl, sessionExpired } = useAuth();
   const colorScheme = useColorScheme() ?? 'light';
   const palette = Colors[colorScheme];
 
@@ -89,6 +89,15 @@ export default function LoginScreen() {
           </ThemedText>
         </ThemedView>
 
+        {sessionExpired ? (
+          <ThemedView style={styles.expiredBox}>
+            <ThemedText style={styles.expiredText}>
+              ⚠ Session expirée — ta clé API a été refusée par le core (401). Elle a peut-être
+              été révoquée ou a expiré. Reconnecte-toi avec une clé valide.
+            </ThemedText>
+          </ThemedView>
+        ) : null}
+
         <ThemedView style={styles.field}>
           <ThemedText type="defaultSemiBold">URL du core</ThemedText>
           <TextInput
@@ -97,13 +106,14 @@ export default function LoginScreen() {
             autoCapitalize="none"
             autoCorrect={false}
             keyboardType="url"
-            placeholder="http://localhost:8200"
+            placeholder="http://204.168.220.47:8200"
             placeholderTextColor={palette.icon}
             style={inputStyle}
             editable={!submitting}
           />
           <ThemedText style={styles.help}>
-            En développement local, garde la valeur par défaut.
+            Sur t&eacute;l&eacute;phone, mets l&apos;adresse du serveur (ex.
+            http://204.168.220.47:8200), pas localhost.
           </ThemedText>
         </ThemedView>
 
@@ -200,6 +210,20 @@ const styles = StyleSheet.create({
     padding: 12,
     backgroundColor: 'rgba(192, 57, 43, 0.08)',
   },
+  expiredBox: {
+    borderWidth: 1,
+    borderColor: '#d99a3c',
+    borderRadius: 8,
+    padding: 12,
+    backgroundColor: 'rgba(217, 154, 60, 0.10)',
+  },
+  expiredText: {
+    color: '#b9770e',
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '600',
+  },
+
   submit: {
     paddingVertical: 14,
     borderRadius: 8,
