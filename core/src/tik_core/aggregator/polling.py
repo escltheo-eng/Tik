@@ -52,6 +52,9 @@ INGESTER_INTERVALS_S: dict[str, int] = {
     "gdelt_gold": 2 * _H,
     # --- Shadows (collectés, non branchés aux moteurs) ---
     "coingecko_btc": _H,
+    # ADR-039 : candidat remplaçant Reddit (Algolia HN, ~10k req/h de limite —
+    # 48 req/jour à 30 min, marge ~500×).
+    "hackernews_btc": 30 * 60,
     "polymarket_btc": _H,
     "polymarket_gold": _H,
     "binance_derivatives_btc": _H,

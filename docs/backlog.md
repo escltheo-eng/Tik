@@ -1091,6 +1091,16 @@ ne convient pas + utilisatrice OK pour passer en VPS payant.
 - Si pas de retour Reddit + Option C pas activée → réévaluer
   l'urgence selon le hit rate Tik mesuré J+30
 
+**✅ RÉSOLUTION 2026-07-02 — Option C.1 implémentée (ADR-039).** Reddit
+n'a jamais répondu (~6,5 semaines). `HackerNewsIngester` livré en **shadow
+strict** : `tik.sentiment.hackernews.btc` + history cappé, même méthode que
+Reddit (NewsClassifier partagé + pondération log(points+1) ADR-009) pour une
+comparaison à armes égales, ZÉRO câblage moteur (test garde-fou
+`test_shadow_strict_no_engine_wiring`). Reddit reste en place (backoff 6 h sur
+403, auto-récupération si unban). Enrôlement : mesure ≥ 2 sem vs Always SHORT
+(scripts corrigés de l'audit 2026-07-02) PUIS décision utilisatrice.
+Joignabilité hn.algolia.com à valider au déploiement VPS (cf. ADR-039).
+
 ### Risque rappelé
 
 Garde-fou 1 (Tik shadow vs Zeta 3 mois) inchangé. ADR-003 (pas de
