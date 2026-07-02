@@ -25,16 +25,19 @@ from tik_core.scripts.backtest import (
 )
 from tik_core.storage.models import Signal
 
-HorizonName = Literal["flash", "swing", "macro"]
+HorizonName = Literal["flash", "swing", "macro", "micro"]
 
 # Mapping horizon → durée canonique de mesure du delta prix (heures).
 # Le sweet spot 5j swing est issu du backtest 2026-04-29 (cf. CLAUDE.md
 # Paquet 1.x insights). Flash 1h aligné sur la fenêtre d'expiry du publisher.
 # Macro 30j est provisoire — peu de signaux macro émis aujourd'hui.
+# Micro 2h aligné sur EXPIRY_BY_HORIZON["micro"] (ADR-030 — couche ML
+# btc-research-lab, shadow) : même logique que flash↔1h.
 HORIZON_MEASURE_HOURS: dict[str, float] = {
     "flash": 1.0,
     "swing": 24.0 * 5,
     "macro": 24.0 * 30,
+    "micro": 2.0,
 }
 
 # Threshold par défaut par horizon (% mouvement minimum pour considérer
@@ -43,6 +46,7 @@ HORIZON_DEFAULT_THRESHOLD_PCT: dict[str, float] = {
     "flash": 0.3,
     "swing": 0.5,
     "macro": 1.5,
+    "micro": 0.3,
 }
 
 
@@ -64,6 +68,12 @@ def filter_signals_for_horizon(
     - signal.timestamp <= now - measure_hours (assez ancien pour être mesurable)
     - si include_flagged=False : exclut les signaux flagués degraded/tripped
 
+    Cas particulier horizon micro (ADR-030) : TOUS les signaux micro portent
+    circuit_breaker_status='degraded' par construction — c'est le MARQUEUR
+    shadow forcé par /signals/ingest, pas un flag anti-fake-news. Les exclure
+    rendrait l'horizon micro structurellement immesurable (0 signal éligible).
+    Pour micro, include_flagged=False n'exclut donc que les 'tripped'.
+
     Retourne (signaux_eligibles, n_flagged_excluded).
     """
     if horizon not in HORIZON_MEASURE_HOURS:
@@ -84,9 +94,13 @@ def filter_signals_for_horizon(
             continue
         if sig.timestamp > cutoff_mature:
             continue
-        if not include_flagged and sig.circuit_breaker_status in ("degraded", "tripped"):
-            n_flagged_excluded += 1
-            continue
+        if not include_flagged:
+            # 'degraded' sur micro = marqueur shadow (cf. docstring), pas un
+            # flag qualité → seul 'tripped' est exclu pour cet horizon.
+            excluded_statuses = ("tripped",) if horizon == "micro" else ("degraded", "tripped")
+            if sig.circuit_breaker_status in excluded_statuses:
+                n_flagged_excluded += 1
+                continue
         eligible.append(sig)
 
     return eligible, n_flagged_excluded

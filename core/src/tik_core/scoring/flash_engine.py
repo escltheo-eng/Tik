@@ -14,6 +14,7 @@ terme :
 Voir docs/adr/005-flash-engine.md pour le contexte architectural.
 """
 
+import asyncio
 import json
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -62,6 +63,25 @@ LAST_DIRECTION_TTL_SEC = 86400  # 24h
 HEARTBEAT_INTERVAL = timedelta(minutes=30)
 STALE_THRESHOLD_SEC = 60
 
+# Fraîcheur des klines REST : la dernière bougie 1m doit avoir ouvert il y a
+# moins de 3 min. Le check `is_realtime_data_fresh` porte sur le flux WS
+# (`tik.last_price.BTC`), qui est un chemin réseau DISTINCT des appels REST —
+# un endpoint REST peut servir un snapshot périmé pendant que le WS est sain
+# (audit fiabilité 2026-07-02, finding #3).
+KLINES_STALE_THRESHOLD_SEC = 180
+
+# Garde-fous overlays (audit fiabilité 2026-07-02, findings #1 et #11) :
+# une réponse /depth partielle (un seul côté, 1-2 niveaux) produirait un
+# OBI saturé ±1.0 — donc une direction forte silencieusement fausse. On
+# exige un carnet bilatéral avec un minimum de niveaux par face, et un
+# échantillon minimal d'aggTrades.
+MIN_ORDERBOOK_LEVELS_PER_SIDE = 5
+MIN_AGG_TRADES = 50
+
+# Nombre de tentatives des fetchers REST Binance (429/5xx transitoires).
+REST_FETCH_ATTEMPTS = 2
+REST_RETRY_DELAY_SEC = 0.5
+
 
 @dataclass
 class FlashDecision:
@@ -101,15 +121,32 @@ class LastEmission:
 # ----- Fetchers REST -----
 
 
+async def _get_json_with_retry(url: str, params: dict):
+    """GET JSON avec une retentative sur erreur transitoire (timeout, 429, 5xx).
+
+    Un seul retry court : le cycle flash revient toutes les 5 min, inutile
+    d'insister — mais une erreur ponctuelle ne doit pas coûter un cycle entier.
+    """
+    last_exc: Exception | None = None
+    for attempt in range(REST_FETCH_ATTEMPTS):
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                r = await client.get(url, params=params)
+                r.raise_for_status()
+                return r.json()
+        except (httpx.HTTPError, ValueError) as exc:
+            last_exc = exc
+            if attempt < REST_FETCH_ATTEMPTS - 1:
+                await asyncio.sleep(REST_RETRY_DELAY_SEC)
+    raise last_exc  # type: ignore[misc]
+
+
 async def _fetch_klines_1m(symbol: str = "BTCUSDT", limit: int = 240) -> pd.DataFrame:
     """Récupère les klines 1m Binance pour le calcul d'indicateurs flash."""
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        r = await client.get(
-            BINANCE_KLINES,
-            params={"symbol": symbol, "interval": "1m", "limit": limit},
-        )
-        r.raise_for_status()
-        raw = r.json()
+    raw = await _get_json_with_retry(
+        BINANCE_KLINES,
+        {"symbol": symbol, "interval": "1m", "limit": limit},
+    )
 
     df = pd.DataFrame(
         raw,
@@ -136,24 +173,12 @@ async def _fetch_klines_1m(symbol: str = "BTCUSDT", limit: int = 240) -> pd.Data
 
 async def _fetch_orderbook(symbol: str = "BTCUSDT", limit: int = 20) -> dict:
     """Récupère le carnet d'ordres Binance (top N niveaux)."""
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        r = await client.get(
-            BINANCE_DEPTH,
-            params={"symbol": symbol, "limit": limit},
-        )
-        r.raise_for_status()
-        return r.json()
+    return await _get_json_with_retry(BINANCE_DEPTH, {"symbol": symbol, "limit": limit})
 
 
 async def _fetch_agg_trades(symbol: str = "BTCUSDT", limit: int = 1000) -> list[dict]:
     """Récupère les N dernières transactions agrégées Binance (publiques)."""
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        r = await client.get(
-            BINANCE_AGG_TRADES,
-            params={"symbol": symbol, "limit": limit},
-        )
-        r.raise_for_status()
-        return r.json()
+    return await _get_json_with_retry(BINANCE_AGG_TRADES, {"symbol": symbol, "limit": limit})
 
 
 # ----- Check fraîcheur -----
@@ -177,6 +202,43 @@ async def is_realtime_data_fresh(redis: Redis, max_age_sec: int = STALE_THRESHOL
         ts = ts.replace(tzinfo=UTC)
     age = (datetime.now(UTC) - ts).total_seconds()
     return age <= max_age_sec
+
+
+def _klines_are_fresh(df: pd.DataFrame, max_age_sec: int = KLINES_STALE_THRESHOLD_SEC) -> bool:
+    """Vérifie que la dernière bougie 1m REST est récente.
+
+    Complète `is_realtime_data_fresh` (qui ne surveille QUE le flux WS) : les
+    klines REST sont un chemin réseau distinct et peuvent être périmées alors
+    que le WS est sain (audit 2026-07-02, finding #3). Une bougie 1m en cours
+    a un `timestamp` (open_time) < 60 s → seuil 180 s = 2 bougies de retard
+    tolérées (jitter réseau/CDN), au-delà on considère le snapshot périmé.
+    """
+    if df.empty:
+        return False
+    last_open = df["timestamp"].iloc[-1]
+    ts = last_open.to_pydatetime()
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=UTC)
+    age = (datetime.now(UTC) - ts).total_seconds()
+    return age <= max_age_sec
+
+
+def _make_skip_decision(reason_key: str, hypothesis: str) -> FlashDecision:
+    """Décision neutre `confidence=0` marquant un cycle à NE PAS émettre.
+
+    Contrat explicite avec le scheduler via `advisory["skip_reason"]` — le
+    matching historique sur le mot "stale" dans l'hypothèse (chaîne magique)
+    est conservé côté scheduler en fallback, mais ce champ est désormais la
+    référence (audit 2026-07-02, finding #6).
+    """
+    return FlashDecision(
+        entity_id="BTC",
+        timestamp=now_utc(),
+        direction="neutral",
+        confidence=0.0,
+        hypothesis=hypothesis,
+        advisory={"skip_reason": reason_key},
+    )
 
 
 # ----- Scoring technique pur -----
@@ -223,8 +285,12 @@ def _compute_technical_evidence_flash(df: pd.DataFrame) -> FlashDecision:
     prev_hist = float(hist.iloc[-2])
     current_atr = float(atr_14.iloc[-1])
 
-    # Momentum 15m : variation % entre la dernière clôture et la clôture il y a 15 bougies
-    momentum_15m_pct = (current_price / float(close.iloc[-15]) - 1.0) * 100.0
+    # Momentum 15m : variation % entre la dernière clôture et la clôture il y a
+    # 15 bougies. Garde anti-division par zéro (donnée corrompue) : momentum 0.
+    ref_close_15m = float(close.iloc[-15])
+    momentum_15m_pct = (
+        (current_price / ref_close_15m - 1.0) * 100.0 if ref_close_15m != 0 else 0.0
+    )
 
     triggers: list[dict] = []
     evidence: list[dict] = []
@@ -435,11 +501,30 @@ def _compute_obi_bias(orderbook: dict) -> tuple[float, str, float] | None:
     """Order Book Imbalance : `(bid_vol - ask_vol) / total_vol` sur top N levels.
 
     Trend-following : carnet déséquilibré côté acheteurs (OBI > 0) → bias bull.
+
+    Garde-fou (audit 2026-07-02, finding #1) : une réponse /depth partielle —
+    un côté vide ou quasi vide — donnerait mécaniquement un OBI saturé à ±1.0,
+    donc un biais directionnel maximal fabriqué par une donnée corrompue.
+    On exige MIN_ORDERBOOK_LEVELS_PER_SIDE niveaux sur CHAQUE face, sinon
+    l'overlay s'abstient (None = source indisponible, fail-closed).
     """
     try:
         bids = orderbook["bids"]
         asks = orderbook["asks"]
     except (KeyError, TypeError):
+        return None
+
+    if (
+        not isinstance(bids, list)
+        or not isinstance(asks, list)
+        or len(bids) < MIN_ORDERBOOK_LEVELS_PER_SIDE
+        or len(asks) < MIN_ORDERBOOK_LEVELS_PER_SIDE
+    ):
+        log.warning(
+            "flash.obi.orderbook_truncated",
+            n_bids=len(bids) if isinstance(bids, list) else None,
+            n_asks=len(asks) if isinstance(asks, list) else None,
+        )
         return None
 
     try:
@@ -505,8 +590,15 @@ def _compute_aggression_bias(trades: list[dict]) -> tuple[float, str, float] | N
     était vendeur agressif). `m=false` ⇒ taker acheteur agressif.
 
     Trend-following : majorité d'acheteurs agressifs (ratio > 0.5) → bias bull.
+
+    Garde-fou (audit 2026-07-02, finding #11) : un échantillon minuscule
+    (réponse tronquée) peut saturer le ratio à ±1.0 sans signification.
+    BTCUSDT produit normalement des milliers d'aggTrades — en dessous de
+    MIN_AGG_TRADES, l'overlay s'abstient.
     """
-    if not trades:
+    if not trades or len(trades) < MIN_AGG_TRADES:
+        if trades:
+            log.warning("flash.aggression.sample_too_small", n_trades=len(trades))
         return None
 
     buy_vol = 0.0
@@ -636,15 +728,43 @@ async def analyze_flash_btc(
     """
     if redis is not None and not await is_realtime_data_fresh(redis):
         log.warning("flash.btc.stale_data_skip")
-        return FlashDecision(
-            entity_id="BTC",
-            timestamp=now_utc(),
-            direction="neutral",
-            confidence=0.0,
-            hypothesis="Realtime feed stale (>60s old) — flash analysis skipped",
+        return _make_skip_decision(
+            "stale_realtime_feed",
+            "Realtime feed stale (>60s old) — flash analysis skipped",
         )
 
-    df = await _fetch_klines_1m("BTCUSDT", 240)
+    # Fetch klines protégé : un 429/5xx/timeout Binance ne doit pas faire
+    # planter le cycle (le scheduler loguait juste une erreur générique) —
+    # on skip proprement, comme pour le feed WS stale (audit finding #4).
+    try:
+        df = await _fetch_klines_1m("BTCUSDT", 240)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("flash.btc.klines_unavailable", error=str(exc))
+        return _make_skip_decision(
+            "klines_unavailable",
+            "Binance klines unavailable — flash analysis skipped (stale data guard)",
+        )
+
+    # Les klines REST sont un chemin distinct du WS : vérifie leur fraîcheur
+    # propre (audit finding #3). Couvre aussi la réponse vide (df.empty).
+    if not _klines_are_fresh(df):
+        log.warning("flash.btc.klines_stale_skip", n_klines=len(df))
+        return _make_skip_decision(
+            "klines_stale",
+            "Binance klines snapshot stale — flash analysis skipped",
+        )
+
+    # Moins de 60 bougies : indicateurs, amplitude et ref_price non fiables.
+    # Avant l'audit (finding #4), la décision "insufficient data" était
+    # ensuite ÉCRASÉE par les overlays → un signal directionnel sortait quand
+    # même sur un historique tronqué. On skippe désormais le cycle entier.
+    if len(df) < 60:
+        log.warning("flash.btc.insufficient_klines_skip", n_klines=len(df))
+        return _make_skip_decision(
+            "insufficient_klines",
+            "Insufficient historical data for flash analysis — skipped (stale data guard)",
+        )
+
     df.attrs["entity_id"] = "BTC"
     df.attrs["source"] = "binance_klines_1m"
     decision = _score_flash_indicators(df)
@@ -692,7 +812,12 @@ async def analyze_flash_btc(
             _derive_osint_decision_flash(decision, cv.combined_bias)
             # Veracity dérivée de la dispersion des sources OSINT
             # (résout bug #2 audit Paquet 17 — veracity neutral figée à 0.85).
-            decision.veracity = _veracity_from_dispersion(cv.dispersion)
+            # Mono-source (N=1) : dispersion indéfinie → plancher 0.70, pas
+            # 0.95 (audit 2026-07-02 finding #2 — ne jamais présenter une
+            # photo unique du carnet comme quasi-maximalement véridique).
+            decision.veracity = (
+                0.70 if cv.n_sources < 2 else _veracity_from_dispersion(cv.dispersion)
+            )
             # Shadow ADR-026 (Lot 2) : trace dispersion + biais. Observation pure.
             log.info(
                 "veracity.shadow",

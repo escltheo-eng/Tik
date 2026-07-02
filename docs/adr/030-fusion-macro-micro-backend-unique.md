@@ -250,3 +250,50 @@ Avant tout enrôlement du micro dans une décision :
   réconciliation des doublons reportée à F1.
 - **Réversibilité** : chaque étape est isolée par un toggle ou un conteneur ; abandon possible sans
   toucher au Tik en production.
+
+---
+
+## 11. Amendement 2026-07-02 — outillage de l'Étape 4 (mesurabilité micro) + audit fiabilité
+
+Session « fiabiliser la micro : analyse, prédiction, edges ». Constats vérifiés dans le code
+(engagement 13bis #1 « lire le code avant d'affirmer ») :
+
+### 11.1 Trous constatés (avant cette session)
+
+1. **L'horizon `micro` était immesurable** : absent de `HORIZON_MEASURE_HOURS` et de
+   `HORIZON_SPECS_BY_SIGNAL_HORIZON` (→ `ValueError`), rejeté par le pattern des endpoints
+   `/metrics/hit_rate*`. Pire : même corrigé, 100 % des signaux micro auraient été exclus du
+   hit rate par le filtre `include_flagged=False`, car ils portent TOUS
+   `circuit_breaker_status='degraded'` — le **marqueur shadow** forcé par `/signals/ingest`
+   (§5), pas un flag anti-fake-news.
+2. **Aucun script de mesure** pour l'Étape 4 (§6), contrairement aux autres shadows
+   (`measure_polymarket`, `measure_btc_derivatives`, `measure_btc_etf_flows`).
+3. **Aucun émetteur committé** : rien dans le repo btc-research-lab ne POSTe vers
+   `/api/v1/signals/ingest`. La réception (Étape 2) et l'UI (Étape 3) existent, la
+   **production** des signaux micro n'était pas en gestion de version.
+
+### 11.2 Décisions
+
+- **Fenêtre de mesure micro = 2 h** (alignée `EXPIRY_BY_HORIZON["micro"]`, même logique que
+  flash↔1h), seuil défaut 0.3 %. Track record : paliers 15min/30min/1h/2h sur klines 15m.
+- **Sémantique `degraded` pour micro** : dans `filter_signals_for_horizon`, quand
+  `horizon == "micro"`, `include_flagged=False` n'exclut que les `tripped`. Pour les autres
+  horizons, comportement inchangé. Documenté dans le code + testé.
+- **`measure_micro_signals.py`** (Étape 4) : hit rate + gain apparié vs baselines constantes
+  et Random, **fenêtres non chevauchantes par défaut**, test z apparié, **corrélation
+  Spearman micro↔swing** (§6 point 3 : ρ > 0.5 = redondant). Lecture seule, caveats imprimés
+  (N < 30 = préliminaire ; frais non comptés ; mesurer ≠ enrôler — NO-GO inchangé).
+- **`tik_bridge.py` côté labo** : émetteur committé (payload paranoïa contrôlée avec ≥ 2
+  contre-scénarios, retries/backoff, émission conditionnelle transitions + heartbeat 30 min,
+  best-effort absolu, toggle `TIK_BRIDGE_ENABLED` défaut OFF).
+
+### 11.3 Limites connues (engagement 13bis #8)
+
+1. Les seuils des paliers micro (0.10/0.15/0.30/0.40 %) sont un pifomètre raisonné aligné
+   flash — révision empirique après ≥ 2 semaines de collecte.
+2. La corrélation micro↔swing apparie chaque micro au dernier swing ≤ 1 h — si les cadences
+   d'émission changent, la fenêtre d'appariement est à revoir.
+3. La mesure reste **sans frais** ; le labo a déjà montré (H1 réfutée) que les frais mangent
+   les edges haute fréquence — un hit rate brut ne suffira pas pour l'enrôlement.
+4. Le verdict SUPPORTED/REFUTED de l'Étape 4 reste à produire après ≥ 2 semaines de signaux
+   réellement émis par le bridge (la collecte ne démarre qu'à l'activation du toggle).

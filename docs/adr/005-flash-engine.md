@@ -181,3 +181,22 @@ sur des sources payantes.
 - **Historisation des ticks WS** dans un Redis ZSET pour viser le sub-seconde.
 - **Backtest dédié flash** distinct du backtest swing actuel (horizons
   paramétrables : 15m, 1h, 4h).
+
+## Amendement 2026-07-02 — dérive doc↔code sur le seuil de directionnalité + garde-fous overlays
+
+Constat de l'audit fiabilité 2026-07-02 (finding #12) : cet ADR annonce un
+**seuil de directionnalité 0.10**, mais le code applique **0.30** depuis le
+refactor ADR-018 (`_derive_osint_decision_flash`, `flash_engine.py`) — le
+seuil ne s'applique plus au score technique historique mais au
+`combined_bias` OSINT (orderbook + agression), d'où le recalibrage. C'est le
+**code qui fait foi** ; cette note corrige la doc plutôt que de changer un
+comportement en production depuis des semaines.
+
+Même audit, gardes ajoutées aux overlays (le carnet /depth tronqué « une
+face » produisait un OBI saturé ±1.0, donc une direction forte fabriquée par
+une donnée corrompue) : `MIN_ORDERBOOK_LEVELS_PER_SIDE = 5`,
+`MIN_AGG_TRADES = 50`, fraîcheur propre des klines REST
+(`KLINES_STALE_THRESHOLD_SEC = 180` — le check WS `tik.last_price.BTC` ne
+couvre pas le chemin REST), retry unique sur les 3 fetchers, et plancher
+veracity 0.70 quand un seul overlay répond (N=1, `method="single_source"`,
+statut `degraded`). Détail : commit `99f2e2d` + `tests/test_flash_reliability.py`.

@@ -136,6 +136,8 @@ TRACK_RECORD_BINANCE_PARAMS: dict[str, dict] = {
     "flash": {"interval": "15m", "limit": 672},
     "swing": {"interval": "1h", "limit": 1000},
     "macro": {"interval": "1d", "limit": 365},
+    # micro (ADR-030) : mêmes besoins que flash (paliers 15min→2h sur klines 15m).
+    "micro": {"interval": "15m", "limit": 672},
 }
 TRACK_RECORD_YAHOO_PARAMS: dict[str, dict] = {
     # Pas de flash GOLD (cf. ADR-005 — Yahoo a 15 min de délai, incompatible
@@ -152,8 +154,11 @@ async def get_hit_rate(
     ),
     horizon: str = Query(
         ...,
-        pattern="^(flash|swing|macro)$",
-        description="Horizon Tik. flash=mesure 1h, swing=mesure 5j, macro=mesure 30j.",
+        pattern="^(flash|swing|macro|micro)$",
+        description=(
+            "Horizon Tik. flash=mesure 1h, swing=mesure 5j, macro=mesure 30j, "
+            "micro=mesure 2h (ADR-030 shadow)."
+        ),
     ),
     since_days: int = Query(30, ge=1, le=90, description="Fenêtre temporelle en jours (1-90)."),
     threshold_pct: float | None = Query(
@@ -162,7 +167,8 @@ async def get_hit_rate(
         le=10.0,
         description=(
             "Seuil de variation (%%) pour considérer un signal long/short comme réussi. "
-            "Si non fourni, utilise le défaut par horizon (flash=0.3, swing=0.5, macro=1.5)."
+            "Si non fourni, utilise le défaut par horizon "
+            "(flash=0.3, swing=0.5, macro=1.5, micro=0.3)."
         ),
     ),
     include_flagged: bool = Query(
@@ -170,7 +176,9 @@ async def get_hit_rate(
         description=(
             "Si false (défaut), exclut les signaux flagués anti fake-news "
             "(circuit_breaker_status in {degraded, tripped}). Mesure les signaux "
-            "non-flagués uniquement, considérés comme les vraies décisions Tik."
+            "non-flagués uniquement, considérés comme les vraies décisions Tik. "
+            "Exception horizon micro : 'degraded' y est le marqueur shadow ADR-030 "
+            "(pas un flag qualité) → seuls les 'tripped' sont exclus."
         ),
     ),
     session: AsyncSession = Depends(get_session),
@@ -341,8 +349,11 @@ async def get_hit_rate_by_veracity(
     ),
     horizon: str = Query(
         ...,
-        pattern="^(flash|swing|macro)$",
-        description="Horizon Tik. flash=mesure 1h, swing=mesure 5j, macro=mesure 30j.",
+        pattern="^(flash|swing|macro|micro)$",
+        description=(
+            "Horizon Tik. flash=mesure 1h, swing=mesure 5j, macro=mesure 30j, "
+            "micro=mesure 2h (ADR-030 shadow)."
+        ),
     ),
     since_days: int = Query(30, ge=1, le=90, description="Fenêtre temporelle en jours (1-90)."),
     threshold_pct: float | None = Query(
@@ -508,6 +519,7 @@ async def get_signal_track_record(
       flash → 15min / 30min / 45min / 1h
       swing → 1h / 6h / 24h / 5j
       macro → 1j / 7j / 30j / 90j
+      micro → 15min / 30min / 1h / 2h (ADR-030 shadow)
 
     Pour chaque horizon, compare la direction prédite au mouvement de prix
     observé et retourne un badge :
@@ -564,19 +576,21 @@ async def get_signal_track_record(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=(
                     f"Horizon non supporté pour le track record : {signal.horizon!r}. "
-                    "Valeurs attendues : flash, swing, macro."
+                    "Valeurs attendues : flash, swing, macro, micro."
                 ),
             )
 
         # Fail-fast ADR-005 : pas de track record flash GOLD (Yahoo 15 min
-        # de délai → incompatible avec mesure 15min/30min).
-        if signal.horizon == "flash" and signal.entity_id == "GOLD":
+        # de délai → incompatible avec mesure 15min/30min). Même contrainte
+        # pour micro (ADR-030 — le moteur micro est BTC-only, paliers 15min).
+        if signal.horizon in ("flash", "micro") and signal.entity_id == "GOLD":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=(
-                    "Track record flash GOLD non disponible (cf. ADR-005). "
-                    "Yahoo Finance a 15 min de délai sur GOLD, incompatible avec "
-                    "la mesure flash. Pas de signaux flash GOLD émis par Tik."
+                    f"Track record {signal.horizon} GOLD non disponible "
+                    "(cf. ADR-005/ADR-030). Yahoo Finance a 15 min de délai sur "
+                    "GOLD, incompatible avec la mesure sub-horaire. Pas de "
+                    f"signaux {signal.horizon} GOLD émis par Tik."
                 ),
             )
 

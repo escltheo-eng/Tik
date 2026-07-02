@@ -293,7 +293,7 @@ class HitRateOut(BaseModel):
     """
 
     entity_id: str
-    horizon: str  # "flash" | "swing" | "macro"
+    horizon: str  # "flash" | "swing" | "macro" | "micro" (ADR-030 shadow)
     since_days: int
     threshold_pct: float
     measure_hours: float  # durée canonique de mesure du delta prix

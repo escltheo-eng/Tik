@@ -6,6 +6,7 @@ signal (Paquet 17 — P5 du plan stratégique post-audit fiabilité signaux) :
   flash → 15min / 30min / 45min / 1h   (dans la fenêtre TTL signal Tik)
   swing → 1h / 6h / 24h / 5j           (calibration historique Paquet 12)
   macro → 1j / 7j / 30j / 90j          (mesure du cycle long)
+  micro → 15min / 30min / 1h / 2h      (fenêtre TTL 2h, ADR-030 shadow)
 
 Ce dispatch évite à un signal flash de perdre 75 % de son track record sur
 des horizons hors-fenêtre contractuelle (24h/5j inutiles pour flash) et
@@ -72,6 +73,19 @@ HORIZON_SPECS_BY_SIGNAL_HORIZON: dict[str, dict] = {
         ],
         "price_match_tolerance_ms": 24 * 3600 * 1000,
     },
+    # micro (ADR-030, couche ML btc-research-lab, shadow) : fenêtre contractuelle
+    # 2h (EXPIRY_BY_HORIZON["micro"]) → 4 paliers dans cette fenêtre. Seuils
+    # alignés sur les paliers flash équivalents (même volatilité typique) ;
+    # 2h à 0.40 prolonge la progression 15min→1h du flash.
+    "micro": {
+        "rows": [
+            {"label": "15min", "hours": 0.25, "threshold_pct": 0.10},
+            {"label": "30min", "hours": 0.50, "threshold_pct": 0.15},
+            {"label": "1h", "hours": 1.00, "threshold_pct": 0.30},
+            {"label": "2h", "hours": 2.00, "threshold_pct": 0.40},
+        ],
+        "price_match_tolerance_ms": 30 * 60 * 1000,
+    },
 }
 
 
@@ -112,7 +126,8 @@ def compute_track_record(
     """Calcule les 4 lignes du track record pour un signal donné.
 
     Args:
-        signal_horizon: horizon contractuel du signal ("flash"|"swing"|"macro").
+        signal_horizon: horizon contractuel du signal
+            ("flash"|"swing"|"macro"|"micro").
             Détermine les 4 horizons mesurés et les seuils directionnalité
             via HORIZON_SPECS_BY_SIGNAL_HORIZON.
 
@@ -129,7 +144,7 @@ def compute_track_record(
       badge            : "correct"|"raté"|"données_manquantes"|"en_attente"
 
     Raises:
-        ValueError: si signal_horizon n'est pas dans flash/swing/macro.
+        ValueError: si signal_horizon n'est pas dans flash/swing/macro/micro.
     """
     if signal_horizon not in HORIZON_SPECS_BY_SIGNAL_HORIZON:
         raise ValueError(
