@@ -156,6 +156,11 @@ export default function SignalsScreen() {
   const [entity, setEntity] = useState<string | undefined>(undefined);
   const [horizon, setHorizon] = useState<string | undefined>(undefined);
   const [durationIdx, setDurationIdx] = useState<number>(0);
+  // Masque les signaux neutral (audit E2E 2026-07-02 : 57 % de neutres sur 48h,
+  // dont le micro 100 % neutre by-design → l'écran était noyé). Filtre CLIENT
+  // (s'applique au preload REST ET au flux WS), OFF par défaut : on n'enterre
+  // pas d'information par défaut, la trader choisit.
+  const [hideNeutral, setHideNeutral] = useState<boolean>(false);
   const duration = DURATION_FILTERS[durationIdx];
 
   const { signals, connectionState, error, preloadLoading, preloadError, refresh } = useSignalStream({
@@ -393,6 +398,9 @@ export default function SignalsScreen() {
       <View style={styles.filterRow}>
         {HORIZON_FILTERS.map((f) => filterPill(f.label, horizon === f.value, () => setHorizon(f.value)))}
       </View>
+      <View style={styles.filterRow}>
+        {filterPill('Masquer neutres', hideNeutral, () => setHideNeutral((v) => !v))}
+      </View>
 
       {renderPastille('btc', flashPastille, showFlashBanner, btcStabDetail)}
       {renderPastille('gold', goldPastille, showGoldBanner, goldStabDetail)}
@@ -426,14 +434,16 @@ export default function SignalsScreen() {
         </View>
       ) : (
         <FlatList
-          data={signals}
-          extraData={`${tick}-${flashChoppy}-${openStab}`}
+          data={hideNeutral ? signals.filter((s) => s.direction !== 'neutral') : signals}
+          extraData={`${tick}-${flashChoppy}-${openStab}-${hideNeutral}`}
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
           ListHeaderComponent={ListHeader}
           ListEmptyComponent={
             <Text style={styles.emptyText}>
-              Aucun signal pour l’instant. Le flux est ouvert, les nouveaux signaux apparaîtront ici.
+              {hideNeutral && signals.length > 0
+                ? 'Tous les signaux de la fenêtre sont neutres (masqués par ton filtre).'
+                : 'Aucun signal pour l’instant. Le flux est ouvert, les nouveaux signaux apparaîtront ici.'}
             </Text>
           }
           contentContainerStyle={[styles.listContent, { paddingTop: insets.top + 12 }]}
