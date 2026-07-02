@@ -56,7 +56,7 @@ celles qui ont un objectif précis »*.
 | ETF flows | ⚪ net | Oui (carte contexte) | Gardée en shadow |
 | Dérivés Binance | ⚪ sauf fil L/S | Oui (re-mesure ~mi-août) | Gardée en shadow |
 | CoinGecko | Toggle OFF | Oui (mesure prédictive propre à faire) | Gardée OFF |
-| **FRED horaire (`tik.macro.last.*`)** | Orphelin | **NON** (aucun consommateur) | **À TRANCHER** (§3.1) — non retiré unilatéralement |
+| **FRED horaire (`tik.macro.last.*`)** | Orphelin | **NON** (aucun consommateur) | **GARDÉ** (décision utilisatrice 2026-07-02, §3.1 — coût nul, debug) |
 
 ## 3. Anomalies de câblage trouvées
 
@@ -71,9 +71,10 @@ le briefing n'y touche pas). Coût : ~168 appels FRED/jour (gratuits, illimités
 
 **Pour le garder** : coût quasi nul, séries brutes utiles au debug, FRED
 illimité. **Pour le retirer** : bruit de câblage, 1 ingester de moins à
-surveiller, ~19 → 18 process. **Verdict proposé : retirer** (le régime macro
-couvre le besoin réel), mais c'est un retrait de fonctionnalité prod → décision
-utilisatrice. En attendant : documenté ici + TTL posé (il s'auto-nettoie).
+surveiller, ~19 → 18 process. **✅ DÉCISION UTILISATRICE 2026-07-02 : GARDÉ**
+(coût nul, séries brutes disponibles pour un futur usage/debug). Documenté ici
++ TTL 25 h posé (il s'auto-nettoie si l'ingester meurt) — le prochain audit ne
+doit pas le re-signaler comme anomalie.
 
 ### 3.2 Canal pub/sub `tik.tick.*` sans abonné
 
@@ -85,8 +86,10 @@ noté ici pour que le prochain audit ne le « redécouvre » pas.
 ### 3.3 Doublon pont micro (déjà noté dans CLAUDE.md)
 
 `tik_bridge.py` (prod VPS) vs `tik_adapter.py` (committé au labo, OFF) — deux
-implémentations du même pont labo→Tik. À réconcilier (garder une seule
-implémentation, celle de prod, et brancher le repo dessus). Inchangé ici.
+implémentations du même pont labo→Tik. **✅ DÉCISION UTILISATRICE 2026-07-02 :
+`tik_adapter` (versionné, 13 tests) devient la référence.** Alias
+`TIK_MICRO_ENABLED` ajouté à l'adapter (zéro renommage de .env), checklist de
+bascule VPS : `btc-research-lab/reports/2026-07-02_bascule_pont_micro.md`.
 
 ## 4. Données mises à jour ce jour
 
@@ -101,7 +104,7 @@ implémentation, celle de prod, et brancher le repo dessus). Inchangé ici.
 
 ## 5. Ce qui n'a volontairement PAS été fait
 
-- **Retrait du FRED horaire orphelin** : décision utilisatrice (§3.1).
+- **Retrait du FRED horaire orphelin** : tranché le jour même — GARDÉ (§3.1).
 - **Enrôlement de quoi que ce soit sur le `combined_bias`** : rien n'est
   enrôlé, rien ne change dans les moteurs — NO-GO et règle shadow ≥ 2 sem
   intacts (un test garde-fou le verrouille pour HN).

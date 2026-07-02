@@ -28,14 +28,25 @@ import {
   type ReactNode,
 } from 'react';
 
+import { AppState, type AppStateStatus } from 'react-native';
+
+import { HttpClient } from '@/src/api/client';
+import { searchSignals } from '@/src/api/endpoints';
 import { TikStream } from '@/src/api/stream';
 import { Signal } from '@/src/api/types';
 import { useAuth } from '@/src/auth/AuthContext';
+import { deriveAlertTypes } from '@/src/alerts/derive';
 import { parseUtcIso } from '@/src/utils/time';
 
 const MAX_ALERTS = 50;
 const VERACITY_COLLAPSE_THRESHOLD = 0.5;
 const STORAGE_KEY = 'tik.alerts.v1';
+// Fenêtre du rattrapage REST (audit D-2, 2026-07-02) : les alertes émises
+// pendant que l'app était fermée/en fond sont re-dérivées des signaux des
+// dernières RESYNC_SINCE_HOURS heures (mêmes règles que le flux WS —
+// src/alerts/derive.ts). Au-delà, l'historique persisté fait foi.
+const RESYNC_SINCE_HOURS = 48;
+const RESYNC_LIMIT = 500;
 
 export type AlertType = 'crash_warning' | 'fake_news_detected' | 'veracity_collapse';
 
@@ -64,7 +75,7 @@ interface AlertsContextValue {
 
 const AlertsContext = createContext<AlertsContextValue | null>(null);
 
-function buildAlert(type: AlertType, signal: Signal): AlertEntry {
+function buildAlert(type: AlertType, signal: Signal, receivedAt?: string): AlertEntry {
   return {
     id: `${signal.id}:${type}`,
     type,
@@ -75,7 +86,9 @@ function buildAlert(type: AlertType, signal: Signal): AlertEntry {
     signalVeracity: signal.veracity,
     signalConfidence: signal.confidence,
     signalTimestamp: signal.timestamp,
-    receivedAt: new Date().toISOString(),
+    // Rattrapage REST : receivedAt = timestamp du signal (honnête : le moment
+    // où l'alerte AURAIT dû arriver), pas le moment du rattrapage.
+    receivedAt: receivedAt ?? new Date().toISOString(),
     read: false,
   };
 }
@@ -150,6 +163,47 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  // Rattrapage REST des alertes manquées (audit D-2, 2026-07-02).
+  // Le flux WS est gelé quand l'app est en fond (iOS) : toute alerte émise
+  // pendant ce temps était PERDUE définitivement (badge « Live » trompeur).
+  // On re-dérive les alertes depuis les signaux récents — mêmes règles que le
+  // WS (source unique : derive.ts), dédup par id via pushAlert. Best-effort.
+  const resyncMissedAlerts = useCallback(async () => {
+    if (!isAuthenticated || !apiKey) return;
+    try {
+      const client = new HttpClient({ baseUrl, apiKey });
+      const signals = await searchSignals(client, {
+        sinceHours: RESYNC_SINCE_HOURS,
+        limit: RESYNC_LIMIT,
+      });
+      for (const signal of signals) {
+        for (const type of deriveAlertTypes(signal, VERACITY_COLLAPSE_THRESHOLD)) {
+          pushAlert(buildAlert(type, signal, signal.timestamp));
+        }
+      }
+    } catch (err) {
+      // Best-effort : le prochain resync (reconnexion / foreground) retentera.
+      console.warn('[AlertsContext] resync failed', err);
+    }
+  }, [baseUrl, apiKey, isAuthenticated, pushAlert]);
+
+  // Resync au boot (après hydratation, pour fusionner et non écraser) + au
+  // retour au premier plan (la WS iOS peut être zombie — on force aussi la
+  // reconnexion, pattern useSignalStream).
+  useEffect(() => {
+    if (!hydrated || !isAuthenticated) return;
+    void resyncMissedAlerts();
+
+    const onAppStateChange = (next: AppStateStatus) => {
+      if (next === 'active') {
+        streamRef.current?.forceReconnect();
+        void resyncMissedAlerts();
+      }
+    };
+    const sub = AppState.addEventListener('change', onAppStateChange);
+    return () => sub.remove();
+  }, [hydrated, isAuthenticated, resyncMissedAlerts]);
+
   useEffect(() => {
     if (!isAuthenticated || !apiKey) {
       streamRef.current?.stop();
@@ -167,7 +221,12 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
       onCrashWarning: (s) => pushAlert(buildAlert('crash_warning', s)),
       onFakeNewsDetected: (s) => pushAlert(buildAlert('fake_news_detected', s)),
       onVeracityCollapse: (s) => pushAlert(buildAlert('veracity_collapse', s)),
-      onStateChange: (state) => setConnected(state === 'connected'),
+      onStateChange: (state) => {
+        setConnected(state === 'connected');
+        // Chaque (re)connexion peut suivre un trou : rattraper ce qui a été
+        // publié pendant la coupure.
+        if (state === 'connected') void resyncMissedAlerts();
+      },
     });
     streamRef.current = stream;
     stream.start();
@@ -177,7 +236,7 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
       streamRef.current = null;
       setConnected(false);
     };
-  }, [baseUrl, apiKey, isAuthenticated, pushAlert]);
+  }, [baseUrl, apiKey, isAuthenticated, pushAlert, resyncMissedAlerts]);
 
   const markAsRead = useCallback((id: string) => {
     setAlerts((prev) => prev.map((a) => (a.id === id && !a.read ? { ...a, read: true } : a)));
