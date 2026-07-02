@@ -200,11 +200,19 @@ def cross_validate(
         )
 
     if n == 1:
+        # Une source unique ne peut PAS être cross-validée : sa dispersion est
+        # indéfinie (le default dataclass 0.0 signifierait "accord parfait" —
+        # même famille de bug que le N=2 corrigé l.222, mais côté N=1 : la
+        # veracity dérivée ressortait à 0.95 sur un signal mono-source, cf.
+        # audit fiabilité 2026-07-02 finding #2). Statut "degraded" : le
+        # circuit de validation est structurellement incomplet, ce n'est pas
+        # une décision cross-validée. Les engines plafonnent la veracity via
+        # `n_sources` (pas via dispersion, laissée à 0.0 = indéfinie).
         return CrossValidationResult(
             combined_bias=next(iter(biases.values())),
-            circuit_breaker_status="ok",
+            circuit_breaker_status="degraded",
             n_sources=1,
-            method="no_op",
+            method="single_source",
         )
 
     if n == 2:

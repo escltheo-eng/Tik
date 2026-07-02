@@ -900,7 +900,12 @@ async def analyze_swing_btc(
             _derive_osint_decision(decision, cv.combined_bias)
             # Veracity dérivée de la dispersion des sources OSINT
             # (résout bug #2 audit Paquet 17 — veracity neutral figée à 0.85).
-            decision.veracity = _veracity_from_dispersion(cv.dispersion)
+            # Mono-source (N=1, ex. FG seul quand les autres ingesters sont
+            # down) : dispersion indéfinie → plancher 0.70, pas 0.95 (audit
+            # 2026-07-02 finding #2 — pas de vernis de certitude, Axe #1).
+            decision.veracity = (
+                0.70 if cv.n_sources < 2 else _veracity_from_dispersion(cv.dispersion)
+            )
             # Shadow ADR-026 (Lot 2) : trace dispersion + biais pour recalibrer
             # plus tard la veracity sur données réelles. Observation pure.
             log.info(
@@ -1268,7 +1273,11 @@ async def analyze_swing_gold(
             # du combined_bias OSINT (pas de l'analyse technique).
             _derive_osint_decision(decision, cv.combined_bias)
             # Veracity dérivée de la dispersion des sources OSINT.
-            decision.veracity = _veracity_from_dispersion(cv.dispersion)
+            # Mono-source (N=1) : plancher 0.70 (cf. site BTC + audit
+            # 2026-07-02 finding #2).
+            decision.veracity = (
+                0.70 if cv.n_sources < 2 else _veracity_from_dispersion(cv.dispersion)
+            )
             # Shadow ADR-026 (Lot 2) : trace dispersion + biais. Observation pure.
             log.info(
                 "veracity.shadow",

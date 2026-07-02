@@ -95,9 +95,13 @@ async def _run_flash_btc(
             hypothesis_generator.reset_batch()
         decision = await analyze_flash_btc(redis=redis, hypothesis_generator=hypothesis_generator)
 
-        # Skip si données stale (l'engine a renvoyé confidence=0 + hypothesis explicite)
-        if decision.confidence == 0.0 and "stale" in decision.hypothesis.lower():
-            log.info("scheduler.flash_btc.skipped_stale_feed")
+        # Skip si l'engine a marqué le cycle comme non-émissible. Contrat
+        # explicite via advisory["skip_reason"] (audit 2026-07-02, finding #6) ;
+        # le matching historique sur "stale" dans l'hypothèse reste en fallback
+        # pour d'éventuelles décisions produites par un engine pré-fix.
+        skip_reason = decision.advisory.get("skip_reason")
+        if skip_reason or (decision.confidence == 0.0 and "stale" in decision.hypothesis.lower()):
+            log.info("scheduler.flash_btc.skipped", reason=skip_reason or "stale_feed_legacy")
             return
 
         last = await read_last_emission(redis, decision.entity_id)
@@ -113,7 +117,22 @@ async def _run_flash_btc(
             await annotate_near_macro_event(session, decision)
             await publish_flash_signal(session, redis, decision)
             await session.commit()
-        await record_emission(redis, decision.entity_id, decision)
+        # record_emission APRÈS le commit (un signal perdu serait pire qu'un
+        # doublon) mais avec retry + log error : si la mise à jour de
+        # tik.flash.last_direction échoue, chaque cycle suivant re-verrait une
+        # "transition" et réémettrait le même signal (audit finding #5).
+        try:
+            await record_emission(redis, decision.entity_id, decision)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("scheduler.flash_btc.record_emission_retry", error=str(exc))
+            try:
+                await record_emission(redis, decision.entity_id, decision)
+            except Exception as exc2:  # noqa: BLE001
+                log.error(
+                    "scheduler.flash_btc.record_emission_failed",
+                    error=str(exc2),
+                    consequence="duplicate flash signals until Redis recovers",
+                )
     except Exception as exc:  # noqa: BLE001
         log.error("scheduler.flash_btc.error", error=str(exc))
 

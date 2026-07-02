@@ -13,6 +13,8 @@ import pytest
 from tik_core.scoring.flash_engine import (
     FLASH_SOURCE_SCORES,
     HEARTBEAT_INTERVAL,
+    MIN_AGG_TRADES,
+    MIN_ORDERBOOK_LEVELS_PER_SIDE,
     FlashDecision,
     LastEmission,
     _compute_aggression_bias,
@@ -38,19 +40,28 @@ def _make_decision(direction: str = "long") -> FlashDecision:
 
 
 def _make_orderbook(bid_vol: float, ask_vol: float) -> dict:
-    """Carnet d'ordres synthétique : 1 niveau bid + 1 niveau ask aux volumes voulus."""
+    """Carnet d'ordres synthétique aux volumes totaux voulus.
+
+    Volume réparti sur MIN_ORDERBOOK_LEVELS_PER_SIDE niveaux par face pour
+    passer le garde-fou anti-carnet-tronqué (audit 2026-07-02, finding #1).
+    """
+    n = MIN_ORDERBOOK_LEVELS_PER_SIDE
     return {
-        "bids": [["50000.00", str(bid_vol)]],
-        "asks": [["50001.00", str(ask_vol)]],
+        "bids": [["50000.00", str(bid_vol / n)] for _ in range(n)],
+        "asks": [["50001.00", str(ask_vol / n)] for _ in range(n)],
     }
 
 
 def _make_trades(buy_qty: float, sell_qty: float) -> list[dict]:
-    """Liste de 2 aggTrades : 1 buy taker (m=False), 1 sell taker (m=True)."""
-    return [
-        {"q": str(buy_qty), "m": False, "p": "50000", "T": 1234},
-        {"q": str(sell_qty), "m": True, "p": "50000", "T": 1235},
-    ]
+    """Liste d'aggTrades aux volumes taker buy/sell voulus.
+
+    Chaque côté est réparti sur MIN_AGG_TRADES trades pour passer le
+    garde-fou anti-échantillon-minuscule (audit 2026-07-02, finding #11).
+    """
+    n = MIN_AGG_TRADES
+    trades = [{"q": str(buy_qty / n), "m": False, "p": "50000", "T": 1234} for _ in range(n)]
+    trades += [{"q": str(sell_qty / n), "m": True, "p": "50000", "T": 1235} for _ in range(n)]
+    return trades
 
 
 # ----- _veracity_from_concordance -----
@@ -135,8 +146,8 @@ def test_compute_obi_bias_invalid_qty_returns_none():
 def test_compute_obi_bias_aggregates_multiple_levels():
     """Le calcul doit additionner tous les niveaux du carnet."""
     orderbook = {
-        "bids": [["50000", "10"], ["49999", "10"], ["49998", "10"]],
-        "asks": [["50001", "5"], ["50002", "5"]],
+        "bids": [["50000", "6"], ["49999", "6"], ["49998", "6"], ["49997", "6"], ["49996", "6"]],
+        "asks": [["50001", "2"], ["50002", "2"], ["50003", "2"], ["50004", "2"], ["50005", "2"]],
     }
     # bid_vol = 30, ask_vol = 10 → obi = 20/40 = 0.5 → strong_bid
     result = _compute_obi_bias(orderbook)
@@ -187,11 +198,14 @@ def test_compute_aggression_bias_zero_volume():
 
 def test_compute_aggression_bias_skips_invalid_entries():
     """Un trade malformé est skippé, les autres sont comptés normalement."""
+    # Padding neutre (0 qty) pour dépasser MIN_AGG_TRADES sans changer les volumes.
+    padding = [{"q": "0", "m": False} for _ in range(MIN_AGG_TRADES)]
     trades = [
         {"q": "100", "m": False},  # buy taker valide
         {"q": "not-a-number", "m": True},  # malformé → skip
         {"foo": "bar"},  # malformé → skip
         {"q": "50", "m": True},  # sell taker valide
+        *padding,
     ]
     result = _compute_aggression_bias(trades)
     assert result is not None
@@ -204,9 +218,9 @@ def test_compute_aggression_bias_skips_invalid_entries():
 
 def test_compute_aggression_bias_buyer_maker_convention():
     """m=True signifie maker=acheteur, donc taker=vendeur agressif → sell side."""
-    trades = [
-        {"q": "100", "m": True},  # 100 unités côté sell taker
-    ]
+    trades = [{"q": "100", "m": True}] + [
+        {"q": "0", "m": True} for _ in range(MIN_AGG_TRADES)
+    ]  # 100 unités côté sell taker + padding neutre au-dessus de MIN_AGG_TRADES
     result = _compute_aggression_bias(trades)
     assert result is not None
     bias, zone, ratio = result
@@ -265,7 +279,7 @@ def test_enrich_with_aggression_strong_bid():
     assert decision.evidence[0]["source"] == "binance_aggtrades"
     assert decision.evidence[0]["score"] == FLASH_SOURCE_SCORES["binance_aggtrades"]
     assert "buy_ratio" in decision.evidence[0]["fact"]
-    assert "n=2" in decision.evidence[0]["fact"]
+    assert f"n={2 * MIN_AGG_TRADES}" in decision.evidence[0]["fact"]
     assert len(decision.triggers) == 1
     assert decision.triggers[0]["type"] == "trade_aggression"
     assert "aggression_strong_bid" in decision.triggers[0]["value"]

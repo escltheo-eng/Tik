@@ -168,12 +168,15 @@ def test_cross_validate_empty():
 
 
 def test_cross_validate_n1():
+    # Une source unique ne peut pas être cross-validée → statut "degraded"
+    # + method "single_source" (audit fiabilité 2026-07-02, finding #2 : le
+    # défaut dispersion=0.0 faisait ressortir une veracity 0.95 mono-source).
     cv = cross_validate({"a": 0.7})
     assert cv.combined_bias == 0.7
-    assert cv.circuit_breaker_status == "ok"
+    assert cv.circuit_breaker_status == "degraded"
     assert cv.outlier_sources == set()
     assert cv.n_sources == 1
-    assert cv.method == "no_op"
+    assert cv.method == "single_source"
 
 
 def test_cross_validate_n2_no_disagreement():
@@ -232,11 +235,13 @@ def test_cross_validate_n2_disagreement_carries_dispersion():
 
 
 def test_cross_validate_n1_dispersion_remains_zero():
-    # N=1 : pas de dispersion possible logiquement (1 seule source),
-    # default dataclass à 0.0 reste correct. Vérifie qu'on ne casse pas N=1.
+    # N=1 : pas de dispersion possible logiquement (1 seule source) — le
+    # champ reste à 0.0 (= indéfini, PAS "accord parfait"). C'est pourquoi
+    # les engines plafonnent la veracity via n_sources, pas via dispersion,
+    # et pourquoi le statut est "degraded" (audit 2026-07-02, finding #2).
     cv = cross_validate({"a": 0.7})
     assert cv.dispersion == pytest.approx(0.0)
-    assert cv.circuit_breaker_status == "ok"
+    assert cv.circuit_breaker_status == "degraded"
 
 
 # =====================================================================

@@ -18,7 +18,13 @@ def ema(prices: pd.Series, window: int) -> pd.Series:
 
 
 def rsi(prices: pd.Series, window: int = 14) -> pd.Series:
-    """Relative Strength Index (méthode Wilder)."""
+    """Relative Strength Index (méthode Wilder).
+
+    Cas limite avg_loss=0 (aucune baisse sur la fenêtre) : RSI vaut 100 par
+    définition — le NaN qu'on produisait rendait toutes les comparaisons
+    fausses et affichait "RSI14=nan" dans l'evidence. Le warm-up initial
+    (< window barres) reste NaN, lui, volontairement.
+    """
     delta = prices.diff()
     gains = delta.clip(lower=0)
     losses = -delta.clip(upper=0)
@@ -27,7 +33,12 @@ def rsi(prices: pd.Series, window: int = 14) -> pd.Series:
     avg_loss = losses.ewm(alpha=1 / window, min_periods=window, adjust=False).mean()
 
     rs = avg_gain / avg_loss.replace(0, np.nan)
-    return 100 - (100 / (1 + rs))
+    out = 100 - (100 / (1 + rs))
+    # Post warm-up : avg_loss=0 avec gains → 100 (montée pure) ; série
+    # parfaitement plate (0/0, RS indéfini) → 50 (aucun biais).
+    out[(avg_loss == 0) & (avg_gain > 0)] = 100.0
+    out[(avg_loss == 0) & (avg_gain == 0)] = 50.0
+    return out
 
 
 def macd(
