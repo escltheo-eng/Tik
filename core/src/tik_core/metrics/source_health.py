@@ -105,6 +105,14 @@ SOURCE_SPECS: tuple[SourceSpec, ...] = (
         "IP-ban connu (Bug 11) — 4e overlay BTC absent, mitigé (CoinGecko candidat)",
     ),
     SourceSpec(
+        "hackernews_btc",
+        "tik.sentiment.hackernews.btc",
+        "fetched_at",
+        3 * 30 * _M,
+        False,
+        "shadow strict (ADR-039) — candidat remplaçant Reddit, collecte pour mesure",
+    ),
+    SourceSpec(
         "coingecko_btc",
         "tik.sentiment.coingecko.btc",
         "fetched_at",

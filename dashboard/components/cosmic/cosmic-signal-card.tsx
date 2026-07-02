@@ -22,6 +22,7 @@ import { Cosmic, TitleShadow, directionMeta, sunColor } from '@/constants/cosmic
 import { Fonts } from '@/constants/theme';
 import type { Signal } from '@/src/api/types';
 import { amplitudeDisplay, horizonLabel } from '@/src/utils/amplitude';
+import { goldCaveat } from '@/src/utils/gold-caveat';
 import { timeAgo } from '@/src/utils/time';
 
 interface Props {
@@ -105,6 +106,7 @@ export function CosmicSignalCard({ entityId, signal, loading, variant = 'summary
     .sort((a, b) => b.score - a.score)
     .slice(0, 3);
   const counter = signal.counter_scenarios?.[0] ?? null;
+  const caveat = goldCaveat(signal);
 
   return (
     <Pressable
@@ -133,6 +135,14 @@ export function CosmicSignalCard({ entityId, signal, loading, variant = 'summary
         <Text style={[styles.direction, { color: dir.color }]}>{dir.label}</Text>
         <Text style={styles.conviction}>Conviction OSINT · {convictionPct}%</Text>
       </View>
+
+      {/* Caveat GOLD (Garde-fou 2-bis) : juste sous la décision, AVANT les %,
+          pour qu'un « conv 100 % » GOLD ne ressemble jamais à un feu vert. */}
+      {caveat ? (
+        <View style={styles.caveatBox}>
+          <Text style={styles.caveatText}>{caveat}</Text>
+        </View>
+      ) : null}
 
       {/* Mini-grille de lecture rapide */}
       <View style={styles.statGrid}>
@@ -323,6 +333,21 @@ const styles = StyleSheet.create({
     color: Cosmic.macro,
     fontSize: 10,
     fontFamily: Fonts.mono,
+  },
+  caveatBox: {
+    marginTop: 10,
+    backgroundColor: 'rgba(245, 158, 66, 0.10)',
+    borderColor: 'rgba(245, 158, 66, 0.40)',
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+  },
+  caveatText: {
+    color: '#f5b971',
+    fontSize: 11,
+    fontWeight: '700',
+    lineHeight: 15,
   },
   counterBox: {
     marginTop: 16,
