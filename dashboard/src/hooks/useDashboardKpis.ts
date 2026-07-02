@@ -88,7 +88,11 @@ function deriveLastByEntity(
     result[entity] = null;
   }
   // signals déjà triés desc par timestamp côté core (latest first).
+  // Les micro (ML shadow, ADR-030/ADR-034) sont exclus : un signal shadow ne
+  // doit jamais s'afficher comme "dernier signal" a la place d'un vrai
+  // signal OSINT (Axe #1 — pas de vernis de certitude).
   for (const s of signals) {
+    if (s.horizon === 'micro') continue;
     if (s.entity_id in result && result[s.entity_id] === null) {
       result[s.entity_id] = s;
     }

@@ -242,6 +242,7 @@ C'est ce qui distingue Tik d'un bot naïf. À respecter dans toute évolution.
 - **CoinGecko sentiment** (toggle `TIK_COINGECKO_OVERLAY_ENABLED=False`) — candidat 4e overlay BTC suite ban Reddit, à mesurer vs Fear&Greed (risque de redondance).
 - **Dérivés Binance BTC** (`tik.deriv.binance.*`, ADR-023) — funding / OI / long-short retail+top, 1re famille **non-sentiment**, mesure ~2026-06-17 (`measure_btc_derivatives.py`).
 - **Flux ETF spot BTC** (`tik.etf.btc*`, ADR-024) — inflow/outflow net quotidien + détail par fonds via SoSoValue (sans clé), 2e famille **non-sentiment**, 300 j de backfill, mesure ~2026-06-17 (`measure_btc_etf_flows.py`).
+- **Micro ML labo btc-research-lab** (`horizon='micro'`, ADR-030 + **ADR-034**, 2026-07-02) — verdicts LightGBM/river du labo poussés via `POST /signals/ingest` (adaptateur `tik_adapter.py` côté labo, kill-switchs des deux côtés, **OFF par défaut**, pas encore mis en service). Toujours `degraded` (shadow strict), ne touche jamais `combined_bias`. ⚠ Pièges documentés : mesure hit rate micro exige `include_flagged=true` (les micro sont degraded by-design) ; 3 sens du mot « micro » dans le projet ; checklist d'obstacles O1-O20 dans [`docs/plan-connexion-micro.md`](docs/plan-connexion-micro.md). Mesure ≥ 2 sem après mise en service avant tout verdict.
 
 ### Dates / état opérationnel
 

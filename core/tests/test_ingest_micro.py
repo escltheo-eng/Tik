@@ -34,6 +34,13 @@ async def _seed_btc_entity(db_session):
         await db_session.flush()
 
 
+def _enable_micro(monkeypatch):
+    """Active le kill-switch micro (défaut False, ADR-030) pour le test."""
+    from tik_core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "micro_ingest_enabled", True)
+
+
 @pytest.mark.asyncio
 async def test_ingest_micro_creates_degraded_micro_signal(
     auth_client, db_session, monkeypatch
@@ -41,6 +48,7 @@ async def test_ingest_micro_creates_degraded_micro_signal(
     import tik_core.api.signals as signals_mod
 
     monkeypatch.setattr(signals_mod.aioredis, "from_url", lambda *a, **k: _FakeRedis())
+    _enable_micro(monkeypatch)
     await _seed_btc_entity(db_session)
 
     payload = {
@@ -77,3 +85,38 @@ async def test_ingest_micro_rejects_invalid_direction(auth_client, monkeypatch):
         json={"direction": "sideways", "confidence": 0.5},
     )
     assert resp.status_code == 422  # le pattern long|short|neutral rejette
+
+
+@pytest.mark.asyncio
+async def test_ingest_micro_disabled_returns_503(auth_client, monkeypatch):
+    """Kill-switch (ADR-030/ADR-034) : toggle off (défaut) → 503, rien n'entre."""
+    import tik_core.api.signals as signals_mod
+
+    monkeypatch.setattr(signals_mod.aioredis, "from_url", lambda *a, **k: _FakeRedis())
+    # Ne PAS activer le toggle : défaut micro_ingest_enabled=False.
+    from tik_core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "micro_ingest_enabled", False)
+
+    resp = await auth_client.post(
+        "/api/v1/signals/ingest",
+        json={"direction": "long", "confidence": 0.5},
+    )
+    assert resp.status_code == 503
+    assert "TIK_MICRO_INGEST_ENABLED" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_ingest_micro_unknown_entity_returns_422(auth_client, monkeypatch):
+    """Whitelist entités (défaut BTC) : entité inconnue → 422 propre, pas de 500 FK."""
+    import tik_core.api.signals as signals_mod
+
+    monkeypatch.setattr(signals_mod.aioredis, "from_url", lambda *a, **k: _FakeRedis())
+    _enable_micro(monkeypatch)
+
+    resp = await auth_client.post(
+        "/api/v1/signals/ingest",
+        json={"entity_id": "btcusdt", "direction": "long", "confidence": 0.5},
+    )
+    assert resp.status_code == 422
+    assert "BTCUSDT" in resp.json()["detail"]

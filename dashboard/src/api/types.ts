@@ -73,7 +73,8 @@ export interface Advisory {
 }
 
 export type Direction = 'long' | 'short' | 'neutral';
-export type Horizon = 'flash' | 'swing' | 'macro';
+// 'micro' = couche ML btc-research-lab en SHADOW (ADR-030/ADR-034).
+export type Horizon = 'flash' | 'swing' | 'macro' | 'micro';
 export type CircuitBreakerStatus = 'ok' | 'degraded' | 'tripped';
 
 export interface Signal {

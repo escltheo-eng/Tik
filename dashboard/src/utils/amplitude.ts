@@ -35,6 +35,8 @@ export function amplitudeWindowLabel(horizon: string): string {
       return '~5 j';
     case 'macro':
       return '~30 j';
+    case 'micro':
+      return '~2 h';
     default:
       return '';
   }

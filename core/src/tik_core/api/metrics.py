@@ -136,6 +136,8 @@ TRACK_RECORD_BINANCE_PARAMS: dict[str, dict] = {
     "flash": {"interval": "15m", "limit": 672},
     "swing": {"interval": "1h", "limit": 1000},
     "macro": {"interval": "1d", "limit": 365},
+    # Micro (ADR-030/ADR-034) : mêmes klines 15m que flash, fenêtre 2h.
+    "micro": {"interval": "15m", "limit": 672},
 }
 TRACK_RECORD_YAHOO_PARAMS: dict[str, dict] = {
     # Pas de flash GOLD (cf. ADR-005 — Yahoo a 15 min de délai, incompatible
@@ -152,7 +154,7 @@ async def get_hit_rate(
     ),
     horizon: str = Query(
         ...,
-        pattern="^(flash|swing|macro)$",
+        pattern="^(flash|swing|macro|micro)$",
         description="Horizon Tik. flash=mesure 1h, swing=mesure 5j, macro=mesure 30j.",
     ),
     since_days: int = Query(30, ge=1, le=90, description="Fenêtre temporelle en jours (1-90)."),
@@ -341,7 +343,7 @@ async def get_hit_rate_by_veracity(
     ),
     horizon: str = Query(
         ...,
-        pattern="^(flash|swing|macro)$",
+        pattern="^(flash|swing|macro|micro)$",
         description="Horizon Tik. flash=mesure 1h, swing=mesure 5j, macro=mesure 30j.",
     ),
     since_days: int = Query(30, ge=1, le=90, description="Fenêtre temporelle en jours (1-90)."),
@@ -564,13 +566,14 @@ async def get_signal_track_record(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=(
                     f"Horizon non supporté pour le track record : {signal.horizon!r}. "
-                    "Valeurs attendues : flash, swing, macro."
+                    "Valeurs attendues : flash, swing, macro, micro."
                 ),
             )
 
         # Fail-fast ADR-005 : pas de track record flash GOLD (Yahoo 15 min
-        # de délai → incompatible avec mesure 15min/30min).
-        if signal.horizon == "flash" and signal.entity_id == "GOLD":
+        # de délai → incompatible avec mesure 15min/30min). Idem micro (mêmes
+        # fenêtres courtes 15min/30min ; l'ingest whiteliste BTC de toute façon).
+        if signal.horizon in ("flash", "micro") and signal.entity_id == "GOLD":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=(
@@ -675,7 +678,12 @@ async def get_signal_freshness(
     Lecture seule, pas de cache (une requête max() indexée est triviale).
     Garde-fou 1 inchangé, ADR-003 inchangé (pas d'action d'exécution).
     """
-    result = await session.execute(select(func.max(Signal.timestamp)))
+    # Les signaux micro (ADR-030/ADR-034) viennent du labo EXTERNE : ils ne
+    # prouvent pas que les moteurs swing/flash internes tournent. On les exclut
+    # du max() pour que la bannière « panne silencieuse » reste fiable.
+    result = await session.execute(
+        select(func.max(Signal.timestamp)).where(Signal.horizon != "micro")
+    )
     last_ts = result.scalar_one_or_none()
     fr = compute_signal_freshness(last_ts, now_utc_naive(), threshold_seconds)
     return SignalFreshnessOut(

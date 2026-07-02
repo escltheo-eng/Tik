@@ -219,6 +219,9 @@ export const REFERENCE_HOURS_BY_HORIZON: Record<string, number> = {
   flash: 1,
   swing: 5 * 24,
   macro: 90 * 24,
+  // micro (ML shadow, ADR-030/ADR-034) : expiry 2h cote publisher — sans cette
+  // cle, un micro suivi via la watchlist restait "En attente" a vie.
+  micro: 2,
 };
 
 /**

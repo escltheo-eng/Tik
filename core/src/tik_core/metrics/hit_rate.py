@@ -25,24 +25,29 @@ from tik_core.scripts.backtest import (
 )
 from tik_core.storage.models import Signal
 
-HorizonName = Literal["flash", "swing", "macro"]
+HorizonName = Literal["flash", "swing", "macro", "micro"]
 
 # Mapping horizon → durée canonique de mesure du delta prix (heures).
 # Le sweet spot 5j swing est issu du backtest 2026-04-29 (cf. CLAUDE.md
 # Paquet 1.x insights). Flash 1h aligné sur la fenêtre d'expiry du publisher.
 # Macro 30j est provisoire — peu de signaux macro émis aujourd'hui.
+# Micro 2h aligné sur EXPIRY_BY_HORIZON["micro"] (publisher, ADR-030/ADR-034) —
+# indispensable pour la règle « shadow MESURÉ ≥ 2 semaines avant enrôlement ».
 HORIZON_MEASURE_HOURS: dict[str, float] = {
     "flash": 1.0,
     "swing": 24.0 * 5,
     "macro": 24.0 * 30,
+    "micro": 2.0,
 }
 
 # Threshold par défaut par horizon (% mouvement minimum pour considérer
 # qu'un signal long/short a "réussi", ou |delta|<seuil pour neutral).
+# Micro 0.4 ≈ flash 0.3 × √2 (scaling √t d'une marche aléatoire, 1h → 2h).
 HORIZON_DEFAULT_THRESHOLD_PCT: dict[str, float] = {
     "flash": 0.3,
     "swing": 0.5,
     "macro": 1.5,
+    "micro": 0.4,
 }
 
 
