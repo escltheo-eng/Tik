@@ -508,10 +508,11 @@ class TestSignalHorizonDispatch:
         assert [r["measure_hours"] for r in rows] == [24.0, 168.0, 720.0, 2160.0]
         assert [r["threshold_pct"] for r in rows] == [0.5, 1.0, 2.0, 3.0]
 
-    def test_specs_dict_exposes_3_signal_horizons(self):
+    def test_specs_dict_exposes_4_signal_horizons(self):
         # Verrou : si on ajoute un horizon contractuel sans étendre le dict
-        # ce test échouera et forcera la cohérence.
-        assert set(HORIZON_SPECS_BY_SIGNAL_HORIZON.keys()) == {"flash", "swing", "macro"}
+        # ce test échouera et forcera la cohérence. micro ajouté par la
+        # mesurabilité ADR-030 Étape 4.
+        assert set(HORIZON_SPECS_BY_SIGNAL_HORIZON.keys()) == {"flash", "swing", "macro", "micro"}
 
     def test_legacy_alias_points_to_swing_rows(self):
         # Garantit la rétrocompat de TRACK_RECORD_HORIZONS exposé pour
