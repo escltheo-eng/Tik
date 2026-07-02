@@ -32,7 +32,6 @@ from tik_core.scoring.flash_engine import (
 )
 from tik_core.scoring.indicators import rsi
 
-
 # ----- Helpers -----
 
 

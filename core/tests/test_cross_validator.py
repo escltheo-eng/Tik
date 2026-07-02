@@ -5,9 +5,9 @@ Pure logique : pas de Redis, pas de DB, pas de HTTP. ~30 tests ciblés.
 
 from __future__ import annotations
 
-import pytest
-
 import json
+
+import pytest
 
 from tik_core.scoring.cross_validator import (
     CrossValidationResult,
