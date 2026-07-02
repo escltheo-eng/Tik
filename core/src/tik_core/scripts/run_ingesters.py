@@ -23,6 +23,7 @@ from tik_core.aggregator.fred_calendar_ingester import FredCalendarIngester
 from tik_core.aggregator.fred_ingester import FredIngester
 from tik_core.aggregator.gdelt_ingester import GdeltIngester
 from tik_core.aggregator.google_news_ingester import GoogleNewsIngester
+from tik_core.aggregator.hackernews_ingester import HackerNewsIngester
 from tik_core.aggregator.macro_regime_ingester import MacroRegimeIngester
 from tik_core.aggregator.macro_static_ingester import MacroStaticIngester
 from tik_core.aggregator.news_classifier import build_news_classifier
@@ -64,6 +65,7 @@ async def main() -> None:
         gn_btc_classifier,
         gn_gold_classifier,
         red_btc_classifier,
+        hn_btc_classifier,
     ) = await asyncio.gather(
         build_news_classifier(
             classifier_type=settings.news_classifier,
@@ -84,6 +86,13 @@ async def main() -> None:
             ollama_url=settings.ollama_url,
             ollama_model=settings.ollama_model,
             asset_name="Gold",
+            redis=redis,
+        ),
+        build_news_classifier(
+            classifier_type=settings.news_classifier,
+            ollama_url=settings.ollama_url,
+            ollama_model=settings.ollama_model,
+            asset_name="Bitcoin",
             redis=redis,
         ),
         build_news_classifier(
@@ -165,6 +174,21 @@ async def main() -> None:
             interval_s=INGESTER_INTERVALS_S["reddit_btc"],
             limit_per_sub=50,
             session_maker=session_maker,
+        ),
+        # Hacker News BTC — MODE SHADOW (ADR-039, candidat REMPLAÇANT Reddit).
+        # Reddit est IP-bannie depuis le 2026-05-18 (Bug 11, unban jamais obtenu) :
+        # HN collecte le même type de sentiment textuel (titres classifiés par le
+        # même NewsClassifier, pondération log(points+1) calquée sur ADR-009) dans
+        # tik.sentiment.hackernews.btc + history cappé, SANS toucher le
+        # combined_bias : il n'existe AUCUN _enrich_with_hackernews ni toggle
+        # (zéro ligne touchée dans les moteurs). Enrôlement seulement après
+        # mesure ≥ 2 semaines vs Always SHORT (règle shadow) ET décision
+        # utilisatrice. Retrait = retirer cette ligne.
+        HackerNewsIngester(
+            redis,
+            classifier=hn_btc_classifier,
+            entity="BTC",
+            interval_s=INGESTER_INTERVALS_S["hackernews_btc"],
         ),
         # ADR-010 — pas de classifier injecté : GDELT consomme le tone brut
         # calculé par GDELT (NLP scientifique non-LLM), première source de
