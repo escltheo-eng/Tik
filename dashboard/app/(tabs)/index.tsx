@@ -52,6 +52,14 @@ function regimeView(r: string | null | undefined): { label: string; color: strin
   return { label: '—', color: Cosmic.textFaint };
 }
 
+/** Label + couleur du régime de risque (VIX/crédit, ADR-035) — pilote le feu. */
+function riskView(r: string | null | undefined): { label: string; color: string } {
+  if (r === 'risk_on') return { label: 'Risk-on', color: Cosmic.long };
+  if (r === 'risk_off') return { label: 'Risk-off', color: Cosmic.short };
+  if (r === 'neutral') return { label: 'Neutre', color: Cosmic.textDim };
+  return { label: '—', color: Cosmic.textFaint };
+}
+
 /**
  * Tuile signal compacte (cockpit) : sens + conviction + accord + âge, d'un coup
  * d'œil. Deux tuiles côte-à-côte (BTC | GOLD). Le « pourquoi » riche (evidence,
@@ -216,6 +224,7 @@ export default function HomeScreen() {
     : 'Pas de signal swing BTC récent';
 
   const liq = regimeView(macroRegimeState.regime?.global_liquidity?.regime);
+  const risk = riskView(macroRegimeState.regime?.risk_regime?.risk_state);
   const recession = macroRegimeState.regime?.indicators?.recession_prob_12m?.value ?? null;
   const realRate = macroRegimeState.regime?.indicators?.real_rate_10y?.value ?? null;
 
@@ -246,10 +255,26 @@ export default function HomeScreen() {
           onPress={() => router.push('/macro-cosmique')}
           style={({ pressed }) => [styles.globalStrip, { opacity: pressed ? 0.8 : 1 }]}>
           <View style={styles.globalItem}>
-            <Text style={styles.globalLabel}>Liquidité</Text>
-            <Text style={[styles.globalValue, { color: liq.color }]}>{liq.label}</Text>
+            <Text style={styles.globalLabel}>Risque</Text>
+            <Text
+              style={[styles.globalValue, { color: risk.color }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.7}>
+              {risk.label}
+            </Text>
           </View>
-          <View style={[styles.globalItem, styles.globalItemMid]}>
+          <View style={[styles.globalItem, styles.globalItemSep]}>
+            <Text style={styles.globalLabel}>Liquidité</Text>
+            <Text
+              style={[styles.globalValue, { color: liq.color }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.7}>
+              {liq.label}
+            </Text>
+          </View>
+          <View style={[styles.globalItem, styles.globalItemSep]}>
             <Text style={styles.globalLabel}>Récession 12m</Text>
             <Text
               style={[
@@ -259,7 +284,7 @@ export default function HomeScreen() {
               {recession != null ? `${(recession * 100).toFixed(0)}%` : '—'}
             </Text>
           </View>
-          <View style={styles.globalItem}>
+          <View style={[styles.globalItem, styles.globalItemSep]}>
             <Text style={styles.globalLabel}>Taux réel 10Y</Text>
             <Text style={styles.globalValue}>{realRate != null ? `${realRate.toFixed(2)}%` : '—'}</Text>
           </View>
@@ -418,9 +443,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 5,
   },
-  globalItemMid: {
+  globalItemSep: {
     borderLeftWidth: 1,
-    borderRightWidth: 1,
     borderColor: Cosmic.border,
   },
   globalLabel: {
