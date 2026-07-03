@@ -12,11 +12,15 @@ describe('emptyStateMessage', () => {
     expect(msg).not.toContain('apparaîtront ici');
   });
 
-  it('GOLD + flash : explique le délai Yahoo 15 min (ADR-005)', () => {
+  it('GOLD + flash : le flash GOLD existe (PAXG, ADR-040) — explique la fenêtre marché', () => {
+    // MAJ 2026-07-03 : l'ancien « pas de flash GOLD par design (ADR-005) » est
+    // périmé depuis le flash GOLD via proxy PAXG. Le vide s'explique par le
+    // marché fermé ou l'absence de transition, pas par un moteur inexistant.
     const msg = emptyStateMessage('GOLD', 'flash');
-    expect(msg).toContain('✋');
-    expect(msg).toContain('15 min');
-    expect(msg).toContain('ADR-005');
+    expect(msg).toContain('PAXG');
+    expect(msg).toContain('ADR-040');
+    expect(msg).not.toContain('ADR-005');
+    expect(msg).not.toContain('apparaîtront ici');
   });
 
   it('GOLD + micro : micro = BTC uniquement', () => {

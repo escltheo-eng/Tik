@@ -5,8 +5,9 @@
  * « Aucun signal pour l'instant. Le flux est ouvert, les nouveaux signaux
  * apparaîtront ici » — message MALHONNÊTE pour un horizon qu'aucun moteur ne
  * produit (le moteur macro semaines-mois n'existe pas, backlog). Idem
- * « GOLD + Flash » (pas de flash GOLD par design, ADR-005) et
  * « GOLD + Micro » (labo ML = BTC uniquement, whitelist ADR-034).
+ * MAJ 2026-07-03 : le flash GOLD existe désormais via le proxy PAXG (ADR-040,
+ * shadow) — le message « pas de flash GOLD par design (ADR-005) » est périmé.
  *
  * Fonction pure — testée dans __tests__/empty-states.test.ts.
  */
@@ -23,8 +24,9 @@ export function emptyStateMessage(
   }
   if (entity === 'GOLD' && horizon === 'flash') {
     return (
-      '✋ Pas de flash GOLD, par design (ADR-005) : le prix GOLD vient de Yahoo ' +
-      'avec 15 min de retard — incompatible avec un horizon en minutes.'
+      'Pas de signal flash GOLD dans la fenêtre. Le flash GOLD (proxy PAXG, ' +
+      'ADR-040, shadow) est en pause quand le marché de l’or est fermé ' +
+      '(ven 21h → dim 22h UTC) et n’émet qu’aux transitions de direction.'
     );
   }
   if (entity === 'GOLD' && horizon === 'micro') {

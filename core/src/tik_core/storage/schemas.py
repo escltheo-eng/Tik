@@ -780,7 +780,7 @@ class GlobalLiquidityOut(BaseModel):
 
 
 class RiskSeriesOut(BaseModel):
-    """Métriques de contexte d'une série de risque (VIX ou spread de crédit, ADR-030).
+    """Métriques de contexte d'une série de risque (VIX ou spread de crédit, ADR-035).
 
     `pct_rank_1y` = rang centile de la dernière valeur sur ~1 an (0..1) ; pour le VIX
     et les spreads, un centile élevé = stress élevé. CONTEXTE strict.
@@ -798,7 +798,7 @@ class RiskSeriesOut(BaseModel):
 
 
 class RiskRegimeOut(BaseModel):
-    """Régime de RISQUE objectif (VIX + spreads de crédit FRED, ADR-030, CONTEXTE).
+    """Régime de RISQUE objectif (VIX + spreads de crédit FRED, ADR-035, CONTEXTE).
 
     `risk_state` ∈ {risk_on, risk_off, neutral, unknown} décrit l'ENVIRONNEMENT de
     risque (volatilité actions + tension crédit), JAMAIS une prédiction du prix
@@ -893,7 +893,7 @@ class MacroCockpitOut(BaseModel):
 
 
 class StablecoinBreakdownOut(BaseModel):
-    """Un stablecoin du top par capitalisation (ADR-031)."""
+    """Un stablecoin du top par capitalisation (ADR-036)."""
 
     symbol: str | None = None
     name: str | None = None
@@ -904,7 +904,7 @@ class StablecoinBreakdownOut(BaseModel):
 
 
 class StablecoinsOut(BaseModel):
-    """Masse de stablecoins + tendance (DefiLlama, ADR-031, CONTEXTE strict).
+    """Masse de stablecoins + tendance (DefiLlama, ADR-036, CONTEXTE strict).
 
     Liquidité crypto-native (« poudre sèche »). `trend` ∈ {expansion, contraction,
     neutral, unknown} décrit le sens du flux de capital vers les rails crypto, JAMAIS
@@ -930,7 +930,7 @@ class StablecoinsOut(BaseModel):
 
 
 class CrossAssetCorrOut(BaseModel):
-    """Corrélation BTC ↔ un actif (ADR-032). `corr` ∈ [-1, 1]. CONTEXTE strict."""
+    """Corrélation BTC ↔ un actif (ADR-037). `corr` ∈ [-1, 1]. CONTEXTE strict."""
 
     key: str | None = None
     label: str | None = None
@@ -942,7 +942,7 @@ class CrossAssetCorrOut(BaseModel):
 
 
 class CrossAssetOut(BaseModel):
-    """Corrélations cross-asset du BTC (Yahoo, ADR-032, CONTEXTE strict).
+    """Corrélations cross-asset du BTC (Yahoo, ADR-037, CONTEXTE strict).
 
     Avec quoi le BTC co-bouge (actions/or/dollar). `behavior` ∈ {risk_asset,
     digital_gold, decoupled, mixed} est DESCRIPTIF (co-mouvement récent), JAMAIS une

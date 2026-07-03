@@ -14,7 +14,7 @@ export default function AboutScreen() {
 
         <Text style={styles.intro}>
           Tik est une plateforme OSINT modulaire qui agrège des données multi-sources, score leur
-          crédibilité et produit des signaux pondérés sur 3 horizons en parallèle (flash, swing,
+          crédibilité et produit des signaux pondérés sur 4 horizons en parallèle (micro shadow, flash, swing,
           macro).
         </Text>
 
