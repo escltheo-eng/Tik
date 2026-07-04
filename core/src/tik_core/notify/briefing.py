@@ -58,6 +58,11 @@ N_HEADLINES = 3
 DERIV_REDIS_KEY = "tik.deriv.binance.btc"
 # Divergence retail vs top traders jugée notable au-delà de 5 points de %.
 DERIV_DIVERGENCE_PCT = 0.05
+# Familles macro de CONTEXTE (ADR-028/029/035/036/037) — jamais un signal.
+MACRO_REGIME_KEY = "tik.macro.regime"
+STABLECOINS_KEY = "tik.macro.stablecoins"
+CROSS_ASSET_KEY = "tik.macro.cross_asset"
+RATE_PROB_KEY = "tik.macro.rate_probabilities"
 
 
 def _dt_from_ms(ms: int) -> datetime:
@@ -255,6 +260,128 @@ def _fmt_price_line(label: str, summary: dict | None, currency: str = "$") -> st
     return f"• <b>{label}</b> : {now:,.0f}{currency} — {parts}{flag}"
 
 
+# --- Contexte macro (familles NON-sentiment ADR-028/029/035/036/037) ---
+# CONTEXTE STRICT : ne touche jamais combined_bias/veracity/direction. Résumé
+# lisible pour le briefing, JAMAIS un signal directionnel (NO-GO inchangé).
+RISK_STATE_LABELS = {
+    "risk_on": "🟢 risk-on (marché calme)",
+    "neutral": "⚪ neutre",
+    "risk_off": "🔴 risk-off (stress)",
+}
+LIQUIDITY_LABELS = {"expansion": "expansion", "contraction": "contraction", "neutral": "stable"}
+BEHAVIOR_LABELS = {
+    "risk_asset": "actif risqué (suit les actions)",
+    "digital_gold": "or numérique (suit l'or)",
+    "decoupled": "découplé (vit sa vie)",
+    "mixed": "comportement mixte",
+}
+STABLE_TREND_LABELS = {
+    "expansion": "expansion 🟢",
+    "contraction": "contraction 🔻",
+    "neutral": "stable",
+}
+FOMC_MOVE_LABELS = {"hold": "maintien", "hike": "hausse", "cut": "baisse"}
+
+
+def summarize_macro_context(
+    regime: dict | None,
+    stablecoins: dict | None,
+    cross_asset: dict | None,
+    rate_prob: dict | None,
+) -> dict | None:
+    """Extrait un résumé plat du contexte macro depuis les 4 blobs Redis.
+
+    Ne garde que les champs RECONNUS (labels connus) — un état `unknown` ou un
+    trend `??` est ignoré. Retourne None si rien d'exploitable (pas de section
+    orpheline dans le briefing). CONTEXTE STRICT : aucune direction/veracity ici.
+    """
+    out: dict = {}
+
+    rr = (regime or {}).get("risk_regime") or {}
+    if rr.get("risk_state") in RISK_STATE_LABELS:
+        out["risk_state"] = rr["risk_state"]
+        vix = (rr.get("vix") or {}).get("value")
+        if isinstance(vix, int | float):
+            out["vix"] = vix
+        stress = rr.get("stress_percentile")
+        if isinstance(stress, int | float):
+            out["stress_pct"] = stress
+
+    # Liquidité mondiale prioritaire sur la Fed net liquidity.
+    for key in ("global_liquidity", "net_liquidity"):
+        reg = ((regime or {}).get(key) or {}).get("regime")
+        if reg in LIQUIDITY_LABELS:
+            out["liquidity_regime"] = reg
+            break
+
+    if (stablecoins or {}).get("trend") in STABLE_TREND_LABELS:
+        out["stable_trend"] = stablecoins["trend"]
+        pct = stablecoins.get("pct_30d")
+        if isinstance(pct, int | float):
+            out["stable_pct_30d"] = pct
+
+    if (cross_asset or {}).get("behavior") in BEHAVIOR_LABELS:
+        out["behavior"] = cross_asset["behavior"]
+        for a in cross_asset.get("assets") or []:
+            if a.get("key") == "sp500" and isinstance(a.get("corr_recent"), int | float):
+                out["corr_sp500"] = a["corr_recent"]
+                break
+
+    meetings = (rate_prob or {}).get("meetings") or []
+    if meetings:
+        m = meetings[0]
+        probs = {k: m.get(k) for k in ("hold", "hike", "cut") if isinstance(m.get(k), int | float)}
+        if m.get("date") and probs:
+            top = max(probs, key=probs.get)
+            out["fomc_date"] = m["date"]
+            out["fomc_label"] = FOMC_MOVE_LABELS[top]
+            out["fomc_prob"] = probs[top]
+
+    return out or None
+
+
+def _fmt_macro_context_lines(macro: dict | None) -> list[str]:
+    """Lignes du bloc « Contexte macro » du briefing (pur). [] si rien.
+
+    Honnêteté (Axe #1) : le bloc se déclare CONTEXTE, pas un signal.
+    """
+    if not macro:
+        return []
+    lines = ["🌡 <b>Contexte macro (VIX/crédit/liquidité)</b>"]
+
+    if "risk_state" in macro:
+        parts = [f"Risque : {RISK_STATE_LABELS[macro['risk_state']]}"]
+        if "vix" in macro:
+            parts.append(f"VIX {macro['vix']:.0f}")
+        if "stress_pct" in macro:
+            parts.append(f"{macro['stress_pct'] * 100:.0f}ᵉ centile 1 an")
+        lines.append("• " + " · ".join(parts))
+    if "liquidity_regime" in macro:
+        lines.append(f"• Liquidité mondiale : {LIQUIDITY_LABELS[macro['liquidity_regime']]}")
+    if "stable_trend" in macro:
+        s = f"• Stablecoins : {STABLE_TREND_LABELS[macro['stable_trend']]}"
+        if "stable_pct_30d" in macro:
+            s += f" ({macro['stable_pct_30d']:+.2f}% / 30j)"
+        lines.append(s)
+    if "behavior" in macro:
+        s = f"• BTC : {BEHAVIOR_LABELS[macro['behavior']]}"
+        if "corr_sp500" in macro:
+            s += f" · corr S&P {macro['corr_sp500']:+.2f}"
+        lines.append(s)
+    if "fomc_date" in macro:
+        try:
+            d = datetime.strptime(macro["fomc_date"], "%Y-%m-%d")
+            when = f"{d:%d/%m}"
+        except (ValueError, TypeError):
+            when = macro["fomc_date"]
+        lines.append(f"• FOMC {when} : {macro['fomc_label']} {macro['fomc_prob'] * 100:.0f}%")
+
+    if len(lines) == 1:  # que le titre → pas de section orpheline
+        return []
+    lines.append("ℹ️ <i>Contexte macro, pas un signal directionnel (NO-GO inchangé).</i>")
+    return lines
+
+
 def format_briefing(
     *,
     window: str,
@@ -266,12 +393,14 @@ def format_briefing(
     events: list[dict],
     headlines: list[dict],
     deriv: dict | None = None,
+    macro_ctx: dict | None = None,
 ) -> str:
     """Assemble le texte HTML du briefing (pur, testable sans IO).
 
     `events` : liste de dicts {event_name, hours_until_str, assets, when_utc}.
     `headlines` : liste de dicts {title, publisher, sentiment}.
     `deriv` : résumé positionnement dérivés BTC (summarize_derivatives) ou None.
+    `macro_ctx` : résumé contexte macro (summarize_macro_context) ou None.
     """
     lines: list[str] = []
     lines.append(f"{window} — <b>Briefing Tik</b>")
@@ -325,6 +454,12 @@ def format_briefing(
     deriv_lines = _fmt_derivatives_lines(deriv)
     if deriv_lines:
         lines.extend(deriv_lines)
+        lines.append("")
+
+    # --- Contexte macro (VIX/crédit/liquidité — ADR-028/029/035/036/037) ---
+    macro_lines = _fmt_macro_context_lines(macro_ctx)
+    if macro_lines:
+        lines.extend(macro_lines)
         lines.append("")
 
     # --- Pied de page discipline ---
@@ -408,6 +543,22 @@ async def gather_briefing_data(session: AsyncSession, redis: Redis) -> dict:
     except Exception as exc:  # noqa: BLE001
         log.warning("briefing.derivatives_error", error=str(exc))
 
+    # Contexte macro (VIX/crédit/liquidité/FOMC) — best-effort, CONTEXTE STRICT.
+    macro_ctx = None
+    try:
+        raw_by_key = {}
+        for key in (MACRO_REGIME_KEY, STABLECOINS_KEY, CROSS_ASSET_KEY, RATE_PROB_KEY):
+            raw = await redis.get(key)
+            raw_by_key[key] = json.loads(raw) if raw else None
+        macro_ctx = summarize_macro_context(
+            raw_by_key[MACRO_REGIME_KEY],
+            raw_by_key[STABLECOINS_KEY],
+            raw_by_key[CROSS_ASSET_KEY],
+            raw_by_key[RATE_PROB_KEY],
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("briefing.macro_context_error", error=str(exc))
+
     return {
         "window": briefing_window_label(now),
         "now": now,
@@ -418,6 +569,7 @@ async def gather_briefing_data(session: AsyncSession, redis: Redis) -> dict:
         "events": events,
         "headlines": headlines,
         "deriv": deriv,
+        "macro_ctx": macro_ctx,
     }
 
 
