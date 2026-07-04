@@ -53,6 +53,12 @@ ANCHOR_TTL_S = 24 * 3600
 MACRO_SENT_KEY = "tik.alert.macro.sent"  # set d'event keys déjà alertés
 MACRO_SENT_TTL_S = 3 * 24 * 3600
 
+# Bascule du régime de risque (ADR-035, VIX/crédit) — CONTEXTE, pas prédiction.
+MACRO_REGIME_KEY = "tik.macro.regime"
+RISK_STATE_KEY = "tik.alert.risk_state.last"  # dernier risk_state alerté/vu
+RISK_STATE_TTL_S = 30 * 24 * 3600
+KNOWN_RISK_STATES = frozenset({"risk_on", "neutral", "risk_off"})
+
 
 # ---------------- helpers purs (testables) ----------------
 
@@ -159,7 +165,109 @@ def format_macro_alert(*, event_name: str, minutes: int, when_utc: str, assets: 
     )
 
 
+def should_alert_risk_flip(current: str | None, previous: str | None) -> bool:
+    """Faut-il alerter sur la bascule du régime de risque (ADR-035) ? Pur.
+
+    Alerte uniquement sur une transition qui touche `risk_off` : entrée en
+    `risk_off` (le feu passe orange, sizing ÷2) ou sortie de `risk_off` (le
+    frein se lève). risk_on ↔ neutral = bruit, pas d'alerte.
+    """
+    if current not in KNOWN_RISK_STATES or previous not in KNOWN_RISK_STATES:
+        return False
+    if current == previous:
+        return False
+    return "risk_off" in (current, previous)
+
+
+def format_risk_flip_alert(
+    *,
+    current: str,
+    previous: str,
+    vix: float | None,
+    hy_oas: float | None,
+    stress_pct: float | None,
+) -> str:
+    """Texte de l'alerte bascule risque (pur). Contexte, pas prédiction."""
+    into_risk_off = current == "risk_off"
+    head = (
+        "🔴 <b>Alerte macro — passage en RISK-OFF</b>"
+        if into_risk_off
+        else f"🟢 <b>Alerte macro — sortie du risk-off</b> (retour {current.replace('_', '-')})"
+    )
+    lines = [head, f"Régime de risque : {previous.replace('_', '-')} → {current.replace('_', '-')}"]
+    detail: list[str] = []
+    if vix is not None:
+        detail.append(f"VIX {vix:.1f}")
+    if hy_oas is not None:
+        detail.append(f"spread HY {hy_oas:.2f}%")
+    if stress_pct is not None:
+        detail.append(f"stress {stress_pct * 100:.0f}ᵉ centile 1 an")
+    if detail:
+        lines.append(" · ".join(detail))
+    if into_risk_off:
+        lines.append("Le feu de sécurité du cockpit passe en prudence : sizing ÷2.")
+    else:
+        lines.append("Le frein risk-off du feu de sécurité se lève.")
+    lines.append("ℹ️ <i>Contexte VIX/crédit (ADR-035), pas une prédiction BTC.</i>")
+    return "\n".join(lines)
+
+
 # ---------------- orchestration (IO) ----------------
+
+
+async def _check_risk_flip(redis: Redis, settings: Settings, *, dry_run: bool) -> str | None:
+    """Alerte si le régime de risque (ADR-035) entre ou sort de risk_off.
+
+    Anti-spam : le dernier état connu vit dans Redis (`RISK_STATE_KEY`). Premier
+    passage (pas d'état stocké) = amorçage silencieux. On ne persiste le nouvel
+    état QUE si l'envoi a réussi (échec transitoire → retenté au cycle suivant) ;
+    les flips non alertables (risk_on ↔ neutral) sont persistés directement.
+    """
+    try:
+        raw = await redis.get(MACRO_REGIME_KEY)
+        rr = (json.loads(raw) or {}).get("risk_regime") if raw else None
+    except Exception as exc:  # noqa: BLE001
+        log.warning("alerts.risk_regime_read_error", error=str(exc))
+        return None
+    current = (rr or {}).get("risk_state")
+    if current not in KNOWN_RISK_STATES:
+        return None
+
+    try:
+        previous = await redis.get(RISK_STATE_KEY)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("alerts.risk_state_read_error", error=str(exc))
+        return None
+
+    if previous is None:
+        if not dry_run:
+            await redis.set(RISK_STATE_KEY, current, ex=RISK_STATE_TTL_S)
+        return None
+    if not should_alert_risk_flip(current, previous):
+        if current != previous and not dry_run:
+            await redis.set(RISK_STATE_KEY, current, ex=RISK_STATE_TTL_S)
+        return None
+
+    vix = (rr.get("vix") or {}).get("value")
+    hy = (rr.get("hy_oas") or {}).get("value")
+    stress = rr.get("stress_percentile")
+    text = format_risk_flip_alert(
+        current=current,
+        previous=previous,
+        vix=vix if isinstance(vix, int | float) else None,
+        hy_oas=hy if isinstance(hy, int | float) else None,
+        stress_pct=stress if isinstance(stress, int | float) else None,
+    )
+    if dry_run:
+        return text
+    ok = await send_message(settings.telegram_bot_token, settings.telegram_chat_id, text)
+    if ok:
+        try:
+            await redis.set(RISK_STATE_KEY, current, ex=RISK_STATE_TTL_S)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("alerts.risk_state_write_error", error=str(exc))
+        log.info("alerts.risk_flip_sent", previous=previous, current=current)
+    return text if ok else None
 
 
 async def _check_price_shock(redis: Redis, settings: Settings, *, dry_run: bool) -> str | None:
@@ -262,14 +370,15 @@ async def check_and_alert(
     *,
     dry_run: bool = False,
 ) -> dict:
-    """Point d'entrée : vérifie choc + macro, envoie les alertes. Ne lève jamais.
+    """Point d'entrée : vérifie choc + macro + risque, envoie les alertes. Ne lève jamais.
 
     `dry_run` : compose mais n'envoie rien et n'écrit pas Redis (pour tester).
-    Retourne {"shock": str|None, "macro": [str, ...]} (textes alertés).
+    Retourne {"shock": str|None, "macro": [str, ...], "risk_flip": str|None}.
     """
     settings = settings or get_settings()
     shock = None
     macro: list[str] = []
+    risk_flip = None
     try:
         shock = await _check_price_shock(redis, settings, dry_run=dry_run)
     except Exception as exc:  # noqa: BLE001
@@ -278,7 +387,11 @@ async def check_and_alert(
         macro = await _check_macro(session_maker, redis, settings, dry_run=dry_run)
     except Exception as exc:  # noqa: BLE001
         log.error("alerts.macro_error", error=str(exc))
-    return {"shock": shock, "macro": macro}
+    try:
+        risk_flip = await _check_risk_flip(redis, settings, dry_run=dry_run)
+    except Exception as exc:  # noqa: BLE001
+        log.error("alerts.risk_flip_error", error=str(exc))
+    return {"shock": shock, "macro": macro, "risk_flip": risk_flip}
 
 
 async def _preview() -> None:
@@ -296,6 +409,8 @@ async def _preview() -> None:
         print(res["shock"] or "(aucun choc détecté)")
         print("\n=== MACRO ===")
         print("\n---\n".join(res["macro"]) if res["macro"] else "(aucun event imminent)")
+        print("\n=== RISK FLIP ===")
+        print(res["risk_flip"] or "(pas de bascule de régime de risque)")
     finally:
         await redis.aclose()
         await engine.dispose()
