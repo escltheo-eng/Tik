@@ -3,7 +3,8 @@
 Le `backtest.py` standard travaille en JOURS — inadapté au flash, qui vit en
 minutes-heures. L'évaluer sur 1 jour donnerait un chiffre trompeur. Ce script :
 
-- ne prend QUE les signaux **flash BTC** (`horizon='flash'`, `entity_id='BTC'`) ;
+- ne prend QUE les signaux **flash** de l'entité choisie (`--entity BTC|GOLD`,
+  défaut BTC ; GOLD est mesuré sur son proxy d'émission **PAXGUSDT**, ADR-040) ;
 - récupère les klines Binance **1 minute** (paginées) couvrant la période des signaux ;
 - évalue chaque flash sur un horizon en **MINUTES** (défaut 60) ;
 - compare le hit rate Tik aux baselines (Always LONG/SHORT/NEUTRAL, Random) ;
@@ -22,6 +23,7 @@ minutes-heures. L'évaluer sur 1 jour donnerait un chiffre trompeur. Ce script :
 Usage (depuis le VPS) :
     docker exec tik-core python -m tik_core.scripts.backtest_flash --horizon-minutes 60 --threshold 0.1
     docker exec tik-core python -m tik_core.scripts.backtest_flash --horizon-minutes 15 --threshold 0.05
+    docker exec tik-core python -m tik_core.scripts.backtest_flash --entity GOLD --horizon-minutes 60 --threshold 0.1
 """
 
 from __future__ import annotations
@@ -59,10 +61,15 @@ MAX_DIFF_MS_1M = 2 * 60 * 1000
 # ----- Récupération des klines 1m paginées -----
 
 
+SYMBOL_BY_ENTITY = {"BTC": "BTCUSDT", "GOLD": "PAXGUSDT"}  # GOLD = proxy PAXG (ADR-040)
+
+
 async def fetch_btc_1m_range(
-    client: httpx.AsyncClient, start_ms: int, end_ms: int
+    client: httpx.AsyncClient, start_ms: int, end_ms: int, symbol: str = "BTCUSDT"
 ) -> list[tuple[int, float]]:
-    """Récupère les klines BTCUSDT 1m de start_ms à end_ms (pagination Binance).
+    """Récupère les klines 1m `symbol` de start_ms à end_ms (pagination Binance).
+
+    Nom historique (BTC-only à l'origine) conservé pour les imports existants.
 
     Binance limite à 1000 klines/appel (~16,6 h). On boucle en avançant le curseur
     sur le timestamp du dernier kline reçu. Retourne [(ts_ms, close), ...] trié.
@@ -73,7 +80,7 @@ async def fetch_btc_1m_range(
         r = await client.get(
             BINANCE_KLINES,
             params={
-                "symbol": "BTCUSDT",
+                "symbol": symbol,
                 "interval": "1m",
                 "startTime": cursor,
                 "limit": 1000,
@@ -167,7 +174,7 @@ def evaluate_flash_signal(
 
     return {
         "id": signal.id,
-        "entity": "BTC",
+        "entity": signal.entity_id,
         "direction": signal.direction,
         "confidence": float(signal.confidence),
         "veracity": float(signal.veracity),
@@ -182,10 +189,14 @@ def evaluate_flash_signal(
 # ----- Rapport -----
 
 
-def print_flash_report(results: list[dict], horizon_minutes: int, threshold_pct: float) -> None:
+def print_flash_report(
+    results: list[dict], horizon_minutes: int, threshold_pct: float, entity: str = "BTC"
+) -> None:
     n = len(results)
     print("\n" + "=" * 70)
-    print(f"  RAPPORT BACKTEST FLASH BTC — horizon {horizon_minutes} min, seuil ±{threshold_pct}%")
+    print(f"  RAPPORT BACKTEST FLASH {entity} — horizon {horizon_minutes} min, seuil ±{threshold_pct}%")
+    if entity == "GOLD":
+        print("  ⚠ GOLD mesuré sur son proxy d'émission PAXGUSDT (ADR-040) — pas sur l'or spot.")
     print("=" * 70)
     if n == 0:
         print("  Aucun signal flash évaluable (trop récents ou trou de klines 1m).")
@@ -259,7 +270,14 @@ async def main() -> None:
     parser = argparse.ArgumentParser(description="Backtest flash BTC (horizon minutes)")
     parser.add_argument("--horizon-minutes", type=int, default=60, help="Horizon d'évaluation (min)")
     parser.add_argument("--threshold", type=float, default=0.1, help="Seuil directionnel en %%")
+    parser.add_argument(
+        "--entity",
+        choices=sorted(SYMBOL_BY_ENTITY),
+        default="BTC",
+        help="Entité flash à évaluer (GOLD = mesuré sur le proxy PAXGUSDT, ADR-040)",
+    )
     args = parser.parse_args()
+    symbol = SYMBOL_BY_ENTITY[args.entity]
 
     settings = get_settings()
     engine = create_async_engine(settings.database_url, echo=False)
@@ -268,13 +286,13 @@ async def main() -> None:
     async with session_maker() as session:
         stmt = (
             select(Signal)
-            .where(Signal.horizon == "flash", Signal.entity_id == "BTC")
+            .where(Signal.horizon == "flash", Signal.entity_id == args.entity)
             .order_by(Signal.timestamp.asc())
         )
         signals = list((await session.execute(stmt)).scalars().all())
     await engine.dispose()
 
-    print(f"\n{len(signals)} signaux flash BTC en base.")
+    print(f"\n{len(signals)} signaux flash {args.entity} en base (klines {symbol}).")
     cutoff = now_utc_naive() - timedelta(minutes=args.horizon_minutes)
     eligible = [s for s in signals if s.timestamp <= cutoff]
     print(f"  → {len(eligible)} assez anciens pour l'horizon {args.horizon_minutes} min.")
@@ -289,7 +307,7 @@ async def main() -> None:
 
     print(f"  Récupération des klines 1m depuis {start_dt.date()}… (peut prendre ~10-30 s)")
     async with httpx.AsyncClient() as client:
-        btc_history = await fetch_btc_1m_range(client, start_ms, end_ms)
+        btc_history = await fetch_btc_1m_range(client, start_ms, end_ms, symbol=symbol)
     print(f"  {len(btc_history)} klines 1m récupérées. Évaluation…", flush=True)
 
     prices = PriceIndex(btc_history)
@@ -299,7 +317,7 @@ async def main() -> None:
         if ev is not None:
             results.append(ev)
 
-    print_flash_report(results, args.horizon_minutes, args.threshold)
+    print_flash_report(results, args.horizon_minutes, args.threshold, entity=args.entity)
 
 
 if __name__ == "__main__":

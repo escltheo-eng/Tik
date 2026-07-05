@@ -19,9 +19,14 @@ def _history_from(t0: datetime, prices_by_minute: list[float]) -> list[tuple[int
 T0 = datetime(2026, 6, 30, 12, 0, 0)
 
 
-def _sig(direction: str, ts: datetime = T0):
+def _sig(direction: str, ts: datetime = T0, entity_id: str = "BTC"):
     return SimpleNamespace(
-        id="TIK-FLASH-BTC-x", timestamp=ts, direction=direction, confidence=0.4, veracity=0.85
+        id=f"TIK-FLASH-{entity_id}-x",
+        timestamp=ts,
+        direction=direction,
+        confidence=0.4,
+        veracity=0.85,
+        entity_id=entity_id,
     )
 
 
@@ -59,7 +64,13 @@ class TestEvaluateFlashSignal:
         item = evaluate_flash_signal(_sig("long"), horizon_minutes=60, threshold_pct=0.1, prices=PriceIndex(hist))
         assert item is None
 
-    def test_entity_always_btc(self):
+    def test_entity_comes_from_signal(self):
+        # ADR-040 : le backtest flash couvre BTC ET GOLD (proxy PAXG) —
+        # l'entité du résultat est celle du signal, plus un "BTC" hardcodé.
         hist = _history_from(T0, [100.0] * 61)
         item = evaluate_flash_signal(_sig("neutral"), horizon_minutes=60, threshold_pct=0.1, prices=PriceIndex(hist))
         assert item["entity"] == "BTC"
+        item_gold = evaluate_flash_signal(
+            _sig("neutral", entity_id="GOLD"), horizon_minutes=60, threshold_pct=0.1, prices=PriceIndex(hist)
+        )
+        assert item_gold["entity"] == "GOLD"
