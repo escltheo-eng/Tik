@@ -47,7 +47,7 @@
 ## 3. État de la chaîne (fait / à faire)
 
 - [x] **Backend Tik** : kill-switch 503 + whitelist entités 422 + fenêtres de mesure micro (hit rate, track record) + `signal_freshness` exclut micro + tests (8 nouveaux + 2 durcis)
-- [x] **Labo** : `tik_adapter.py` (mapping + throttle + HTTP best-effort, stdlib) + `tik_push_loop` dans `dashboard.py` + `.env.example` + 11 tests
+- [x] **Labo** : `tik_adapter.py` (mapping + throttle + HTTP best-effort, stdlib) + `tik_push_loop` dans `dashboard.py` + `.env.example` + tests ; **conteneur `micro` versionné 2026-07-05** (`Dockerfile` + `docker-compose.micro.yml` + `.dockerignore` + `BTC_DB_PATH` pour volume persistant) + **verrou de contrat** `TestTikContractLock` (payload adapter ⊆ `MicroSignalIn`)
 - [x] **Dashboard `main`** : type `Horizon` + exclusion micro des alertes fake-news ET veracity_collapse + fenêtre watchlist 2h + libellé amplitude + le « dernier signal » n'est jamais un micro
 - [ ] **Dashboard déployé (`refonte-cosmique`)** : 2 correctifs à porter (cf. §6) — branche gérée par la session refonte
 - [ ] **Mise en service** (cf. §5) — actions utilisatrice sur VPS + Mac
@@ -78,7 +78,7 @@
 - [ ] **O14 — Volume trop faible** : à ~10-50 signaux/jour dont beaucoup de neutral, 2 semaines peuvent ne pas suffire pour une puissance statistique correcte → prolonger plutôt que conclure faible.
 
 ### Obstacles d'exploitation
-- [ ] **O21 — DEUX ponts labo→Tik en parallèle** (découvert au merge) : `tik_bridge.py` (prod VPS, actif 24/06) vs `tik_adapter.py` (committé ici, OFF). Un seul doit survivre à terme ; en attendant, ne JAMAIS activer les deux en même temps (doublons de signaux). Le kill-switch serveur `TIK_MICRO_INGEST_ENABLED` doit rester `true` en prod sinon le pont reçoit 503 (incident ~30-60 min le 02/07).
+- [ ] **O21 — DEUX ponts labo→Tik en parallèle** (découvert au merge) : `tik_bridge.py` (prod VPS, actif 24/06) vs `tik_adapter.py` (committé, OFF). **2026-07-05 — la réconciliation côté code est FAITE** : le dépôt labo ne contient plus QUE `tik_adapter.py`, désormais accompagné de son `Dockerfile` + `docker-compose.micro.yml` versionnés et d'un verrou de contrat (`TestTikContractLock`). Reste l'action VPS : retirer le `tik_bridge.py` posé à la main et rebâtir depuis le compose du repo (checklist `btc-research-lab/reports/2026-07-02_bascule_pont_micro.md`). En attendant, ne JAMAIS activer les deux en même temps (doublons de signaux). Le kill-switch serveur `TIK_MICRO_INGEST_ENABLED` doit rester `true` en prod sinon le pont reçoit 503 (incident ~30-60 min le 02/07).
 - [ ] **O15 — Divergence des dashboards** : les correctifs UI sont sur `main` ; l'app DÉPLOYÉE vient de `refonte-cosmique` qui a 2 trous (cf. §6). Tant que non portés : fausses alertes « Effondrement de l'accord » + un micro peut s'afficher en tuile héro du Cockpit.
 - [x] **O16 — Collision de numérotation ADR — RÉSOLUE 2026-07-02** (merge des branches) : cosmiques renumérotés 030→035 (risk-regime), 031→036 (stablecoins), 032→037 (cross-asset) ; 033-fusion = doublon historique du 030 canonique ; « ADR-034 verdict » cosmique réservé → **ADR-038**. Références code mises à jour.
 - [ ] **O17 — Déploiement VPS ≠ ce repo** : le VPS tourne sur le dépôt de prod (`Lolasiku-prog/Tik`) ; les changements backend d'ici doivent y être appliqués (git apply / copie des fichiers, comme fait pour TradingView) puis `docker restart tik-core` (bind-mount → pas de rebuild, aucune nouvelle dépendance).
